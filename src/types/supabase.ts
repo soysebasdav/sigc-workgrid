@@ -285,6 +285,63 @@ export interface Database {
         Args: { p_organization_id: string; p_year?: number };
         Returns: Array<{ sequence_year: number; sequence_number: number; radicado: string }>;
       };
+      get_public_case_types: {
+        Args: Record<PropertyKey, never>;
+        Returns: Array<{ id: string; name: string; description: string | null; sla_label: string }>;
+      };
+      submit_public_case: {
+        Args: {
+          p_case_type_id: string;
+          p_requester_name: string;
+          p_requester_company: string;
+          p_requester_document: string;
+          p_requester_email: string;
+          p_requester_phone: string;
+          p_subject: string;
+          p_description: string;
+          p_website?: string | null;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
+      };
+      create_internal_case: {
+        Args: {
+          p_case_type_id: string;
+          p_priority_id: string;
+          p_requester_name: string;
+          p_requester_company: string;
+          p_requester_document: string;
+          p_requester_email: string;
+          p_requester_phone: string;
+          p_subject: string;
+          p_description: string;
+          p_risk_level?: string | null;
+          p_assignments?: Json;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
+      };
+      get_case_allowed_states: {
+        Args: { p_case_id: string };
+        Returns: Array<{ id: string; name: string; code: string; color: string | null; requires_justification: boolean }>;
+      };
+      change_case_state: {
+        Args: { p_case_id: string; p_to_state_id: string; p_justification?: string | null };
+        Returns: Array<{ case_id: string; state_id: string; state_name: string; closed_at: string | null }>;
+      };
+      assign_case: {
+        Args: {
+          p_case_id: string;
+          p_area_id: string;
+          p_responsible_user_id?: string | null;
+          p_due_at?: string | null;
+          p_observations?: string | null;
+          p_is_primary?: boolean;
+        };
+        Returns: Array<{ assignment_id: string; is_primary: boolean }>;
+      };
+      calculate_sla_due_at: {
+        Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };
+        Returns: string;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

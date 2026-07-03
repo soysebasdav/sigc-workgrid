@@ -500,3 +500,51 @@ svg { flex-shrink: 0; }
   .calendar-cell { min-height: 112px; padding: 9px; border-radius: 14px; }
   .calendar-task .badge { display: none; }
 }
+
+/* SIGC Fase 2 · casos funcionales */
+.phase2-filter-grid { grid-template-columns: minmax(280px, 2fr) repeat(5, minmax(150px, 1fr)) auto auto auto; }
+.filter-search-field { position: relative; min-width: 0; }
+.filter-search-field > svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #94a3b8; z-index: 1; }
+.filter-search-field .field { width: 100%; padding-left: 42px; }
+.case-list-meta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 2px 12px; color: #64748b; font-size: .86rem; }
+.case-list-meta strong { color: #0f172a; }
+.pagination-row { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 18px 0 2px; color: #64748b; }
+.pagination-row strong { color: #0f172a; }
+
+.section-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-top: 28px; }
+.section-title-row h3 { margin: 0 0 5px !important; }
+.section-title-row p { margin: 0; }
+.assignment-form-list { display: grid; gap: 12px; margin-top: 16px; }
+.assignment-form-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(210px, 1.2fr) minmax(180px, .9fr) minmax(180px, 1fr) auto; gap: 10px; align-items: center; padding: 12px; border: 1px solid #e5e7eb; border-radius: 18px; background: #f8fafc; }
+.manual-submit-row { display: flex; justify-content: flex-end; margin-top: 22px; }
+.assignment-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
+.assignment-summary:last-child { border-bottom: 0; }
+.assignment-summary strong, .assignment-summary small { display: block; }
+.assignment-summary small { color: #64748b; margin-top: 4px; }
+.empty-inline { padding: 18px; border: 1px dashed #cbd5e1; border-radius: 16px; color: #64748b; background: #f8fafc; }
+.case-description { margin: 0; color: #475569; line-height: 1.7; white-space: pre-wrap; }
+.check-row { display: flex; align-items: center; gap: 9px; color: #334155; font-size: .88rem; font-weight: 800; }
+.check-row input { accent-color: var(--primary); }
+.phase-note { border-style: dashed; color: #64748b; }
+.sigc-honeypot { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; opacity: 0 !important; pointer-events: none !important; }
+.spin { animation: sigc-spin .9s linear infinite; }
+@keyframes sigc-spin { to { transform: rotate(360deg); } }
+.tabs button:disabled { cursor: not-allowed; opacity: .45; }
+
+.card-block { padding: 22px; }
+.card-block-head { margin-bottom: 18px; }
+.card-block-head h3 { margin: 0; }
+.card-block-head p { margin: 5px 0 0; color: #64748b; }
+
+@media (max-width: 1500px) {
+  .phase2-filter-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .filter-search-field { grid-column: span 2; }
+  .assignment-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)) auto; }
+}
+
+@media (max-width: 900px) {
+  .phase2-filter-grid, .assignment-form-row { grid-template-columns: 1fr; }
+  .filter-search-field { grid-column: auto; }
+  .section-title-row, .assignment-summary, .case-list-meta { align-items: stretch; flex-direction: column; }
+  .pagination-row { flex-wrap: wrap; }
+}

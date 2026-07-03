@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import {
   Archive,
   BarChart3,
@@ -22,12 +22,10 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
-  Save,
   Search,
   ShieldCheck,
   SlidersHorizontal,
   Upload,
-  UploadCloud,
   UserCog,
   UserPlus,
   X,
@@ -35,8 +33,9 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
 import { dashboardKpis, demoDocuments as documents, demoSubtasks as subtasks, demoTimeline as timeline } from './demoData';
-import type { SigcCase } from './domain/types';
-import { useSigcCase, useSigcCases } from './hooks/useSigcData';
+import type { SigcCase, SigcCaseFilters } from './domain/types';
+import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
+import { useCaseAssignments, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcMembers } from './hooks/useSigcData';
 import {
   adminModules,
   areaDistribution,
@@ -61,6 +60,8 @@ export function SigcShell() {
   const [modalKind, setModalKind] = useState<ModalKind>(null);
   const [toast, setToast] = useState<ToastState>({ visible: false, text: 'Acción registrada correctamente.' });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [topSearch, setTopSearch] = useState('');
+  const navigate = useNavigate();
   const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases();
 
   if (!currentUser) {
@@ -108,7 +109,14 @@ export function SigcShell() {
         </button>
         <div className="search-box">
           <Search size={18} />
-          <input placeholder="Buscar por radicado, solicitante, empresa, área, responsable o palabra clave..." />
+          <input
+            placeholder="Buscar por radicado, solicitante, empresa o palabra clave..."
+            value={topSearch}
+            onChange={(event) => setTopSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') navigate(`/cases${topSearch.trim() ? `?q=${encodeURIComponent(topSearch.trim())}` : ''}`);
+            }}
+          />
         </div>
         <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer(sigcCases.find((item) => item.priority === 'Crítica')?.id ?? sigcCases[0]?.id ?? '')}>
           <Zap size={17} /> Vista rápida
@@ -315,41 +323,76 @@ export function DashboardPage() {
 
 export function CasesPage() {
   const { showToast } = useSigcActions();
-  const { data: cases, isLoading, source, warning } = useSigcCases();
+  const [searchParams] = useSearchParams();
+  const { data: catalogs } = useSigcCatalogs();
+  const { data: members } = useSigcMembers();
+  const [filters, setFilters] = useState<SigcCaseFilters>({
+    query: searchParams.get('q') ?? '',
+    page: 1,
+    pageSize: 10
+  });
+
+  useEffect(() => {
+    const query = searchParams.get('q') ?? '';
+    setFilters((current) => current.query === query ? current : { ...current, query, page: 1 });
+  }, [searchParams]);
+
+  const activeFilters = useMemo(() => ({ ...filters }), [filters]);
+  const { data: result, isLoading, source, warning, error } = useSigcCaseSearch(activeFilters);
+  const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
+
+  function setFilter<K extends keyof SigcCaseFilters>(key: K, value: SigcCaseFilters[K]) {
+    setFilters((current) => ({ ...current, [key]: value, page: key === 'page' ? Number(value) : 1 }));
+  }
+
+  function clearFilters() {
+    setFilters({ query: '', page: 1, pageSize: 10 });
+  }
+
   return (
     <Page>
       <PageHead
         title="Bandeja de casos"
-        description="Vista operativa diaria para clasificar, filtrar, priorizar y abrir expedientes con SLA."
+        description="Consulta real de casos con búsqueda, filtros, prioridad, SLA y paginación."
         actions={(
           <>
-            <button className="btn btn-white" onClick={() => showToast('Filtros guardados como vista personal.')}><Bookmark size={17} /> Guardar vista</button>
+            <button className="btn btn-white" onClick={() => showToast('Las vistas guardadas se habilitarán en una fase posterior.')}><Bookmark size={17} /> Guardar vista</button>
             <Link className="btn btn-primary" to="/manual-case"><Plus size={17} /> Nuevo caso</Link>
           </>
         )}
       />
       <section className="card filter-card">
-        <div className="filter-grid">
-          {['Estado', 'Área', 'Responsable', 'Tipo', 'Prioridad'].map((label) => <select className="field" key={label}><option>{label}</option></select>)}
-          <input className="field" type="date" />
-          <button className="btn btn-soft">Vencidos</button>
-          <button className="btn btn-white">Próximos</button>
-        </div>
-        <div className="chip-row">
-          {['En Gestión', 'Jurídica', 'Alta prioridad', 'Vence < 48 h', 'Mis casos'].map((text) => <Badge key={text} tone="tone-slate">{text}</Badge>)}
+        <div className="filter-grid phase2-filter-grid">
+          <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Radicado, asunto, solicitante, empresa o correo" value={filters.query ?? ''} onChange={(event) => setFilter('query', event.target.value)} /></div>
+          <select className="field" value={filters.stateId ?? ''} onChange={(event) => setFilter('stateId', event.target.value || undefined)}><option value="">Todos los estados</option>{catalogs?.states.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+          <select className="field" value={filters.areaId ?? ''} onChange={(event) => setFilter('areaId', event.target.value || undefined)}><option value="">Todas las áreas</option>{catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+          <select className="field" value={filters.ownerId ?? ''} onChange={(event) => setFilter('ownerId', event.target.value || undefined)}><option value="">Todos los responsables</option>{members.map((item) => <option value={item.userId} key={item.userId}>{item.name}</option>)}</select>
+          <select className="field" value={filters.caseTypeId ?? ''} onChange={(event) => setFilter('caseTypeId', event.target.value || undefined)}><option value="">Todos los tipos</option>{catalogs?.caseTypes.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+          <select className="field" value={filters.priorityId ?? ''} onChange={(event) => setFilter('priorityId', event.target.value || undefined)}><option value="">Todas las prioridades</option>{catalogs?.priorities.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+          <button className={`btn ${filters.overdueOnly ? 'btn-primary' : 'btn-soft'}`} onClick={() => setFilters((current) => ({ ...current, overdueOnly: !current.overdueOnly, upcomingOnly: false, page: 1 }))}>Vencidos</button>
+          <button className={`btn ${filters.upcomingOnly ? 'btn-primary' : 'btn-white'}`} onClick={() => setFilters((current) => ({ ...current, upcomingOnly: !current.upcomingOnly, overdueOnly: false, page: 1 }))}>Próximos 72 h</button>
+          <button className="btn btn-white" onClick={clearFilters}>Limpiar</button>
         </div>
       </section>
       {warning ? <div className="alert danger">{warning}</div> : null}
-      <div className="muted">Fuente: {source === 'supabase' ? 'Supabase · dominio SIGC' : 'Repositorio demo'}{isLoading ? ' · Cargando...' : ''}</div>
-      <section className="card table-card"><CasesTable rows={cases} /></section>
+      {error ? <div className="alert danger">{error}</div> : null}
+      <div className="case-list-meta"><span>Fuente: {source === 'supabase' ? 'Supabase · dominio SIGC' : 'Repositorio demo'}{isLoading ? ' · Cargando...' : ''}</span><strong>{result.total} caso{result.total === 1 ? '' : 's'}</strong></div>
+      <section className="card table-card"><CasesTable rows={result.items} /></section>
+      <div className="pagination-row">
+        <button className="btn btn-white" disabled={result.page <= 1 || isLoading} onClick={() => setFilter('page', result.page - 1)}>Anterior</button>
+        <span>Página <strong>{result.page}</strong> de <strong>{totalPages}</strong></span>
+        <button className="btn btn-white" disabled={result.page >= totalPages || isLoading} onClick={() => setFilter('page', result.page + 1)}>Siguiente</button>
+      </div>
     </Page>
   );
 }
 
 export function CaseDetailPage() {
   const { caseId } = useParams();
-  const { openModal, showToast } = useSigcActions();
+  const { showToast } = useSigcActions();
   const { data: item, isLoading, source, warning, error } = useSigcCase(caseId);
+  const { data: assignments } = useCaseAssignments(item?.databaseId ?? caseId);
+  const [detailModal, setDetailModal] = useState<'assign' | 'state' | null>(null);
 
   if (isLoading) {
     return <Page><section className="card placeholder-card"><h2>Cargando expediente...</h2><p>Consultando {source === 'supabase' ? 'Supabase' : 'el repositorio SIGC'}.</p></section></Page>;
@@ -363,98 +406,88 @@ export function CaseDetailPage() {
     <Page>
       <PageHead
         title="Detalle del caso"
-        description="Expediente completo del radicado con trazabilidad, documentos, subtareas, comentarios y control SLA."
+        description="Expediente dinámico conectado al caso real, con estado, SLA y asignaciones múltiples."
         actions={(
           <>
-            <button className="btn btn-white" onClick={() => openModal('assign')}><UserPlus size={17} /> Asignar</button>
-            <button className="btn btn-white" onClick={() => openModal('state')}><RefreshCw size={17} /> Cambiar estado</button>
-            <button className="btn btn-primary" onClick={() => openModal('comment')}><MessageSquarePlus size={17} /> Agregar comentario</button>
+            <button className="btn btn-white" onClick={() => setDetailModal('assign')}><UserPlus size={17} /> Asignar</button>
+            <button className="btn btn-white" onClick={() => setDetailModal('state')}><RefreshCw size={17} /> Cambiar estado</button>
+            <button className="btn btn-primary" onClick={() => showToast('Los comentarios persistentes se habilitan en la Fase 3.')}><MessageSquarePlus size={17} /> Agregar comentario</button>
           </>
         )}
       />
       {warning ? <div className="alert danger">{warning}</div> : null}
       <section className="card case-hero">
         <div>
-          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-red"><SemDot color="red" /> Vence en 18 h</Badge></div>
+          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
           <h2>{item.subject}</h2>
-          <p>Solicitante: <strong>{item.requester}</strong> · {item.company} · Correo: secretaria.judicial@rama.gov.co</p>
+          <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo: {item.requesterEmail}</> : null}</p>
         </div>
         <div className="progress-panel">
           <div className="bar-caption"><strong>Avance general</strong><span>{item.progress}%</span></div>
           <Progress value={item.progress} large />
           <div className="button-grid two">
-            <button className="btn btn-soft" onClick={() => openModal('document')}><Upload size={17} /> Cargar doc.</button>
-            <button className="btn btn-white" onClick={() => openModal('sla')}><TimerResetIcon /> Modificar SLA</button>
+            <button className="btn btn-soft" onClick={() => showToast('La gestión documental y versiones se habilita en la Fase 3.')}><Upload size={17} /> Cargar doc.</button>
+            <button className="btn btn-white" onClick={() => showToast('Las modificaciones excepcionales de SLA se habilitan en la Fase 4.')}><TimerResetIcon /> Modificar SLA</button>
           </div>
         </div>
       </section>
       <section className="detail-grid">
         <div className="detail-main">
-          <CardBlock title="Trazabilidad" description="Historial no eliminable del expediente." icon={<RefreshCw />}>
-            <div className="tabs"><button className="active">Trazabilidad</button><button>Comentarios</button><button>Cambios</button></div>
+          <CardBlock title="Trazabilidad" description="Los cambios de estado ya se registran en base de datos; la línea de tiempo completa se conecta en Fase 3." icon={<RefreshCw />}>
+            <div className="tabs"><button className="active">Vista previa</button><button disabled>Comentarios</button><button disabled>Cambios</button></div>
             <div className="timeline">
-              {timeline.map(({ title, description, actor, date, icon: Icon }) => (
+              {timeline.slice(0, 3).map(({ title, description, actor, date, icon: Icon }) => (
                 <article className="timeline-item" key={title + date}>
                   <span className="timeline-dot" />
-                  <div>
-                    <div className="timeline-title"><strong>{title}</strong><div className="kpi-icon small"><Icon size={15} /></div></div>
-                    <p>{description}</p>
-                    <small>{actor} · {date}</small>
-                  </div>
+                  <div><div className="timeline-title"><strong>{title}</strong><div className="kpi-icon small"><Icon size={15} /></div></div><p>{description}</p><small>{actor} · {date}</small></div>
                 </article>
               ))}
             </div>
           </CardBlock>
+          <CardBlock title="Asignaciones del caso" description="Un mismo caso puede pertenecer simultáneamente a varias áreas y responsables." icon={<UserCog />}>
+            {assignments.length ? assignments.map((assignment) => (
+              <div className="assignment-summary" key={assignment.id}>
+                <div><strong>{assignment.areaName}</strong><small>{assignment.responsibleName} · límite {assignment.due}</small></div>
+                <div className="chip-row">{assignment.isPrimary ? <Badge tone="tone-dark">Principal</Badge> : null}<Badge tone="tone-slate">{assignment.state}</Badge></div>
+              </div>
+            )) : <div className="empty-inline">Este caso aún no tiene asignaciones.</div>}
+          </CardBlock>
           <section className="grid-2">
-            <CardBlock title="Subtareas del caso" description="Actividades independientes por responsable." icon={<CalendarCheck />}>
-              {subtasks.slice(0, 4).map((task) => <SubtaskMini task={task} key={task.title} />)}
-            </CardBlock>
-            <CardBlock title="Documentos adjuntos" description="Versionamiento sin sobrescritura." icon={<Paperclip />}>
-              {documents.slice(0, 4).map((doc) => (
-                <div className="doc-mini" key={doc.name}>
-                  <div><strong>{doc.name}</strong><small>{doc.type} · {doc.version} · {doc.owner}</small></div>
-                  <Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge>
-                </div>
-              ))}
-            </CardBlock>
+            <CardBlock title="Subtareas del caso" description="Se conectarán al expediente en la Fase 3." icon={<CalendarCheck />}>{subtasks.slice(0, 3).map((task) => <SubtaskMini task={task} key={task.title} />)}</CardBlock>
+            <CardBlock title="Documentos adjuntos" description="Versionamiento y Storage se conectarán en la Fase 3." icon={<Paperclip />}>{documents.slice(0, 3).map((doc) => <div className="doc-mini" key={doc.name}><div><strong>{doc.name}</strong><small>{doc.type} · {doc.version} · {doc.owner}</small></div><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></div>)}</CardBlock>
           </section>
         </div>
         <aside className="detail-side">
           <CardBlock title="Datos de clasificación" icon={<FileText />}>
             <dl className="definition-list">
               {[
-                ['Tipo de caso', item.type], ['Área responsable', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', 'Alto'], ['Origen', item.source], ['IP creación', '190.24.18.15']
+                ['Tipo de caso', item.type], ['Área principal', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', item.risk], ['Origen', item.source], ['Documento', item.requesterDocument ?? 'No registrado'], ['Teléfono', item.requesterPhone ?? 'No registrado']
               ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
             </dl>
           </CardBlock>
-          <CardBlock title="Comentarios internos" icon={<MessageCircle />}>
-            <div className="comment-box"><strong>Laura Méndez</strong><p>Validar anexos y respuesta antes de remisión.</p><small>Hace 22 min</small></div>
-            <textarea className="field textarea" placeholder="Escribe un comentario interno..." />
-            <button className="btn btn-primary full" onClick={() => showToast('Comentario agregado a la trazabilidad.')}>Publicar comentario</button>
-          </CardBlock>
+          <CardBlock title="Descripción" icon={<MessageCircle />}><p className="case-description">{item.description || 'Sin descripción registrada.'}</p></CardBlock>
         </aside>
       </section>
+      {detailModal === 'assign' ? <AssignCaseModal caseId={item.databaseId ?? item.id} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
+      {detailModal === 'state' ? <ChangeCaseStateModal caseId={item.databaseId ?? item.id} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
     </Page>
   );
 }
 
 export function PublicFormPage() {
-  const [confirmed, setConfirmed] = useState(false);
   return (
     <Page centered>
       <section className="public-layout">
         <div className="public-intro hero-gradient">
           <Badge tone="chip-light">Formulario externo</Badge>
           <h1>Radica tu solicitud de forma segura.</h1>
-          <p>Recibirás un número único de radicado y notificación automática por correo.</p>
-          <div className="public-benefits"><span><ShieldCheck /> Trazabilidad completa del caso.</span><span><MailCheck /> Confirmación al finalizar.</span><span><CalendarDays /> SLA calculado según tipo.</span></div>
+          <p>El SIGC generará un número único e irrepetible y calculará la fecha límite según el tipo de caso.</p>
+          <div className="public-benefits"><span><ShieldCheck /> Radicado automático.</span><span><MailCheck /> Datos listos para notificación.</span><span><CalendarDays /> SLA calculado por configuración.</span></div>
         </div>
         <div className="card public-card">
           <h2>Crear solicitud</h2>
-          <p className="muted">Campos mínimos del formulario público SIGC.</p>
-          <FormGrid />
-          <button className="btn btn-primary full" onClick={() => setConfirmed(true)}>Enviar solicitud</button>
-          {confirmed ? <div className="confirm-box"><strong>Solicitud registrada correctamente</strong><p>Tu radicado es <b>SIG-2026-000001</b>. Se envió confirmación al correo registrado.</p></div> : null}
+          <p className="muted">El caso quedará en estado Pendiente de Clasificación.</p>
+          <PublicCaseForm />
         </div>
       </section>
     </Page>
@@ -462,31 +495,15 @@ export function PublicFormPage() {
 }
 
 export function ManualCasePage() {
-  const { openModal, showToast } = useSigcActions();
+  const navigate = useNavigate();
+  const { showToast } = useSigcActions();
   return (
     <Page>
       <PageHead
         title="Creación manual de caso"
-        description="Vista interna para registrar casos autorizados, asignar responsables y calcular SLA automáticamente."
-        actions={<><button className="btn btn-white"><Save size={17} /> Guardar borrador</button><button className="btn btn-primary" onClick={() => showToast('Caso manual creado con radicado SIG-2026-000008.')}><Check size={17} /> Crear caso</button></>}
+        description="Registra un caso interno, calcula su SLA y crea múltiples asignaciones en una sola operación."
       />
-      <section className="manual-layout">
-        <div className="card form-card">
-          <h2>Datos del solicitante y clasificación</h2>
-          <div className="manual-form-grid"><input className="field" placeholder="Nombre del solicitante" /><input className="field" placeholder="Empresa / área origen" /><input className="field" placeholder="Documento" /><input className="field" placeholder="Correo" /><select className="field"><option>Tipo de caso</option></select><select className="field"><option>Prioridad</option></select><select className="field"><option>Área responsable</option></select><select className="field"><option>Responsable</option></select><input className="field wide" placeholder="Asunto" /><textarea className="field textarea wide" placeholder="Descripción" /></div>
-          <h3>Subtareas iniciales</h3>
-          <div className="subtask-seed-list">{['Revisión inicial de anexos', 'Clasificación de riesgo', 'Preparar respuesta preliminar'].map((text) => <div key={text}><input className="field" defaultValue={text} /><select className="field"><option>Responsable</option></select><input className="field" type="date" /></div>)}</div>
-        </div>
-        <aside className="manual-side">
-          <CardBlock title="SLA calculado automáticamente" icon={<TimerResetIcon />}>
-            <div className="sla-box"><span>Tipo seleccionado</span><strong>7 días calendario</strong><p>Fecha límite estimada: <b>2026-07-10 17:30</b></p></div>
-            <button className="btn btn-white full" onClick={() => openModal('sla')}>Modificar excepcionalmente</button>
-          </CardBlock>
-          <CardBlock title="Adjuntos" icon={<Paperclip />}>
-            <div className="upload-zone small">Cargar documentos iniciales</div>
-          </CardBlock>
-        </aside>
-      </section>
+      <ManualCaseForm onCreated={(radicado) => { showToast(`Caso ${radicado} creado correctamente.`); navigate(`/cases/${encodeURIComponent(radicado)}`); }} />
     </Page>
   );
 }
@@ -721,22 +738,6 @@ function CaseCard({ item }: { item: SigcCase }) {
   );
 }
 
-function FormGrid() {
-  return (
-    <div className="public-form-grid">
-      <input className="field" placeholder="Nombre" />
-      <input className="field" placeholder="Empresa" />
-      <input className="field" placeholder="Documento" />
-      <input className="field" placeholder="Correo" />
-      <input className="field" placeholder="Teléfono" />
-      <select className="field"><option>Tipo de caso</option><option>Petición</option><option>Contrato</option><option>Reclamo</option><option>Acción de Tutela</option></select>
-      <input className="field wide" placeholder="Asunto" />
-      <textarea className="field textarea wide" placeholder="Descripción detallada" />
-      <div className="upload-zone wide"><UploadCloud size={34} /><strong>Arrastra archivos o haz clic para adjuntar</strong><span>PDF, Word, Excel, imágenes, audios o videos</span></div>
-    </div>
-  );
-}
-
 function CaseDrawer({ item, onClose }: { item: SigcCase; onClose: () => void }) {
   return (
     <aside className="drawer open">
@@ -775,6 +776,22 @@ function Toast({ visible, text }: { visible: boolean; text: string }) {
   return <div className={`toast card ${visible ? 'show' : ''}`}><div className="kpi-icon small"><Check size={16} /></div><div><strong>Acción registrada</strong><p>{text}</p></div></div>;
 }
 
+
+function dueStatusLabel(item: SigcCase): string {
+  if (item.state === 'Cerrado' || item.state === 'Cancelado') return item.state;
+  if (!item.dueAt) return 'Sin fecha límite';
+  const due = new Date(item.dueAt).getTime();
+  if (!Number.isFinite(due)) return item.due;
+  const diff = due - Date.now();
+  if (diff <= 0) {
+    const hours = Math.max(1, Math.round(Math.abs(diff) / 3600000));
+    return `Vencido hace ${hours} h`;
+  }
+  const hours = Math.ceil(diff / 3600000);
+  if (hours < 24) return `Vence en ${hours} h`;
+  const days = Math.ceil(hours / 24);
+  return `Vence en ${days} día${days === 1 ? '' : 's'}`;
+}
 function TimerResetIcon() {
   return <CalendarCheck size={17} />;
 }
