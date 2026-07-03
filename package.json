@@ -5,7 +5,8 @@
   "type": "module",
   "description": "SIGC WorkGrid Color en React + Vite + TypeScript, con modo localStorage y conexión opcional a Supabase Auth/PostgreSQL.",
   "engines": {
-    "node": "22.x"
+    "node": "20.19.5",
+    "npm": "10.8.2"
   },
   "scripts": {
     "dev": "vite",
