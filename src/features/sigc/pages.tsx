@@ -36,10 +36,11 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
 import { dashboardKpis } from './demoData';
-import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask } from './domain/types';
+import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal } from './components/Phase3Forms';
-import { useCaseAssignments, useCaseComments, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks } from './hooks/useSigcData';
+import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
+import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
   adminModules,
@@ -397,10 +398,17 @@ export function CaseDetailPage() {
   const { data: comments } = useCaseComments(resolvedCaseId);
   const { data: caseDocuments } = useSigcDocuments(resolvedCaseId);
   const { data: timelineEvents } = useCaseTimeline(resolvedCaseId);
+  const { data: slaOverrides } = useCaseSlaOverrides(resolvedCaseId);
+  const { data: reviews } = useCaseReviews(resolvedCaseId);
+  const { data: deliveries } = useCaseDeliveries(resolvedCaseId);
+  const { data: reminders } = useCaseReminders(resolvedCaseId);
   const { data: allCases } = useSigcCases();
-  const [detailModal, setDetailModal] = useState<'assign' | 'state' | 'comment' | 'subtask' | 'document' | null>(null);
+  const { data: members } = useSigcMembers();
+  const [detailModal, setDetailModal] = useState<'assign' | 'state' | 'comment' | 'subtask' | 'document' | 'sla' | 'reminder' | 'review' | 'delivery' | null>(null);
   const [traceTab, setTraceTab] = useState<'timeline' | 'comments'>('timeline');
   const [versionDocument, setVersionDocument] = useState<SigcDocument | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<{ review: SigcCaseReview; decision: 'approved' | 'returned' } | null>(null);
+  const pendingReview = reviews.find((review) => review.status === 'pending') ?? null;
 
   async function openDocument(document: SigcDocument) {
     try {
@@ -444,7 +452,10 @@ export function CaseDetailPage() {
           <Progress value={item.progress} large />
           <div className="button-grid two">
             <button className="btn btn-soft" onClick={() => setDetailModal('document')}><Upload size={17} /> Cargar doc.</button>
-            <button className="btn btn-white" onClick={() => showToast('Las modificaciones excepcionales de SLA se habilitan en la Fase 4.')}><TimerResetIcon /> Modificar SLA</button>
+            <button className="btn btn-white" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar SLA</button>
+            <button className="btn btn-white" onClick={() => setDetailModal('reminder')}><MailCheck size={17} /> Recordatorio</button>
+            {item.state === 'Respuesta Elaborada' ? <button className="btn btn-primary" onClick={() => setDetailModal('review')}><CheckCircle2 size={17} /> Enviar a revisión</button> : null}
+            {item.state === 'Aprobado' ? <button className="btn btn-primary" onClick={() => setDetailModal('delivery')}><MailCheck size={17} /> Registrar envío</button> : null}
           </div>
         </div>
       </section>
@@ -480,6 +491,34 @@ export function CaseDetailPage() {
               </div>
             )) : <div className="empty-inline">Este caso aún no tiene asignaciones.</div>}
           </CardBlock>
+          <section className="grid-2 phase4-grid">
+            <CardBlock title="SLA y recordatorios" description="Control de vencimiento, excepciones justificadas y alertas automáticas." icon={<TimerResetIcon />}>
+              <div className="phase4-sla-summary">
+                <div><span>Política</span><strong>{item.sla}</strong></div>
+                <div><span>Fecha límite vigente</span><strong>{item.due}</strong></div>
+                <div><span>Semáforo</span><strong><SemDot color={item.sem} /> {dueStatusLabel(item)}</strong></div>
+              </div>
+              <div className="card-inline-actions"><button className="btn btn-white small" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar fecha</button><button className="btn btn-soft small" onClick={() => setDetailModal('reminder')}><MailCheck size={15} /> Recordar</button></div>
+              <div className="phase4-history-list">
+                {slaOverrides.slice(0, 3).map((entry) => <div className="phase4-history-row" key={entry.id}><div><strong>Nueva fecha: {new Date(entry.newDueAt).toLocaleString('es-CO')}</strong><span>{entry.justification}</span></div><small>{entry.changedByName} · {entry.changedLabel}</small></div>)}
+                {!slaOverrides.length ? <div className="empty-inline">No hay modificaciones excepcionales del SLA.</div> : null}
+              </div>
+              <div className="phase4-history-list compact-list">
+                {reminders.slice(0, 4).map((entry) => <div className="phase4-history-row" key={entry.id}><div><strong>{entry.reminderType === 'automatic' ? entry.ruleName ?? 'Recordatorio automático' : 'Recordatorio manual'}</strong><span>{entry.message}</span></div><small>{entry.recipientName} · {entry.deliveredLabel}</small></div>)}
+                {!reminders.length ? <div className="empty-inline">Aún no hay recordatorios registrados.</div> : null}
+              </div>
+            </CardBlock>
+            <CardBlock title="Revisión, aprobación y envío" description="Flujo formal de revisión antes de remitir la respuesta." icon={<CheckCircle2 />}>
+              {item.state === 'Respuesta Elaborada' ? <div className="phase4-callout"><strong>Respuesta lista para revisión</strong><span>Selecciona un aprobador o envíala a la cola general de revisión.</span><button className="btn btn-primary small" onClick={() => setDetailModal('review')}>Enviar a revisión</button></div> : null}
+              {pendingReview ? <div className="phase4-callout review-pending"><strong>Revisión #{pendingReview.reviewRound} pendiente</strong><span>Revisor: {pendingReview.reviewerName}</span>{pendingReview.requestNote ? <p>{pendingReview.requestNote}</p> : null}<div className="button-grid two"><button className="btn btn-primary small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'approved' })}>Aprobar</button><button className="btn btn-white small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'returned' })}>Devolver</button></div></div> : null}
+              {item.state === 'Aprobado' ? <div className="phase4-callout"><strong>Respuesta aprobada</strong><span>Registra el canal y destinatario para pasar el caso a Enviado.</span><button className="btn btn-primary small" onClick={() => setDetailModal('delivery')}>Registrar envío</button></div> : null}
+              <div className="phase4-history-list">
+                {reviews.slice(0, 4).map((review) => <div className="phase4-history-row" key={review.id}><div><strong>Revisión #{review.reviewRound} · {review.status === 'pending' ? 'Pendiente' : review.status === 'approved' ? 'Aprobada' : review.status === 'returned' ? 'Devuelta' : 'Cancelada'}</strong><span>{review.reviewerName}{review.decisionComments ? ` · ${review.decisionComments}` : ''}</span></div><small>{review.requestedLabel}</small></div>)}
+                {deliveries.slice(0, 3).map((delivery) => <div className="phase4-history-row" key={delivery.id}><div><strong>Envío · {delivery.channel}</strong><span>{delivery.recipient}{delivery.reference ? ` · Ref. ${delivery.reference}` : ''}</span></div><small>{delivery.deliveredByName} · {delivery.deliveredLabel}</small></div>)}
+                {!reviews.length && !deliveries.length ? <div className="empty-inline">El flujo de aprobación aún no registra actuaciones.</div> : null}
+              </div>
+            </CardBlock>
+          </section>
           <section className="grid-2">
             <CardBlock title="Subtareas del caso" description={`${caseSubtasks.length} actividad${caseSubtasks.length === 1 ? '' : 'es'} vinculadas al expediente.`} icon={<CalendarCheck />}>
               <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('subtask')}><Plus size={15} /> Nueva subtarea</button></div>
@@ -507,6 +546,11 @@ export function CaseDetailPage() {
       {detailModal === 'comment' ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'subtask' ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'document' ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'sla' ? <SlaOverrideModal caseId={resolvedCaseId!} currentDueAt={item.dueAt} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'reminder' ? <ManualReminderModal caseId={resolvedCaseId!} members={members} assignments={assignments} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'review' ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'delivery' ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {reviewDecision ? <ReviewDecisionModal review={reviewDecision.review} decision={reviewDecision.decision} onClose={() => setReviewDecision(null)} onSaved={(message) => { setReviewDecision(null); showToast(message); }} /> : null}
       {versionDocument ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}
     </Page>
   );
@@ -724,7 +768,7 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
       <nav className="side-nav">
         {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Icon size={17} /><span>{label}</span>{to === '/admin' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
+            <Icon size={17} /><span>{label}</span>{to === '/notifications' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
           </NavLink>
         ))}
       </nav>

@@ -25,7 +25,16 @@ import type {
   SigcTimelineEvent,
   UpdateSubtaskInput,
   UploadCaseDocumentInput,
-  SigcRepositoryResult
+  SigcRepositoryResult,
+  SigcSlaOverride,
+  OverrideCaseSlaInput,
+  SigcCaseReview,
+  SubmitCaseReviewInput,
+  DecideCaseReviewInput,
+  SigcCaseDelivery,
+  RegisterCaseDeliveryInput,
+  SigcCaseReminder,
+  SendManualReminderInput
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -202,5 +211,47 @@ export const sigcService = {
 
   getCaseTimeline(caseId: string): Promise<SigcRepositoryResult<SigcTimelineEvent[]>> {
     return withSafeReadFallback(() => supabaseSigcRepository.listCaseTimeline(caseId), () => demoSigcRepository.listCaseTimeline(caseId));
+  },
+
+  getCaseSlaOverrides(caseId: string): Promise<SigcRepositoryResult<SigcSlaOverride[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseSlaOverrides(caseId), () => demoSigcRepository.listCaseSlaOverrides(caseId));
+  },
+
+  async overrideCaseSla(input: OverrideCaseSlaInput): Promise<void> {
+    await mutationRepository().overrideCaseSla(input);
+    emitSigcDataChanged();
+  },
+
+  getCaseReviews(caseId: string): Promise<SigcRepositoryResult<SigcCaseReview[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseReviews(caseId), () => demoSigcRepository.listCaseReviews(caseId));
+  },
+
+  async submitCaseForReview(input: SubmitCaseReviewInput): Promise<void> {
+    await mutationRepository().submitCaseForReview(input);
+    emitSigcDataChanged();
+  },
+
+  async decideCaseReview(input: DecideCaseReviewInput): Promise<void> {
+    await mutationRepository().decideCaseReview(input);
+    emitSigcDataChanged();
+  },
+
+  getCaseDeliveries(caseId: string): Promise<SigcRepositoryResult<SigcCaseDelivery[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseDeliveries(caseId), () => demoSigcRepository.listCaseDeliveries(caseId));
+  },
+
+  async registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void> {
+    await mutationRepository().registerCaseDelivery(input);
+    emitSigcDataChanged();
+  },
+
+  getCaseReminders(caseId: string): Promise<SigcRepositoryResult<SigcCaseReminder[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseReminders(caseId), () => demoSigcRepository.listCaseReminders(caseId));
+  },
+
+  async sendManualReminder(input: SendManualReminderInput): Promise<number> {
+    const count = await mutationRepository().sendManualReminder(input);
+    emitSigcDataChanged();
+    return count;
   }
 };

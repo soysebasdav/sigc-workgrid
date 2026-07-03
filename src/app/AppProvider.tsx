@@ -134,6 +134,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [runtimeMode]);
 
+  useEffect(() => {
+    const realtimeClient = supabase;
+    if (runtimeMode !== 'supabase' || !currentUser?.id || !realtimeClient) return;
+    const userId = currentUser.id;
+    const channel = realtimeClient
+      .channel(`sigc-notifications-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_user_id=eq.${userId}` }, () => {
+        void reloadSupabaseState(userId);
+      })
+      .subscribe();
+    return () => { void realtimeClient.removeChannel(channel); };
+  }, [runtimeMode, currentUser?.id]);
+
   function commit(mutator: Mutator): void {
     setState((previous) => {
       const next = mutator(previous);

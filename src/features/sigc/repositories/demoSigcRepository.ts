@@ -24,7 +24,16 @@ import type {
   SigcSubtaskFilters,
   SigcTimelineEvent,
   UpdateSubtaskInput,
-  UploadCaseDocumentInput
+  UploadCaseDocumentInput,
+  SigcSlaOverride,
+  OverrideCaseSlaInput,
+  SigcCaseReview,
+  SubmitCaseReviewInput,
+  DecideCaseReviewInput,
+  SigcCaseDelivery,
+  RegisterCaseDeliveryInput,
+  SigcCaseReminder,
+  SendManualReminderInput
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -34,6 +43,10 @@ const SUBTASKS_KEY = 'sigc_phase3_demo_subtasks';
 const COMMENTS_KEY = 'sigc_phase3_demo_comments';
 const DOCUMENTS_KEY = 'sigc_phase3_demo_documents';
 const TIMELINE_KEY = 'sigc_phase3_demo_timeline';
+const SLA_OVERRIDES_KEY = 'sigc_phase4_demo_sla_overrides';
+const REVIEWS_KEY = 'sigc_phase4_demo_reviews';
+const DELIVERIES_KEY = 'sigc_phase4_demo_deliveries';
+const REMINDERS_KEY = 'sigc_phase4_demo_reminders';
 
 const catalogs: SigcCatalogs = {
   organizationId: null,
@@ -519,6 +532,85 @@ export const demoSigcRepository: SigcRepository = {
     const item = await this.getCaseByIdentifier(caseId);
     const resolved = item?.databaseId ?? caseId;
     return readTimeline().filter((event) => event.caseId === resolved || event.caseId === '');
+  },
+
+  async listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readJson<SigcSlaOverride[]>(SLA_OVERRIDES_KEY, []).filter((entry) => entry.caseId === resolved);
+  },
+
+  async overrideCaseSla(input: OverrideCaseSlaInput): Promise<void> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const resolved = item.databaseId ?? item.id;
+    const rows = readJson<SigcSlaOverride[]>(SLA_OVERRIDES_KEY, []);
+    const created: SigcSlaOverride = { id: `demo-sla-${crypto.randomUUID()}`, caseId: resolved, previousDueAt: item.dueAt, newDueAt: new Date(input.newDueAt).toISOString(), justification: input.justification, changedBy: 'demo-user-1', changedByName: 'Laura Méndez', changedAt: new Date().toISOString(), changedLabel: 'Ahora' };
+    writeJson(SLA_OVERRIDES_KEY, [created, ...rows]);
+    writeCases(readCases().map((current) => current.id === item.id ? { ...current, dueAt: created.newDueAt, due: new Date(created.newDueAt).toLocaleString('es-CO'), updated: 'Ahora', updatedAt: new Date().toISOString() } : current));
+    pushTimeline(resolved, 'case.sla_overridden', 'Fecha límite modificada', input.justification);
+  },
+
+  async listCaseReviews(caseId: string): Promise<SigcCaseReview[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readJson<SigcCaseReview[]>(REVIEWS_KEY, []).filter((entry) => entry.caseId === resolved);
+  },
+
+  async submitCaseForReview(input: SubmitCaseReviewInput): Promise<void> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const resolved = item.databaseId ?? item.id;
+    const rows = readJson<SigcCaseReview[]>(REVIEWS_KEY, []);
+    const reviewer = members.find((member) => member.userId === input.reviewerUserId);
+    const review: SigcCaseReview = { id: `demo-review-${crypto.randomUUID()}`, caseId: resolved, reviewRound: rows.filter((entry) => entry.caseId === resolved).length + 1, status: 'pending', requestedBy: 'demo-user-1', requestedByName: 'Laura Méndez', reviewerUserId: reviewer?.userId, reviewerName: reviewer?.name ?? 'Sin revisor específico', requestNote: input.note, requestedAt: new Date().toISOString(), requestedLabel: 'Ahora' };
+    writeJson(REVIEWS_KEY, [review, ...rows]);
+    const target = catalogs.states.find((state) => state.name === 'En Revisión / Aprobación');
+    if (target) await this.changeCaseState({ caseId: input.caseId, toStateId: target.id });
+  },
+
+  async decideCaseReview(input: DecideCaseReviewInput): Promise<void> {
+    const rows = readJson<SigcCaseReview[]>(REVIEWS_KEY, []);
+    const review = rows.find((entry) => entry.id === input.reviewId);
+    if (!review) throw new Error('Revisión no encontrada.');
+    writeJson(REVIEWS_KEY, rows.map((entry) => entry.id === input.reviewId ? { ...entry, status: input.decision, decisionComments: input.comments, decidedBy: 'demo-user-1', decidedByName: 'Laura Méndez', decidedAt: new Date().toISOString(), decidedLabel: 'Ahora' } : entry));
+    const targetName = input.decision === 'approved' ? 'Aprobado' : 'Devuelto para Ajustes';
+    const target = catalogs.states.find((state) => state.name === targetName);
+    if (target) await this.changeCaseState({ caseId: review.caseId, toStateId: target.id, justification: input.comments });
+  },
+
+  async listCaseDeliveries(caseId: string): Promise<SigcCaseDelivery[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readJson<SigcCaseDelivery[]>(DELIVERIES_KEY, []).filter((entry) => entry.caseId === resolved);
+  },
+
+  async registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const resolved = item.databaseId ?? item.id;
+    const rows = readJson<SigcCaseDelivery[]>(DELIVERIES_KEY, []);
+    writeJson(DELIVERIES_KEY, [{ id: `demo-delivery-${crypto.randomUUID()}`, caseId: resolved, channel: input.channel, recipient: input.recipient, reference: input.reference, notes: input.notes, deliveredBy: 'demo-user-1', deliveredByName: 'Laura Méndez', deliveredAt: new Date().toISOString(), deliveredLabel: 'Ahora' }, ...rows]);
+    const target = catalogs.states.find((state) => state.name === 'Enviado');
+    if (target) await this.changeCaseState({ caseId: input.caseId, toStateId: target.id });
+  },
+
+  async listCaseReminders(caseId: string): Promise<SigcCaseReminder[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readJson<SigcCaseReminder[]>(REMINDERS_KEY, []).filter((entry) => entry.caseId === resolved);
+  },
+
+  async sendManualReminder(input: SendManualReminderInput): Promise<number> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const resolved = item.databaseId ?? item.id;
+    const recipients = input.recipientUserIds?.length ? members.filter((member) => input.recipientUserIds!.includes(member.userId)) : members.slice(0, 1);
+    const rows = readJson<SigcCaseReminder[]>(REMINDERS_KEY, []);
+    const created = recipients.map((member) => ({ id: `demo-reminder-${crypto.randomUUID()}`, caseId: resolved, recipientUserId: member.userId, recipientName: member.name, reminderType: 'manual' as const, message: input.message, sentBy: 'demo-user-1', sentByName: 'Laura Méndez', deliveredAt: new Date().toISOString(), deliveredLabel: 'Ahora' }));
+    writeJson(REMINDERS_KEY, [...created, ...rows]);
+    created.forEach(() => pushTimeline(resolved, 'case.reminder_sent', 'Recordatorio enviado', input.message));
+    return created.length;
   }
 };
 

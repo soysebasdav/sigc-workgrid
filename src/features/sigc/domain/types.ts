@@ -351,3 +351,93 @@ export interface SigcRepositoryResult<T> {
   source: SigcDataSource;
   warning?: string;
 }
+
+export interface SigcSlaOverride {
+  id: string;
+  caseId: string;
+  previousDueAt?: string | null;
+  newDueAt: string;
+  justification: string;
+  changedBy?: string;
+  changedByName: string;
+  changedAt: string;
+  changedLabel: string;
+}
+
+export interface OverrideCaseSlaInput {
+  caseId: string;
+  newDueAt: string;
+  justification: string;
+}
+
+export interface SigcCaseReview {
+  id: string;
+  caseId: string;
+  reviewRound: number;
+  status: 'pending' | 'approved' | 'returned' | 'cancelled';
+  requestedBy?: string;
+  requestedByName: string;
+  reviewerUserId?: string;
+  reviewerName: string;
+  requestNote?: string;
+  requestedAt: string;
+  requestedLabel: string;
+  decidedBy?: string;
+  decidedByName?: string;
+  decisionComments?: string;
+  decidedAt?: string;
+  decidedLabel?: string;
+}
+
+export interface SubmitCaseReviewInput {
+  caseId: string;
+  reviewerUserId?: string;
+  note?: string;
+}
+
+export interface DecideCaseReviewInput {
+  reviewId: string;
+  decision: 'approved' | 'returned';
+  comments?: string;
+}
+
+export interface SigcCaseDelivery {
+  id: string;
+  caseId: string;
+  channel: 'email' | 'physical' | 'portal' | 'courier' | 'other';
+  recipient: string;
+  reference?: string;
+  notes?: string;
+  deliveredBy?: string;
+  deliveredByName: string;
+  deliveredAt: string;
+  deliveredLabel: string;
+}
+
+export interface RegisterCaseDeliveryInput {
+  caseId: string;
+  channel: SigcCaseDelivery['channel'];
+  recipient: string;
+  reference?: string;
+  notes?: string;
+}
+
+export interface SigcCaseReminder {
+  id: string;
+  caseId: string;
+  ruleName?: string;
+  recipientUserId?: string;
+  recipientName: string;
+  reminderType: 'automatic' | 'manual';
+  message: string;
+  sentBy?: string;
+  sentByName: string;
+  deliveredAt: string;
+  deliveredLabel: string;
+}
+
+export interface SendManualReminderInput {
+  caseId: string;
+  message: string;
+  recipientUserIds?: string[];
+}

@@ -63,9 +63,11 @@ function mapNotification(row: {
   recipient_user_id: string;
   actor_user_id: string | null;
   task_id: string | null;
+  case_id?: string | null;
   type: Notification['type'];
   title: string;
   message: string;
+  action_url?: string | null;
   is_read: boolean;
   created_at: string;
 }): Notification {
@@ -74,9 +76,11 @@ function mapNotification(row: {
     recipientUserId: row.recipient_user_id,
     actorUserId: row.actor_user_id,
     taskId: row.task_id,
+    caseId: row.case_id ?? null,
     type: row.type,
     title: row.title,
     message: row.message,
+    actionUrl: row.action_url ?? null,
     isRead: row.is_read,
     createdAt: row.created_at
   };
@@ -132,7 +136,7 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
   const [profilesResponse, tasksResponse, notificationsResponse, settingsResponse] = await Promise.all([
     client.from('profiles').select('id,name,email,role,created_at,updated_at').order('created_at', { ascending: true }),
     client.from('tasks').select('id,user_id,title,description,status,due_date,created_at,updated_at').order('created_at', { ascending: false }),
-    client.from('notifications').select('id,recipient_user_id,actor_user_id,task_id,type,title,message,is_read,created_at').order('created_at', { ascending: false }),
+    (client as any).from('notifications').select('id,recipient_user_id,actor_user_id,task_id,case_id,type,title,message,action_url,is_read,created_at').order('created_at', { ascending: false }),
     client.from('app_settings').select('setting_key,setting_value')
   ]);
 

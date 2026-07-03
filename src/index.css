@@ -593,3 +593,36 @@ svg { flex-shrink: 0; }
   .comment-card header { align-items: flex-start; flex-direction: column; }
   .doc-mini-actions { flex-wrap: wrap; justify-content: flex-end; }
 }
+
+/* SIGC Fase 4 */
+.phase4-modal { max-width: 650px; }
+.phase4-context { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.phase4-context > div { display: grid; gap: 3px; }
+.phase4-context span, .phase4-sla-summary span { color: #64748b; font-size: .78rem; }
+.field-label { display: grid; gap: 7px; font-size: .84rem; color: #475569; }
+.phase4-recipient-grid { display: grid; gap: 8px; max-height: 260px; overflow: auto; padding-right: 4px; }
+.phase4-recipient { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid #e2e8f0; border-radius: 14px; cursor: pointer; }
+.phase4-recipient.selected { border-color: #8b5cf6; background: #faf5ff; }
+.phase4-recipient div { display: grid; gap: 2px; }
+.phase4-recipient span { color: #64748b; font-size: .78rem; }
+.phase4-grid { align-items: start; }
+.phase4-sla-summary { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 12px; }
+.phase4-sla-summary > div { display: grid; gap: 5px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+.phase4-sla-summary strong { display: flex; align-items: center; gap: 7px; font-size: .88rem; }
+.phase4-history-list { display: grid; gap: 8px; margin-top: 12px; }
+.compact-list { margin-top: 16px; padding-top: 12px; border-top: 1px solid #eef2f7; }
+.phase4-history-row { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid #f1f5f9; }
+.phase4-history-row:last-child { border-bottom: 0; }
+.phase4-history-row > div { display: grid; gap: 3px; min-width: 0; }
+.phase4-history-row span { color: #64748b; font-size: .8rem; overflow-wrap: anywhere; }
+.phase4-history-row small { color: #94a3b8; white-space: nowrap; }
+.phase4-callout { display: grid; gap: 8px; padding: 14px; border: 1px solid #ddd6fe; border-radius: 16px; background: #faf5ff; margin-bottom: 12px; }
+.phase4-callout.review-pending { background: #fffaf0; border-color: #fed7aa; }
+.phase4-callout > span, .phase4-callout > p { color: #64748b; margin: 0; }
+.notification-action { margin-top: 8px; }
+.notification-action a { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: .82rem; color: var(--primary); text-decoration: none; }
+@media (max-width: 760px) {
+  .phase4-sla-summary { grid-template-columns: 1fr; }
+  .phase4-history-row { flex-direction: column; gap: 5px; }
+  .phase4-history-row small { white-space: normal; }
+}

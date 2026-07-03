@@ -1,11 +1,22 @@
-import { BellRing, CheckCheck } from 'lucide-react';
+import { BellRing, CheckCheck, ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../../app/AppProvider';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { formatDateTime } from '../../utils/dates';
+
+function typeLabel(type: string): string {
+  if (type.startsWith('case_review')) return 'Revisión';
+  if (type === 'case_overdue') return 'Vencimiento';
+  if (type === 'case_due_soon' || type === 'case_reminder') return 'Recordatorio';
+  if (type === 'case_assigned' || type === 'case_reassigned') return 'Asignación';
+  if (type === 'case_sla_changed') return 'SLA';
+  if (type.startsWith('case_')) return 'Caso';
+  return 'Sistema';
+}
 
 export function NotificationsPage() {
   const { currentUser, state, markNotificationRead, markAllNotificationsRead } = useApp();
@@ -21,7 +32,7 @@ export function NotificationsPage() {
     <Card>
       <CardHeader
         title="Centro de notificaciones"
-        description="Trazabilidad ligera de eventos relevantes para tu usuario."
+        description="Alertas de casos, asignaciones, comentarios, documentos, SLA, recordatorios y revisiones."
         action={<Button variant="secondary" onClick={markAllNotificationsRead}><CheckCheck size={17} /> Marcar todo leído</Button>}
       />
 
@@ -33,19 +44,19 @@ export function NotificationsPage() {
               <div>
                 <div className="notification-title">
                   <strong>{notification.title}</strong>
+                  <Badge tone="info">{typeLabel(notification.type)}</Badge>
                   {notification.isRead ? <Badge>Leída</Badge> : <Badge tone="info">Nueva</Badge>}
                 </div>
                 <p>{notification.message}</p>
                 <span>{formatDateTime(notification.createdAt)}</span>
+                {notification.actionUrl ? <div className="notification-action"><Link to={notification.actionUrl} onClick={() => !notification.isRead && void markNotificationRead(notification.id)}><ExternalLink size={14} /> Abrir expediente</Link></div> : null}
               </div>
-              {!notification.isRead ? (
-                <Button variant="ghost" onClick={() => markNotificationRead(notification.id)}>Marcar leída</Button>
-              ) : null}
+              {!notification.isRead ? <Button variant="ghost" onClick={() => markNotificationRead(notification.id)}>Marcar leída</Button> : null}
             </article>
           ))}
         </div>
       ) : (
-        <EmptyState title="Sin notificaciones" description="Cuando se creen o actualicen tareas asignadas a ti, aparecerán aquí." />
+        <EmptyState title="Sin notificaciones" description="Cuando un caso requiera tu atención, aparecerá aquí." />
       )}
     </Card>
   );

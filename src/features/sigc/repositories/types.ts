@@ -23,7 +23,16 @@ import type {
   SigcSubtaskFilters,
   SigcTimelineEvent,
   UpdateSubtaskInput,
-  UploadCaseDocumentInput
+  UploadCaseDocumentInput,
+  SigcSlaOverride,
+  OverrideCaseSlaInput,
+  SigcCaseReview,
+  SubmitCaseReviewInput,
+  DecideCaseReviewInput,
+  SigcCaseDelivery,
+  RegisterCaseDeliveryInput,
+  SigcCaseReminder,
+  SendManualReminderInput
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -53,6 +62,19 @@ export interface SigcRepository {
   getDocumentSignedUrl(storagePath: string): Promise<string>;
 
   listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]>;
+
+  listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]>;
+  overrideCaseSla(input: OverrideCaseSlaInput): Promise<void>;
+
+  listCaseReviews(caseId: string): Promise<SigcCaseReview[]>;
+  submitCaseForReview(input: SubmitCaseReviewInput): Promise<void>;
+  decideCaseReview(input: DecideCaseReviewInput): Promise<void>;
+
+  listCaseDeliveries(caseId: string): Promise<SigcCaseDelivery[]>;
+  registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void>;
+
+  listCaseReminders(caseId: string): Promise<SigcCaseReminder[]>;
+  sendManualReminder(input: SendManualReminderInput): Promise<number>;
 }
 
 export interface PublicSigcRepository {

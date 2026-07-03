@@ -27,7 +27,16 @@ import type {
   SigcSubtaskFilters,
   SigcTimelineEvent,
   UpdateSubtaskInput,
-  UploadCaseDocumentInput
+  UploadCaseDocumentInput,
+  SigcSlaOverride,
+  OverrideCaseSlaInput,
+  SigcCaseReview,
+  SubmitCaseReviewInput,
+  DecideCaseReviewInput,
+  SigcCaseDelivery,
+  RegisterCaseDeliveryInput,
+  SigcCaseReminder,
+  SendManualReminderInput
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -35,6 +44,58 @@ function requireClient() {
   if (!supabase) throw new Error('Supabase no está configurado.');
   return supabase;
 }
+
+
+
+type SlaOverrideRow = {
+  id: string;
+  case_id: string;
+  previous_due_at: string | null;
+  new_due_at: string;
+  justification: string;
+  changed_by: string | null;
+  changed_at: string;
+};
+
+type ReviewRow = {
+  id: string;
+  case_id: string;
+  review_round: number;
+  status: string;
+  requested_by: string | null;
+  reviewer_user_id: string | null;
+  request_note: string | null;
+  requested_at: string;
+  decided_by: string | null;
+  decision_comments: string | null;
+  decided_at: string | null;
+};
+
+type DeliveryRow = {
+  id: string;
+  case_id: string;
+  channel: string;
+  recipient: string;
+  reference: string | null;
+  notes: string | null;
+  delivered_by: string | null;
+  delivered_at: string;
+};
+
+type ReminderRow = {
+  id: string;
+  case_id: string;
+  rule_id: string | null;
+  recipient_user_id: string | null;
+  reminder_type: string;
+  message: string;
+  sent_by: string | null;
+  delivered_at: string;
+};
+
+type SimpleProfileRow = { id: string; name: string };
+type SimpleRuleRow = { id: string; name: string };
+type PublicCaseTypeRow = { id: string; name: string; description: string | null; sla_label: string | null };
 
 type CaseQueryRow = {
   id: string;
@@ -264,6 +325,12 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
     case 'case.created': return { title: 'Caso creado', description: 'Se creó el expediente y quedó disponible para gestión.' };
     case 'case.updated': return { title: 'Caso actualizado', description: 'Se modificaron datos del expediente.' };
     case 'case.state_changed': return { title: 'Estado actualizado', description: justification ? `Cambio de estado. Justificación: ${justification}` : 'El caso avanzó a un nuevo estado del flujo.' };
+    case 'case.sla_overridden': return { title: 'Fecha límite modificada', description: justification || 'Se registró una modificación excepcional del SLA.' };
+    case 'case.review_pending': return { title: 'Revisión solicitada', description: 'La respuesta fue enviada a revisión o aprobación.' };
+    case 'case.review_approved': return { title: 'Respuesta aprobada', description: 'La revisión concluyó con aprobación.' };
+    case 'case.review_returned': return { title: 'Respuesta devuelta', description: 'La revisión solicitó ajustes antes de aprobar.' };
+    case 'case.sent': return { title: 'Respuesta enviada', description: 'Se registró el envío al destinatario.' };
+    case 'case.reminder_sent': return { title: 'Recordatorio enviado', description: text(afterData?.message) || 'Se envió un recordatorio de seguimiento.' };
     case 'assignment.created': return { title: 'Nueva asignación', description: 'Se agregó un área o responsable al caso.' };
     case 'assignment.updated': return { title: 'Asignación actualizada', description: 'Se modificó una asignación del caso.' };
     case 'subtask.created': return { title: 'Subtarea creada', description: titleValue || 'Se creó una nueva actividad de seguimiento.' };
@@ -274,7 +341,6 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
     case 'document.updated': return { title: 'Documento actualizado', description: documentName || 'Se actualizó la ficha documental.' };
     case 'document.deleted': return { title: 'Documento eliminado lógicamente', description: documentName || 'El documento se ocultó sin borrar sus versiones.' };
     case 'document.version_created': return { title: 'Nueva versión documental', description: `${filename || 'Archivo'}${version ? ` · v${version}` : ''}` };
-    case 'case.sla_overridden': return { title: 'SLA modificado', description: justification || 'Se modificó excepcionalmente la fecha límite.' };
     default: return { title: 'Actividad registrada', description: eventType };
   }
 }
@@ -822,24 +888,205 @@ export const supabaseSigcRepository: SigcRepository = {
         date: formatDateTime(row.created_at)
       };
     });
+  },
+
+  async listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { data, error } = await client
+      .from('case_sla_overrides')
+      .select('id,case_id,previous_due_at,new_due_at,justification,changed_by,changed_at')
+      .eq('case_id', resolvedCaseId)
+      .order('changed_at', { ascending: false });
+    if (error) throw error;
+    const rows = (data ?? []) as SlaOverrideRow[];
+    const userIds = [...new Set(rows.map((row) => row.changed_by).filter((id): id is string => Boolean(id)))];
+    const profiles = userIds.length ? await client.from('profiles').select('id,name').in('id', userIds) : { data: [], error: null };
+    if (profiles.error) throw profiles.error;
+    const names = new Map(((profiles.data ?? []) as SimpleProfileRow[]).map((row) => [row.id, row.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      previousDueAt: row.previous_due_at,
+      newDueAt: row.new_due_at,
+      justification: row.justification,
+      changedBy: row.changed_by ?? undefined,
+      changedByName: row.changed_by ? names.get(row.changed_by) ?? 'Usuario' : 'Sistema',
+      changedAt: row.changed_at,
+      changedLabel: formatDateTime(row.changed_at)
+    }));
+  },
+
+  async overrideCaseSla(input: OverrideCaseSlaInput): Promise<void> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { error } = await client.rpc('override_case_sla', {
+      p_case_id: resolvedCaseId,
+      p_new_due_at: new Date(input.newDueAt).toISOString(),
+      p_justification: input.justification
+    });
+    if (error) throw error;
+  },
+
+  async listCaseReviews(caseId: string): Promise<SigcCaseReview[]> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { data, error } = await client
+      .from('case_reviews')
+      .select('id,case_id,review_round,status,requested_by,reviewer_user_id,request_note,requested_at,decided_by,decision_comments,decided_at')
+      .eq('case_id', resolvedCaseId)
+      .order('requested_at', { ascending: false });
+    if (error) throw error;
+    const rows = (data ?? []) as ReviewRow[];
+    const userIds = [...new Set(rows.flatMap((row) => [row.requested_by, row.reviewer_user_id, row.decided_by]).filter((id): id is string => Boolean(id)))];
+    const profiles = userIds.length ? await client.from('profiles').select('id,name').in('id', userIds) : { data: [], error: null };
+    if (profiles.error) throw profiles.error;
+    const names = new Map(((profiles.data ?? []) as SimpleProfileRow[]).map((row) => [row.id, row.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      reviewRound: row.review_round,
+      status: row.status as SigcCaseReview['status'],
+      requestedBy: row.requested_by ?? undefined,
+      requestedByName: row.requested_by ? names.get(row.requested_by) ?? 'Usuario' : 'Sistema',
+      reviewerUserId: row.reviewer_user_id ?? undefined,
+      reviewerName: row.reviewer_user_id ? names.get(row.reviewer_user_id) ?? 'Usuario' : 'Sin revisor específico',
+      requestNote: row.request_note ?? undefined,
+      requestedAt: row.requested_at,
+      requestedLabel: formatDateTime(row.requested_at),
+      decidedBy: row.decided_by ?? undefined,
+      decidedByName: row.decided_by ? names.get(row.decided_by) ?? 'Usuario' : undefined,
+      decisionComments: row.decision_comments ?? undefined,
+      decidedAt: row.decided_at ?? undefined,
+      decidedLabel: row.decided_at ? formatDateTime(row.decided_at) : undefined
+    }));
+  },
+
+  async submitCaseForReview(input: SubmitCaseReviewInput): Promise<void> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { error } = await client.rpc('submit_case_for_review', {
+      p_case_id: resolvedCaseId,
+      p_reviewer_user_id: input.reviewerUserId || null,
+      p_note: input.note || null
+    });
+    if (error) throw error;
+  },
+
+  async decideCaseReview(input: DecideCaseReviewInput): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('decide_case_review', {
+      p_review_id: input.reviewId,
+      p_decision: input.decision,
+      p_comments: input.comments || null
+    });
+    if (error) throw error;
+  },
+
+  async listCaseDeliveries(caseId: string): Promise<SigcCaseDelivery[]> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { data, error } = await client
+      .from('case_deliveries')
+      .select('id,case_id,channel,recipient,reference,notes,delivered_by,delivered_at')
+      .eq('case_id', resolvedCaseId)
+      .order('delivered_at', { ascending: false });
+    if (error) throw error;
+    const rows = (data ?? []) as DeliveryRow[];
+    const userIds = [...new Set(rows.map((row) => row.delivered_by).filter((id): id is string => Boolean(id)))];
+    const profiles = userIds.length ? await client.from('profiles').select('id,name').in('id', userIds) : { data: [], error: null };
+    if (profiles.error) throw profiles.error;
+    const names = new Map(((profiles.data ?? []) as SimpleProfileRow[]).map((row) => [row.id, row.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      channel: row.channel as SigcCaseDelivery['channel'],
+      recipient: row.recipient,
+      reference: row.reference ?? undefined,
+      notes: row.notes ?? undefined,
+      deliveredBy: row.delivered_by ?? undefined,
+      deliveredByName: row.delivered_by ? names.get(row.delivered_by) ?? 'Usuario' : 'Sistema',
+      deliveredAt: row.delivered_at,
+      deliveredLabel: formatDateTime(row.delivered_at)
+    }));
+  },
+
+  async registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { error } = await client.rpc('register_case_delivery', {
+      p_case_id: resolvedCaseId,
+      p_channel: input.channel,
+      p_recipient: input.recipient,
+      p_reference: input.reference || null,
+      p_notes: input.notes || null
+    });
+    if (error) throw error;
+  },
+
+  async listCaseReminders(caseId: string): Promise<SigcCaseReminder[]> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { data, error } = await client
+      .from('case_reminder_log')
+      .select('id,case_id,rule_id,recipient_user_id,reminder_type,message,sent_by,delivered_at')
+      .eq('case_id', resolvedCaseId)
+      .order('delivered_at', { ascending: false });
+    if (error) throw error;
+    const rows = (data ?? []) as ReminderRow[];
+    const userIds = [...new Set(rows.flatMap((row) => [row.recipient_user_id, row.sent_by]).filter((id): id is string => Boolean(id)))];
+    const ruleIds = [...new Set(rows.map((row) => row.rule_id).filter((id): id is string => Boolean(id)))];
+    const [profiles, rules] = await Promise.all([
+      userIds.length ? client.from('profiles').select('id,name').in('id', userIds) : Promise.resolve({ data: [], error: null }),
+      ruleIds.length ? client.from('reminder_rules').select('id,name').in('id', ruleIds) : Promise.resolve({ data: [], error: null })
+    ]);
+    if (profiles.error) throw profiles.error;
+    if (rules.error) throw rules.error;
+    const names = new Map(((profiles.data ?? []) as SimpleProfileRow[]).map((row) => [row.id, row.name]));
+    const ruleNames = new Map(((rules.data ?? []) as SimpleRuleRow[]).map((row) => [row.id, row.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      ruleName: row.rule_id ? ruleNames.get(row.rule_id) : undefined,
+      recipientUserId: row.recipient_user_id ?? undefined,
+      recipientName: row.recipient_user_id ? names.get(row.recipient_user_id) ?? 'Usuario' : 'Sin destinatario',
+      reminderType: row.reminder_type as SigcCaseReminder['reminderType'],
+      message: row.message,
+      sentBy: row.sent_by ?? undefined,
+      sentByName: row.sent_by ? names.get(row.sent_by) ?? 'Usuario' : 'Sistema',
+      deliveredAt: row.delivered_at,
+      deliveredLabel: formatDateTime(row.delivered_at)
+    }));
+  },
+
+  async sendManualReminder(input: SendManualReminderInput): Promise<number> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { data, error } = await client.rpc('send_manual_case_reminder', {
+      p_case_id: resolvedCaseId,
+      p_message: input.message,
+      p_recipient_user_ids: input.recipientUserIds?.length ? input.recipientUserIds : null
+    });
+    if (error) throw error;
+    return Number(data ?? 0);
   }
 };
 
 export const supabasePublicSigcRepository: PublicSigcRepository = {
   async getPublicCaseTypes(): Promise<PublicCaseTypeOption[]> {
-    const client = requireClient();
+    const client = requireClient() as any;
     const { data, error } = await client.rpc('get_public_case_types');
     if (error) throw error;
-    return (data ?? []).map((item) => ({
+    return ((data ?? []) as PublicCaseTypeRow[]).map((item) => ({
       id: item.id,
       name: item.name,
       description: item.description,
-      slaLabel: item.sla_label
+      slaLabel: item.sla_label ?? 'Sin SLA configurado'
     }));
   },
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult> {
-    const client = requireClient();
+    const client = requireClient() as any;
     const { data, error } = await client.rpc('submit_public_case', {
       p_case_type_id: input.caseTypeId,
       p_requester_name: input.requesterName,

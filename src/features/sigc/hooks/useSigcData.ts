@@ -13,7 +13,11 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
-  SigcTimelineEvent
+  SigcTimelineEvent,
+  SigcSlaOverride,
+  SigcCaseReview,
+  SigcCaseDelivery,
+  SigcCaseReminder
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -135,5 +139,38 @@ export function useCaseTimeline(caseId: string | undefined): AsyncState<SigcTime
     `timeline:${caseId ?? 'missing'}`,
     [],
     () => caseId ? sigcService.getCaseTimeline(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
+}
+
+
+export function useCaseSlaOverrides(caseId: string | undefined): AsyncState<SigcSlaOverride[]> {
+  return useSigcQuery(
+    `sla-overrides:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseSlaOverrides(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
+}
+
+export function useCaseReviews(caseId: string | undefined): AsyncState<SigcCaseReview[]> {
+  return useSigcQuery(
+    `reviews:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseReviews(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
+}
+
+export function useCaseDeliveries(caseId: string | undefined): AsyncState<SigcCaseDelivery[]> {
+  return useSigcQuery(
+    `deliveries:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseDeliveries(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
+}
+
+export function useCaseReminders(caseId: string | undefined): AsyncState<SigcCaseReminder[]> {
+  return useSigcQuery(
+    `reminders:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseReminders(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
   );
 }
