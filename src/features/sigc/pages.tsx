@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext } from 'react-router-dom';
+import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom';
 import {
   Archive,
   BarChart3,
@@ -34,23 +34,19 @@ import {
   Zap
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
+import { dashboardKpis, demoDocuments as documents, demoSubtasks as subtasks, demoTimeline as timeline } from './demoData';
+import type { SigcCase } from './domain/types';
+import { useSigcCase, useSigcCases } from './hooks/useSigcData';
 import {
   adminModules,
   areaDistribution,
   areaTones,
-  cases,
-  dashboardKpis,
-  documents,
   navItems,
   priorityTones,
   reportMonths,
   reportValues,
-  stateTones,
-  subtasks,
-  timeline,
-  type CasePriority,
-  type SigcCase
-} from './data';
+  stateTones
+} from './ui';
 
 type ModalKind = 'assign' | 'state' | 'sla' | 'comment' | 'document' | 'task' | null;
 
@@ -65,6 +61,7 @@ export function SigcShell() {
   const [modalKind, setModalKind] = useState<ModalKind>(null);
   const [toast, setToast] = useState<ToastState>({ visible: false, text: 'Acción registrada correctamente.' });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases();
 
   if (!currentUser) {
     if (isLoading) {
@@ -93,7 +90,7 @@ export function SigcShell() {
   }
 
   const context = {
-    openDrawer: (id: string) => setDrawerCase(cases.find((item) => item.id === id) ?? cases[0]),
+    openDrawer: (id: string) => setDrawerCase(sigcCases.find((item) => item.id === id || item.radicado === id) ?? sigcCases[0] ?? null),
     openModal: setModalKind,
     showToast
   };
@@ -113,7 +110,7 @@ export function SigcShell() {
           <Search size={18} />
           <input placeholder="Buscar por radicado, solicitante, empresa, área, responsable o palabra clave..." />
         </div>
-        <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer('SIG-2026-000003')}>
+        <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer(sigcCases.find((item) => item.priority === 'Crítica')?.id ?? sigcCases[0]?.id ?? '')}>
           <Zap size={17} /> Vista rápida
         </button>
         <Link className="btn btn-primary" to="/manual-case">
@@ -128,7 +125,7 @@ export function SigcShell() {
         <div className="topbar-user">
           <div>
             <strong>{currentUser.name}</strong>
-            <span>{currentUser.role === 'admin' ? 'Administrador SIGC' : 'Usuario SIGC'}</span>
+            <span title={sigcWarning ?? undefined}>{currentUser.role === 'admin' ? 'Administrador SIGC' : 'Usuario SIGC'} · {sigcSource === 'supabase' ? 'Datos reales' : 'Demo'}</span>
           </div>
           <div className="avatar">{initials(currentUser.name)}</div>
         </div>
@@ -214,6 +211,7 @@ export function SigcLoginPage() {
 
 export function DashboardPage() {
   const { openDrawer, showToast } = useSigcActions();
+  const { data: cases } = useSigcCases();
   const criticalCases = cases.filter((item) => item.priority === 'Crítica' || item.sem === 'red');
 
   return (
@@ -317,6 +315,7 @@ export function DashboardPage() {
 
 export function CasesPage() {
   const { showToast } = useSigcActions();
+  const { data: cases, isLoading, source, warning } = useSigcCases();
   return (
     <Page>
       <PageHead
@@ -340,14 +339,26 @@ export function CasesPage() {
           {['En Gestión', 'Jurídica', 'Alta prioridad', 'Vence < 48 h', 'Mis casos'].map((text) => <Badge key={text} tone="tone-slate">{text}</Badge>)}
         </div>
       </section>
+      {warning ? <div className="alert danger">{warning}</div> : null}
+      <div className="muted">Fuente: {source === 'supabase' ? 'Supabase · dominio SIGC' : 'Repositorio demo'}{isLoading ? ' · Cargando...' : ''}</div>
       <section className="card table-card"><CasesTable rows={cases} /></section>
     </Page>
   );
 }
 
 export function CaseDetailPage() {
+  const { caseId } = useParams();
   const { openModal, showToast } = useSigcActions();
-  const item = cases[2];
+  const { data: item, isLoading, source, warning, error } = useSigcCase(caseId);
+
+  if (isLoading) {
+    return <Page><section className="card placeholder-card"><h2>Cargando expediente...</h2><p>Consultando {source === 'supabase' ? 'Supabase' : 'el repositorio SIGC'}.</p></section></Page>;
+  }
+
+  if (!item) {
+    return <Page><section className="card placeholder-card"><h2>Caso no encontrado</h2><p>{error ?? `No existe un caso con el identificador ${caseId ?? ''}.`}</p><Link className="btn btn-primary" to="/cases">Volver a la bandeja</Link></section></Page>;
+  }
+
   return (
     <Page>
       <PageHead
@@ -361,9 +372,10 @@ export function CaseDetailPage() {
           </>
         )}
       />
+      {warning ? <div className="alert danger">{warning}</div> : null}
       <section className="card case-hero">
         <div>
-          <div className="chip-row"><Badge tone="tone-dark">{item.id}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-red"><SemDot color="red" /> Vence en 18 h</Badge></div>
+          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-red"><SemDot color="red" /> Vence en 18 h</Badge></div>
           <h2>{item.subject}</h2>
           <p>Solicitante: <strong>{item.requester}</strong> · {item.company} · Correo: secretaria.judicial@rama.gov.co</p>
         </div>
@@ -428,7 +440,6 @@ export function CaseDetailPage() {
 
 export function PublicFormPage() {
   const [confirmed, setConfirmed] = useState(false);
-  const { showToast } = useSigcActions();
   return (
     <Page centered>
       <section className="public-layout">
@@ -442,7 +453,7 @@ export function PublicFormPage() {
           <h2>Crear solicitud</h2>
           <p className="muted">Campos mínimos del formulario público SIGC.</p>
           <FormGrid />
-          <button className="btn btn-primary full" onClick={() => { setConfirmed(true); showToast('Radicado SIG-2026-000001 generado correctamente.'); }}>Enviar solicitud</button>
+          <button className="btn btn-primary full" onClick={() => setConfirmed(true)}>Enviar solicitud</button>
           {confirmed ? <div className="confirm-box"><strong>Solicitud registrada correctamente</strong><p>Tu radicado es <b>SIG-2026-000001</b>. Se envió confirmación al correo registrado.</p></div> : null}
         </div>
       </section>
@@ -481,6 +492,7 @@ export function ManualCasePage() {
 }
 
 export function BoardPage() {
+  const { data: cases } = useSigcCases();
   const states = ['Pendiente de Clasificación', 'Asignado', 'En Gestión', 'En Revisión / Aprobación', 'Cerrado'];
   const { showToast } = useSigcActions();
   return (
@@ -530,6 +542,7 @@ export function DocumentsPage() {
 }
 
 export function ReportsPage() {
+  const { data: cases } = useSigcCases();
   return (
     <Page>
       <PageHead title="Reportes" description="Generación de reportes filtrables por fecha, estado, área, responsable, tipo de caso y prioridad." actions={<><button className="btn btn-white"><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white"><FileText size={17} /> PDF</button><button className="btn btn-primary"><Download size={17} /> CSV</button></>} />
@@ -650,7 +663,7 @@ function CasesTable({ rows, compact = false }: { rows: SigcCase[]; compact?: boo
         <tbody>
           {rows.map((item, index) => (
             <tr key={item.id} className={index === 2 ? 'selected-row' : ''}>
-              <td><Link to="/case-detail" className="radicado">{item.id}</Link></td>
+              <td><Link to={`/cases/${encodeURIComponent(item.id)}`} className="radicado">{item.radicado}</Link></td>
               <td>{item.type}</td>
               <td><strong className="truncate">{item.subject}</strong><small>{item.risk}</small></td>
               <td><strong>{item.company}</strong><small>{item.requester}</small></td>
@@ -699,7 +712,7 @@ function SubtaskMini({ task }: { task: { title: string; state: string; owner: st
 function CaseCard({ item }: { item: SigcCase }) {
   return (
     <article className="case-card" draggable>
-      <div><strong>{item.id}</strong><SemDot color={item.sem} /></div>
+      <div><strong>{item.radicado}</strong><SemDot color={item.sem} /></div>
       <p>{item.subject}</p>
       <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge></div>
       <small>{item.owner}<span>{item.due}</span></small>
@@ -727,12 +740,12 @@ function FormGrid() {
 function CaseDrawer({ item, onClose }: { item: SigcCase; onClose: () => void }) {
   return (
     <aside className="drawer open">
-      <header><div><Badge tone="tone-dark">{item.id}</Badge><h2>{item.subject}</h2><p>{item.company} · {item.requester}</p></div><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
+      <header><div><Badge tone="tone-dark">{item.radicado}</Badge><h2>{item.subject}</h2><p>{item.company} · {item.requester}</p></div><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
       <div className="drawer-body">
         <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {item.risk}</Badge></div>
         <section className="card drawer-progress"><div className="bar-caption"><strong>Avance</strong><span>{item.progress}%</span></div><Progress value={item.progress} /></section>
         <dl className="definition-list drawer-defs">{[['Responsable', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Última actualización', item.updated], ['Tipo', item.type]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <Link className="btn btn-primary full" onClick={onClose} to="/case-detail">Abrir expediente completo</Link>
+        <Link className="btn btn-primary full" onClick={onClose} to={`/cases/${encodeURIComponent(item.id)}`}>Abrir expediente completo</Link>
       </div>
     </aside>
   );

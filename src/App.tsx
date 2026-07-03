@@ -5,7 +5,6 @@ import { AgendaPage } from './features/agenda/AgendaPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { SettingsPage } from './features/settings/SettingsPage';
-import { TasksPage } from './features/tasks/TasksPage';
 import { UsersPage } from './features/users/UsersPage';
 import {
   AdminPage,
@@ -24,6 +23,8 @@ import {
 
 const router = createBrowserRouter([
   { path: '/login', element: <SigcLoginPage /> },
+  { path: '/radicar', element: <PublicFormPage /> },
+  { path: '/public-form', element: <Navigate to="/radicar" replace /> },
   {
     path: '/',
     element: <SigcShell />,
@@ -31,12 +32,12 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'cases', element: <CasesPage /> },
-      { path: 'case-detail', element: <CaseDetailPage /> },
-      { path: 'public-form', element: <PublicFormPage /> },
+      { path: 'cases/:caseId', element: <CaseDetailPage /> },
+      { path: 'case-detail', element: <Navigate to="/cases/SIG-2026-000003" replace /> },
       { path: 'manual-case', element: <ManualCasePage /> },
       { path: 'board', element: <BoardPage /> },
       { path: 'subtasks', element: <SubtasksPage /> },
-      { path: 'tasks', element: <TasksPage /> },
+      { path: 'tasks', element: <Navigate to="/subtasks" replace /> },
       { path: 'agenda', element: <AgendaPage /> },
       { path: 'documents', element: <DocumentsPage /> },
       { path: 'reports', element: <ReportsPage /> },

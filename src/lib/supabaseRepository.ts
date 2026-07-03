@@ -7,6 +7,16 @@ function requireSupabase() {
   return supabase;
 }
 
+
+async function tryEnsureSigcOrganization(): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc('ensure_user_organization');
+  if (error) {
+    // Compatibilidad de Fase 0: la app puede iniciar antes de aplicar la migración de Fase 1.
+    console.warn('SIGC: ensure_user_organization aún no está disponible o falló.', error.message);
+  }
+}
+
 function mapProfile(row: {
   id: string;
   name: string;
@@ -117,6 +127,8 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
     };
   }
 
+  await tryEnsureSigcOrganization();
+
   const [profilesResponse, tasksResponse, notificationsResponse, settingsResponse] = await Promise.all([
     client.from('profiles').select('id,name,email,role,created_at,updated_at').order('created_at', { ascending: true }),
     client.from('tasks').select('id,user_id,title,description,status,due_date,created_at,updated_at').order('created_at', { ascending: false }),
@@ -143,6 +155,7 @@ export async function signInWithPassword(email: string, password: string): Promi
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error || !data.user) return null;
   await ensureProfile(data.user);
+  await tryEnsureSigcOrganization();
   return data.user.id;
 }
 

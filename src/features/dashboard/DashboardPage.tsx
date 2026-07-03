@@ -36,7 +36,7 @@ export function DashboardPage() {
       </section>
 
       <Card className="span-8">
-        <CardHeader title="Próximas tareas" description="Ordenadas por criticidad y fecha límite." action={<Link className="link" to="/tasks">Ver todas</Link>} />
+        <CardHeader title="Próximas tareas" description="Ordenadas por criticidad y fecha límite." action={<Link className="link" to="/subtasks">Ver todas</Link>} />
         {nextTasks.length ? (
           <div className="task-list compact">
             {nextTasks.map((task) => {
