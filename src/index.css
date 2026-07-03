@@ -548,3 +548,48 @@ svg { flex-shrink: 0; }
   .section-title-row, .assignment-summary, .case-list-meta { align-items: stretch; flex-direction: column; }
   .pagination-row { flex-wrap: wrap; }
 }
+
+/* SIGC Fase 3 · expediente colaborativo */
+.phase3-filter-grid { grid-template-columns: minmax(300px, 2fr) minmax(170px, 1fr) minmax(220px, 1fr) auto; }
+.phase3-modal { width: min(760px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto; }
+.phase3-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.phase3-form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.phase3-context { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+.phase3-context span { color: #64748b; font-size: .8rem; font-weight: 800; }
+.phase3-context strong { color: #0f172a; }
+.clickable-upload { position: relative; cursor: pointer; transition: border-color .18s ease, background .18s ease; }
+.clickable-upload:hover { border-color: #94a3b8; background: #f8fafc; }
+.clickable-upload input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.selected-files { display: flex; flex-wrap: wrap; gap: 8px; }
+.selected-files span { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 7px 10px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: .78rem; font-weight: 800; }
+.range-field { display: grid; gap: 8px; padding: 11px 13px; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; color: #475569; font-size: .82rem; }
+.range-field input { width: 100%; accent-color: var(--primary); }
+.comment-textarea { min-height: 150px; }
+.textarea.compact { min-height: 90px; }
+.comments-list { display: grid; gap: 12px; padding-top: 14px; }
+.comment-card { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fff; }
+.comment-card header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.comment-card header span { color: #94a3b8; font-size: .76rem; }
+.comment-card p { margin: 7px 0; color: #475569; white-space: pre-wrap; line-height: 1.55; }
+.comment-card small { display: inline-flex; align-items: center; gap: 5px; color: #64748b; }
+.small-avatar { width: 34px; height: 34px; font-size: .72rem; }
+.card-inline-actions { display: flex; justify-content: flex-end; margin: -4px 0 10px; }
+.doc-mini-actions { display: flex; align-items: center; gap: 6px; }
+.table-actions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.danger-icon { color: #dc2626 !important; }
+.document-search { max-width: 720px; }
+.docs-table td small, .subtasks-table td small { display: block; margin-top: 4px; color: #94a3b8; max-width: 280px; }
+
+@media (max-width: 1100px) {
+  .phase3-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .phase3-filter-grid .filter-search-field { grid-column: span 2; }
+  .phase3-form-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .phase3-filter-grid, .phase3-form-grid.two { grid-template-columns: 1fr; }
+  .phase3-filter-grid .filter-search-field { grid-column: auto; }
+  .comment-card { grid-template-columns: 1fr; }
+  .comment-card header { align-items: flex-start; flex-direction: column; }
+  .doc-mini-actions { flex-wrap: wrap; justify-content: flex-end; }
+}

@@ -210,6 +210,142 @@ export interface SigcCatalogs {
   roles: SigcCatalogOption[];
 }
 
+
+export type SubtaskState = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface SigcSubtask {
+  id: string;
+  caseId: string;
+  caseRadicado: string;
+  caseSubject: string;
+  title: string;
+  description: string;
+  responsibleUserId?: string;
+  responsibleName: string;
+  priorityId?: string;
+  priority: CasePriorityName;
+  dueAt?: string | null;
+  due: string;
+  state: SubtaskState;
+  stateLabel: string;
+  progress: number;
+  comments: number;
+  attachments: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SigcSubtaskFilters {
+  caseId?: string;
+  query?: string;
+  state?: SubtaskState | '';
+  responsibleUserId?: string;
+}
+
+export interface CreateSubtaskInput {
+  caseId: string;
+  title: string;
+  description: string;
+  responsibleUserId?: string;
+  dueAt?: string;
+  priorityId?: string;
+  files?: File[];
+}
+
+export interface UpdateSubtaskInput {
+  subtaskId: string;
+  caseId: string;
+  title: string;
+  description: string;
+  responsibleUserId?: string;
+  dueAt?: string;
+  priorityId?: string;
+  state: SubtaskState;
+  progress: number;
+  files?: File[];
+}
+
+export interface CreatedSubtaskResult {
+  subtaskId: string;
+}
+
+export interface SigcComment {
+  id: string;
+  caseId: string;
+  subtaskId?: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+  createdLabel: string;
+  attachmentCount: number;
+}
+
+export interface AddCommentInput {
+  caseId: string;
+  content: string;
+  subtaskId?: string;
+  files?: File[];
+}
+
+export interface CreatedCommentResult {
+  commentId: string;
+}
+
+export interface SigcDocument {
+  id: string;
+  caseId: string;
+  caseRadicado: string;
+  caseSubject: string;
+  subtaskId?: string;
+  commentId?: string;
+  name: string;
+  category: string;
+  state: string;
+  currentVersion: number;
+  ownerId?: string;
+  ownerName: string;
+  createdAt: string;
+  updatedAt: string;
+  date: string;
+  currentFilename: string;
+  currentStoragePath: string;
+  currentMimeType?: string;
+  currentSizeBytes: number;
+}
+
+export interface UploadCaseDocumentInput {
+  caseId: string;
+  name: string;
+  category: string;
+  state?: string;
+  file: File;
+  changeNotes?: string;
+  subtaskId?: string;
+  commentId?: string;
+}
+
+export interface AddDocumentVersionInput {
+  documentId: string;
+  caseId: string;
+  currentVersion: number;
+  file: File;
+  changeNotes?: string;
+}
+
+export interface SigcTimelineEvent {
+  id: string;
+  caseId: string;
+  eventType: string;
+  entityType: string;
+  title: string;
+  description: string;
+  actorId?: string;
+  actorName: string;
+  createdAt: string;
+  date: string;
+}
+
 export interface SigcRepositoryResult<T> {
   data: T;
   source: SigcDataSource;

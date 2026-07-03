@@ -1,9 +1,14 @@
-import { demoCases } from '../demoData';
+import { demoCases, demoDocuments, demoSubtasks, demoTimeline } from '../demoData';
 import type {
+  AddCommentInput,
+  AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
   ChangeCaseStateInput,
+  CreateSubtaskInput,
   CreatedCaseResult,
+  CreatedCommentResult,
+  CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
   PublicCaseTypeOption,
@@ -12,12 +17,23 @@ import type {
   SigcCaseFilters,
   SigcCasePage,
   SigcCatalogs,
-  SigcMember
+  SigcComment,
+  SigcDocument,
+  SigcMember,
+  SigcSubtask,
+  SigcSubtaskFilters,
+  SigcTimelineEvent,
+  UpdateSubtaskInput,
+  UploadCaseDocumentInput
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
 const CASES_KEY = 'sigc_phase2_demo_cases';
 const ASSIGNMENTS_KEY = 'sigc_phase2_demo_assignments';
+const SUBTASKS_KEY = 'sigc_phase3_demo_subtasks';
+const COMMENTS_KEY = 'sigc_phase3_demo_comments';
+const DOCUMENTS_KEY = 'sigc_phase3_demo_documents';
+const TIMELINE_KEY = 'sigc_phase3_demo_timeline';
 
 const catalogs: SigcCatalogs = {
   organizationId: null,
@@ -75,6 +91,81 @@ function writeAssignments(value: Record<string, SigcAssignment[]>): void {
   } catch {
     // Ignore localStorage failures in demo mode.
   }
+}
+
+
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson<T>(key: string, value: T): void {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* demo only */ }
+}
+
+function seedSubtasks(): SigcSubtask[] {
+  return demoSubtasks.map((task, index) => {
+    const caseItem = readCases().find((item) => item.radicado === task.caseId) ?? readCases()[index % readCases().length];
+    const owner = members.find((item) => item.name === task.owner);
+    const priority = catalogs.priorities.find((item) => item.name === task.priority);
+    const stateMap: Record<string, SigcSubtask['state']> = { Completada: 'completed', 'En progreso': 'in_progress', Pendiente: 'pending' };
+    return {
+      id: `demo-subtask-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? task.caseId, caseSubject: caseItem?.subject ?? '',
+      title: task.title, description: task.title, responsibleUserId: owner?.userId, responsibleName: task.owner, priorityId: priority?.id, priority: task.priority,
+      dueAt: new Date(Date.now() + (index + 1) * 86400000).toISOString(), due: task.due, state: stateMap[task.state] ?? 'pending', stateLabel: task.state, progress: task.progress,
+      comments: task.comments, attachments: task.attachments, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+  });
+}
+
+function readSubtasks(): SigcSubtask[] {
+  const existing = readJson<SigcSubtask[]>(SUBTASKS_KEY, []);
+  if (existing.length) return existing;
+  const seeded = seedSubtasks();
+  writeJson(SUBTASKS_KEY, seeded);
+  return seeded;
+}
+
+function readComments(): SigcComment[] {
+  return readJson<SigcComment[]>(COMMENTS_KEY, []);
+}
+
+function readDocuments(): SigcDocument[] {
+  const existing = readJson<SigcDocument[]>(DOCUMENTS_KEY, []);
+  if (existing.length) return existing;
+  const cases = readCases();
+  const seeded = demoDocuments.map((doc, index) => {
+    const caseItem = cases.find((item) => item.radicado === doc.caseId) ?? cases[index % cases.length];
+    return {
+      id: `demo-document-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? doc.caseId, caseSubject: caseItem?.subject ?? '',
+      name: doc.name, category: doc.type, state: doc.state, currentVersion: Number(doc.version.replace(/\D/g, '')) || 1, ownerName: doc.owner, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0
+    } satisfies SigcDocument;
+  });
+  writeJson(DOCUMENTS_KEY, seeded);
+  return seeded;
+}
+
+function readTimeline(): SigcTimelineEvent[] {
+  const existing = readJson<SigcTimelineEvent[]>(TIMELINE_KEY, []);
+  if (existing.length) return existing;
+  const firstCase = readCases()[0];
+  const seeded = demoTimeline.map((item, index) => ({
+    id: `demo-event-${index + 1}`, caseId: firstCase?.databaseId ?? '', eventType: 'demo.event', entityType: 'demo', title: item.title, description: item.description, actorName: item.actor, createdAt: new Date(Date.now() - index * 3600000).toISOString(), date: item.date
+  }));
+  writeJson(TIMELINE_KEY, seeded);
+  return seeded;
+}
+
+function pushTimeline(caseId: string, eventType: string, title: string, description: string): void {
+  const current = readTimeline();
+  current.unshift({ id: `demo-event-${crypto.randomUUID()}`, caseId, eventType, entityType: 'demo', title, description, actorName: 'Usuario Demo', createdAt: new Date().toISOString(), date: 'Ahora' });
+  writeJson(TIMELINE_KEY, current);
 }
 
 function enrichDemoCase(item: SigcCase, index: number): SigcCase {
@@ -323,6 +414,111 @@ export const demoSigcRepository: SigcRepository = {
       updated: 'Ahora',
       updatedAt: new Date().toISOString()
     } : current));
+    pushTimeline(item.databaseId ?? item.id, 'case.state_changed', 'Estado actualizado', `El caso cambió a ${target.name}.`);
+  },
+
+  async listSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcSubtask[]> {
+    let rows = readSubtasks();
+    if (filters.caseId) {
+      const item = await this.getCaseByIdentifier(filters.caseId);
+      const caseId = item?.databaseId ?? filters.caseId;
+      rows = rows.filter((task) => task.caseId === caseId);
+    }
+    if (filters.query?.trim()) rows = rows.filter((task) => task.title.toLowerCase().includes(filters.query!.trim().toLowerCase()));
+    if (filters.state) rows = rows.filter((task) => task.state === filters.state);
+    if (filters.responsibleUserId) rows = rows.filter((task) => task.responsibleUserId === filters.responsibleUserId);
+    return rows;
+  },
+
+  async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const owner = members.find((member) => member.userId === input.responsibleUserId);
+    const priority = catalogs.priorities.find((entry) => entry.id === input.priorityId);
+    const subtaskId = `demo-subtask-${crypto.randomUUID()}`;
+    const task: SigcSubtask = {
+      id: subtaskId, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, title: input.title, description: input.description,
+      responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable', priorityId: priority?.id, priority: (priority?.name ?? 'Media') as SigcCase['priority'],
+      dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha', state: 'pending', stateLabel: 'Pendiente', progress: 0, comments: 0, attachments: input.files?.length ?? 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    writeJson(SUBTASKS_KEY, [task, ...readSubtasks()]);
+    pushTimeline(task.caseId, 'subtask.created', 'Subtarea creada', task.title);
+    return { subtaskId };
+  },
+
+  async updateSubtask(input: UpdateSubtaskInput): Promise<void> {
+    const rows = readSubtasks();
+    const owner = members.find((member) => member.userId === input.responsibleUserId);
+    const priority = catalogs.priorities.find((entry) => entry.id === input.priorityId);
+    writeJson(SUBTASKS_KEY, rows.map((task) => task.id === input.subtaskId ? { ...task, title: input.title, description: input.description, responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable', priorityId: priority?.id, priority: (priority?.name ?? 'Media') as SigcCase['priority'], dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha', state: input.state, stateLabel: { pending: 'Pendiente', in_progress: 'En progreso', completed: 'Completada', cancelled: 'Cancelada' }[input.state], progress: input.state === 'completed' ? 100 : input.progress, attachments: task.attachments + (input.files?.length ?? 0), updatedAt: new Date().toISOString() } : task));
+    const task = rows.find((entry) => entry.id === input.subtaskId);
+    if (task) pushTimeline(task.caseId, 'subtask.updated', 'Subtarea actualizada', input.title);
+  },
+
+  async deleteSubtask(subtaskId: string): Promise<void> {
+    const rows = readSubtasks();
+    const task = rows.find((entry) => entry.id === subtaskId);
+    writeJson(SUBTASKS_KEY, rows.filter((entry) => entry.id !== subtaskId));
+    if (task) pushTimeline(task.caseId, 'subtask.deleted', 'Subtarea eliminada lógicamente', task.title);
+  },
+
+  async listCaseComments(caseId: string): Promise<SigcComment[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readComments().filter((comment) => comment.caseId === resolved);
+  },
+
+  async addComment(input: AddCommentInput): Promise<CreatedCommentResult> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const commentId = `demo-comment-${crypto.randomUUID()}`;
+    const comment: SigcComment = { id: commentId, caseId: item.databaseId ?? item.id, subtaskId: input.subtaskId, userId: 'demo-user-1', userName: 'Laura Méndez', content: input.content, createdAt: new Date().toISOString(), createdLabel: 'Ahora', attachmentCount: input.files?.length ?? 0 };
+    writeJson(COMMENTS_KEY, [comment, ...readComments()]);
+    pushTimeline(comment.caseId, 'comment.created', 'Comentario agregado', input.content.slice(0, 180));
+    return { commentId };
+  },
+
+  async listDocuments(caseId?: string): Promise<SigcDocument[]> {
+    let rows = readDocuments();
+    if (caseId) {
+      const item = await this.getCaseByIdentifier(caseId);
+      const resolved = item?.databaseId ?? caseId;
+      rows = rows.filter((document) => document.caseId === resolved);
+    }
+    return rows;
+  },
+
+  async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size };
+    writeJson(DOCUMENTS_KEY, [document, ...readDocuments()]);
+    pushTimeline(document.caseId, 'document.created', 'Documento cargado', document.name);
+    return document;
+  },
+
+  async addDocumentVersion(input: AddDocumentVersionInput): Promise<void> {
+    const rows = readDocuments();
+    const document = rows.find((entry) => entry.id === input.documentId);
+    writeJson(DOCUMENTS_KEY, rows.map((entry) => entry.id === input.documentId ? { ...entry, currentVersion: entry.currentVersion + 1, currentFilename: input.file.name, currentMimeType: input.file.type, currentSizeBytes: input.file.size, updatedAt: new Date().toISOString(), date: 'Ahora' } : entry));
+    if (document) pushTimeline(document.caseId, 'document.version_created', 'Nueva versión documental', `${input.file.name} · v${input.currentVersion + 1}`);
+  },
+
+  async deleteDocument(documentId: string): Promise<void> {
+    const rows = readDocuments();
+    const document = rows.find((entry) => entry.id === documentId);
+    writeJson(DOCUMENTS_KEY, rows.filter((entry) => entry.id !== documentId));
+    if (document) pushTimeline(document.caseId, 'document.deleted', 'Documento eliminado lógicamente', document.name);
+  },
+
+  async getDocumentSignedUrl(): Promise<string> {
+    throw new Error('La vista de archivos requiere Supabase Storage.');
+  },
+
+  async listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]> {
+    const item = await this.getCaseByIdentifier(caseId);
+    const resolved = item?.databaseId ?? caseId;
+    return readTimeline().filter((event) => event.caseId === resolved || event.caseId === '');
   }
 };
 

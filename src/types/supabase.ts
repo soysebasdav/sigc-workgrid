@@ -259,6 +259,69 @@ export interface Database {
         changed_at: string;
       }>;
 
+
+      case_subtasks: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        title: string;
+        description: string;
+        responsible_user_id: string | null;
+        priority_id: string | null;
+        due_at: string | null;
+        state: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+        progress: number;
+        created_by: string | null;
+        updated_by: string | null;
+        completed_at: string | null;
+        created_at: string;
+        updated_at: string;
+        deleted_at: string | null;
+      }>;
+
+      case_comments: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        subtask_id: string | null;
+        user_id: string;
+        content: string;
+        created_at: string;
+      }>;
+
+      case_documents: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        subtask_id: string | null;
+        comment_id: string | null;
+        name: string;
+        category: string;
+        state: string;
+        current_version: number;
+        created_by: string | null;
+        deleted_by: string | null;
+        created_at: string;
+        updated_at: string;
+        deleted_at: string | null;
+      }>;
+
+      document_versions: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        document_id: string;
+        version_number: number;
+        original_filename: string;
+        storage_path: string;
+        mime_type: string | null;
+        size_bytes: number;
+        checksum: string | null;
+        change_notes: string | null;
+        uploaded_by: string | null;
+        created_at: string;
+      }>;
+
       audit_events: TableDef<{
         id: number;
         organization_id: string;
@@ -338,6 +401,81 @@ export interface Database {
         };
         Returns: Array<{ assignment_id: string; is_primary: boolean }>;
       };
+
+      create_case_subtask: {
+        Args: {
+          p_case_id: string;
+          p_title: string;
+          p_description?: string;
+          p_responsible_user_id?: string | null;
+          p_due_at?: string | null;
+          p_priority_id?: string | null;
+        };
+        Returns: Array<{ subtask_id: string }>;
+      };
+      update_case_subtask: {
+        Args: {
+          p_subtask_id: string;
+          p_title: string;
+          p_description: string;
+          p_responsible_user_id: string | null;
+          p_due_at: string | null;
+          p_priority_id: string | null;
+          p_state: string;
+          p_progress: number;
+        };
+        Returns: Array<{ subtask_id: string }>;
+      };
+      soft_delete_case_subtask: {
+        Args: { p_subtask_id: string };
+        Returns: undefined;
+      };
+      add_case_comment: {
+        Args: { p_case_id: string; p_content: string; p_subtask_id?: string | null };
+        Returns: Array<{ comment_id: string }>;
+      };
+      register_case_document: {
+        Args: {
+          p_document_id: string;
+          p_case_id: string;
+          p_name: string;
+          p_category: string;
+          p_state: string;
+          p_original_filename: string;
+          p_storage_path: string;
+          p_mime_type: string;
+          p_size_bytes: number;
+          p_change_notes?: string | null;
+          p_subtask_id?: string | null;
+          p_comment_id?: string | null;
+        };
+        Returns: Array<{ document_id: string; version_number: number }>;
+      };
+      add_case_document_version: {
+        Args: {
+          p_document_id: string;
+          p_expected_current_version: number;
+          p_original_filename: string;
+          p_storage_path: string;
+          p_mime_type: string;
+          p_size_bytes: number;
+          p_change_notes?: string | null;
+        };
+        Returns: Array<{ document_id: string; version_number: number }>;
+      };
+      soft_delete_case_document: {
+        Args: { p_document_id: string };
+        Returns: undefined;
+      };
+      can_read_case: {
+        Args: { p_case_id: string };
+        Returns: boolean;
+      };
+      can_work_case: {
+        Args: { p_case_id: string; p_permission_code: string };
+        Returns: boolean;
+      };
+
       calculate_sla_due_at: {
         Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };
         Returns: string;

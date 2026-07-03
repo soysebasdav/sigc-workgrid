@@ -9,6 +9,8 @@ import {
   Check,
   CheckCircle2,
   Download,
+  Edit3,
+  Eye,
   File,
   FileSpreadsheet,
   FileText,
@@ -26,16 +28,19 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Upload,
+  Trash2,
   UserCog,
   UserPlus,
   X,
   Zap
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
-import { dashboardKpis, demoDocuments as documents, demoSubtasks as subtasks, demoTimeline as timeline } from './demoData';
-import type { SigcCase, SigcCaseFilters } from './domain/types';
+import { dashboardKpis } from './demoData';
+import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
-import { useCaseAssignments, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcMembers } from './hooks/useSigcData';
+import { CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal } from './components/Phase3Forms';
+import { useCaseAssignments, useCaseComments, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks } from './hooks/useSigcData';
+import { sigcService } from './services/sigcService';
 import {
   adminModules,
   areaDistribution,
@@ -47,8 +52,6 @@ import {
   stateTones
 } from './ui';
 
-type ModalKind = 'assign' | 'state' | 'sla' | 'comment' | 'document' | 'task' | null;
-
 type ToastState = {
   visible: boolean;
   text: string;
@@ -57,7 +60,6 @@ type ToastState = {
 export function SigcShell() {
   const { currentUser, logout, resetDemoData, isLoading, dataMode } = useApp();
   const [drawerCase, setDrawerCase] = useState<SigcCase | null>(null);
-  const [modalKind, setModalKind] = useState<ModalKind>(null);
   const [toast, setToast] = useState<ToastState>({ visible: false, text: 'Acción registrada correctamente.' });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [topSearch, setTopSearch] = useState('');
@@ -86,19 +88,17 @@ export function SigcShell() {
 
   function closeAll() {
     setDrawerCase(null);
-    setModalKind(null);
     setMobileOpen(false);
   }
 
   const context = {
     openDrawer: (id: string) => setDrawerCase(sigcCases.find((item) => item.id === id || item.radicado === id) ?? sigcCases[0] ?? null),
-    openModal: setModalKind,
     showToast
   };
 
   return (
     <div className="sigc-app">
-      <div className={`sigc-overlay ${drawerCase || modalKind || mobileOpen ? 'open' : ''}`} onClick={closeAll} />
+      <div className={`sigc-overlay ${drawerCase || mobileOpen ? 'open' : ''}`} onClick={closeAll} />
       <aside className={`sigc-sidebar ${mobileOpen ? 'open' : ''}`}>
         <SidebarContent closeMobile={() => setMobileOpen(false)} />
       </aside>
@@ -144,7 +144,6 @@ export function SigcShell() {
       </main>
 
       {drawerCase ? <CaseDrawer item={drawerCase} onClose={closeAll} /> : null}
-      {modalKind ? <ActionModal kind={modalKind} onClose={closeAll} onSave={() => { closeAll(); showToast('La acción quedó registrada en trazabilidad y auditoría.'); }} /> : null}
       <Toast visible={toast.visible} text={toast.text} />
     </div>
   );
@@ -220,6 +219,7 @@ export function SigcLoginPage() {
 export function DashboardPage() {
   const { openDrawer, showToast } = useSigcActions();
   const { data: cases } = useSigcCases();
+  const { data: dashboardSubtasks } = useSigcSubtasks();
   const criticalCases = cases.filter((item) => item.priority === 'Crítica' || item.sem === 'red');
 
   return (
@@ -296,11 +296,11 @@ export function DashboardPage() {
         </CardBlock>
         <CardBlock icon={<CalendarCheck />} title="Mi trabajo de hoy" description="Subtareas y casos asignados.">
           <div className="check-list">
-            {subtasks.slice(0, 4).map((task) => (
+            {dashboardSubtasks.slice(0, 4).map((task) => (
               <label key={task.title}>
                 <input type="checkbox" />
-                <span><strong>{task.title}</strong><small>{task.owner} · {task.due}</small></span>
-                <Badge tone={stateTones[task.state] ?? 'tone-slate'}>{task.state}</Badge>
+                <span><strong>{task.title}</strong><small>{task.responsibleName} · {task.due}</small></span>
+                <Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge>
               </label>
             ))}
           </div>
@@ -391,8 +391,25 @@ export function CaseDetailPage() {
   const { caseId } = useParams();
   const { showToast } = useSigcActions();
   const { data: item, isLoading, source, warning, error } = useSigcCase(caseId);
-  const { data: assignments } = useCaseAssignments(item?.databaseId ?? caseId);
-  const [detailModal, setDetailModal] = useState<'assign' | 'state' | null>(null);
+  const resolvedCaseId = item?.databaseId ?? caseId;
+  const { data: assignments } = useCaseAssignments(resolvedCaseId);
+  const { data: caseSubtasks } = useSigcSubtasks({ caseId: resolvedCaseId });
+  const { data: comments } = useCaseComments(resolvedCaseId);
+  const { data: caseDocuments } = useSigcDocuments(resolvedCaseId);
+  const { data: timelineEvents } = useCaseTimeline(resolvedCaseId);
+  const { data: allCases } = useSigcCases();
+  const [detailModal, setDetailModal] = useState<'assign' | 'state' | 'comment' | 'subtask' | 'document' | null>(null);
+  const [traceTab, setTraceTab] = useState<'timeline' | 'comments'>('timeline');
+  const [versionDocument, setVersionDocument] = useState<SigcDocument | null>(null);
+
+  async function openDocument(document: SigcDocument) {
+    try {
+      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible abrir el documento.');
+    }
+  }
 
   if (isLoading) {
     return <Page><section className="card placeholder-card"><h2>Cargando expediente...</h2><p>Consultando {source === 'supabase' ? 'Supabase' : 'el repositorio SIGC'}.</p></section></Page>;
@@ -406,12 +423,12 @@ export function CaseDetailPage() {
     <Page>
       <PageHead
         title="Detalle del caso"
-        description="Expediente dinámico conectado al caso real, con estado, SLA y asignaciones múltiples."
+        description="Expediente colaborativo con subtareas, comentarios inmutables, documentos versionados y trazabilidad auditable."
         actions={(
           <>
             <button className="btn btn-white" onClick={() => setDetailModal('assign')}><UserPlus size={17} /> Asignar</button>
             <button className="btn btn-white" onClick={() => setDetailModal('state')}><RefreshCw size={17} /> Cambiar estado</button>
-            <button className="btn btn-primary" onClick={() => showToast('Los comentarios persistentes se habilitan en la Fase 3.')}><MessageSquarePlus size={17} /> Agregar comentario</button>
+            <button className="btn btn-primary" onClick={() => setDetailModal('comment')}><MessageSquarePlus size={17} /> Agregar comentario</button>
           </>
         )}
       />
@@ -423,26 +440,37 @@ export function CaseDetailPage() {
           <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo: {item.requesterEmail}</> : null}</p>
         </div>
         <div className="progress-panel">
-          <div className="bar-caption"><strong>Avance general</strong><span>{item.progress}%</span></div>
+          <div className="bar-caption"><strong>Avance general por subtareas</strong><span>{item.progress}%</span></div>
           <Progress value={item.progress} large />
           <div className="button-grid two">
-            <button className="btn btn-soft" onClick={() => showToast('La gestión documental y versiones se habilita en la Fase 3.')}><Upload size={17} /> Cargar doc.</button>
+            <button className="btn btn-soft" onClick={() => setDetailModal('document')}><Upload size={17} /> Cargar doc.</button>
             <button className="btn btn-white" onClick={() => showToast('Las modificaciones excepcionales de SLA se habilitan en la Fase 4.')}><TimerResetIcon /> Modificar SLA</button>
           </div>
         </div>
       </section>
       <section className="detail-grid">
         <div className="detail-main">
-          <CardBlock title="Trazabilidad" description="Los cambios de estado ya se registran en base de datos; la línea de tiempo completa se conecta en Fase 3." icon={<RefreshCw />}>
-            <div className="tabs"><button className="active">Vista previa</button><button disabled>Comentarios</button><button disabled>Cambios</button></div>
-            <div className="timeline">
-              {timeline.slice(0, 3).map(({ title, description, actor, date, icon: Icon }) => (
-                <article className="timeline-item" key={title + date}>
-                  <span className="timeline-dot" />
-                  <div><div className="timeline-title"><strong>{title}</strong><div className="kpi-icon small"><Icon size={15} /></div></div><p>{description}</p><small>{actor} · {date}</small></div>
-                </article>
-              ))}
-            </div>
+          <CardBlock title="Trazabilidad" description="Línea de tiempo permanente generada por las acciones reales del expediente." icon={<RefreshCw />}>
+            <div className="tabs"><button className={traceTab === 'timeline' ? 'active' : ''} onClick={() => setTraceTab('timeline')}>Actividad ({timelineEvents.length})</button><button className={traceTab === 'comments' ? 'active' : ''} onClick={() => setTraceTab('comments')}>Comentarios ({comments.length})</button></div>
+            {traceTab === 'timeline' ? (
+              <div className="timeline">
+                {timelineEvents.length ? timelineEvents.map((event) => (
+                  <article className="timeline-item" key={event.id}>
+                    <span className="timeline-dot" />
+                    <div><div className="timeline-title"><strong>{event.title}</strong><div className="kpi-icon small"><ActivityIcon eventType={event.eventType} /></div></div><p>{event.description}</p><small>{event.actorName} · {event.date}</small></div>
+                  </article>
+                )) : <div className="empty-inline">Aún no hay eventos registrados en la trazabilidad.</div>}
+              </div>
+            ) : (
+              <div className="comments-list">
+                {comments.length ? comments.map((comment) => (
+                  <article className="comment-card" key={comment.id}>
+                    <div className="avatar small-avatar">{initials(comment.userName)}</div>
+                    <div><header><strong>{comment.userName}</strong><span>{comment.createdLabel}</span></header><p>{comment.content}</p>{comment.attachmentCount ? <small><Paperclip size={13} /> {comment.attachmentCount} adjunto{comment.attachmentCount === 1 ? '' : 's'}</small> : null}</div>
+                  </article>
+                )) : <div className="empty-inline">Todavía no hay comentarios en este caso.</div>}
+              </div>
+            )}
           </CardBlock>
           <CardBlock title="Asignaciones del caso" description="Un mismo caso puede pertenecer simultáneamente a varias áreas y responsables." icon={<UserCog />}>
             {assignments.length ? assignments.map((assignment) => (
@@ -453,8 +481,14 @@ export function CaseDetailPage() {
             )) : <div className="empty-inline">Este caso aún no tiene asignaciones.</div>}
           </CardBlock>
           <section className="grid-2">
-            <CardBlock title="Subtareas del caso" description="Se conectarán al expediente en la Fase 3." icon={<CalendarCheck />}>{subtasks.slice(0, 3).map((task) => <SubtaskMini task={task} key={task.title} />)}</CardBlock>
-            <CardBlock title="Documentos adjuntos" description="Versionamiento y Storage se conectarán en la Fase 3." icon={<Paperclip />}>{documents.slice(0, 3).map((doc) => <div className="doc-mini" key={doc.name}><div><strong>{doc.name}</strong><small>{doc.type} · {doc.version} · {doc.owner}</small></div><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></div>)}</CardBlock>
+            <CardBlock title="Subtareas del caso" description={`${caseSubtasks.length} actividad${caseSubtasks.length === 1 ? '' : 'es'} vinculadas al expediente.`} icon={<CalendarCheck />}>
+              <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('subtask')}><Plus size={15} /> Nueva subtarea</button></div>
+              {caseSubtasks.length ? caseSubtasks.slice(0, 6).map((task) => <SubtaskMini task={task} key={task.id} />) : <div className="empty-inline">No hay subtareas creadas.</div>}
+            </CardBlock>
+            <CardBlock title="Documentos adjuntos" description={`${caseDocuments.length} documento${caseDocuments.length === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
+              <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div>
+              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button></div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
+            </CardBlock>
           </section>
         </div>
         <aside className="detail-side">
@@ -468,8 +502,12 @@ export function CaseDetailPage() {
           <CardBlock title="Descripción" icon={<MessageCircle />}><p className="case-description">{item.description || 'Sin descripción registrada.'}</p></CardBlock>
         </aside>
       </section>
-      {detailModal === 'assign' ? <AssignCaseModal caseId={item.databaseId ?? item.id} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
-      {detailModal === 'state' ? <ChangeCaseStateModal caseId={item.databaseId ?? item.id} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
+      {detailModal === 'assign' ? <AssignCaseModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
+      {detailModal === 'state' ? <ChangeCaseStateModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
+      {detailModal === 'comment' ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'subtask' ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'document' ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {versionDocument ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}
     </Page>
   );
 }
@@ -538,22 +576,92 @@ export function BoardPage() {
 }
 
 export function SubtasksPage() {
-  const { openModal } = useSigcActions();
+  const { showToast } = useSigcActions();
+  const { data: cases } = useSigcCases();
+  const { data: members } = useSigcMembers();
+  const [filters, setFilters] = useState<{ query: string; state: '' | SigcSubtask['state']; responsibleUserId: string }>({ query: '', state: '', responsibleUserId: '' });
+  const { data: subtasks, isLoading, warning, error } = useSigcSubtasks(filters);
+  const [editing, setEditing] = useState<SigcSubtask | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  async function remove(task: SigcSubtask) {
+    if (!window.confirm(`¿Eliminar lógicamente la subtarea "${task.title}"? Su historial permanecerá en auditoría.`)) return;
+    try {
+      await sigcService.deleteSubtask(task.id);
+      showToast('Subtarea eliminada lógicamente.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible eliminar la subtarea.');
+    }
+  }
+
   return (
     <Page>
-      <PageHead title="Módulo de subtareas" description="Control granular de actividades por caso, responsable, fecha límite, estado y avance." actions={<button className="btn btn-primary" onClick={() => openModal('task')}><Plus size={17} /> Nueva subtarea</button>} />
-      <section className="card table-card"><SubtasksTable /></section>
+      <PageHead title="Módulo de subtareas" description="Control real de actividades por caso, responsable, fecha límite, estado, adjuntos y avance." actions={<button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Nueva subtarea</button>} />
+      <section className="card filter-card">
+        <div className="filter-grid phase3-filter-grid">
+          <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Buscar subtarea" value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} /></div>
+          <select className="field" value={filters.state} onChange={(event) => setFilters((current) => ({ ...current, state: event.target.value as typeof current.state }))}><option value="">Todos los estados</option><option value="pending">Pendiente</option><option value="in_progress">En progreso</option><option value="completed">Completada</option><option value="cancelled">Cancelada</option></select>
+          <select className="field" value={filters.responsibleUserId} onChange={(event) => setFilters((current) => ({ ...current, responsibleUserId: event.target.value }))}><option value="">Todos los responsables</option>{members.map((member) => <option value={member.userId} key={member.userId}>{member.name}</option>)}</select>
+          <button className="btn btn-white" onClick={() => setFilters({ query: '', state: '', responsibleUserId: '' })}>Limpiar</button>
+        </div>
+      </section>
+      {warning ? <div className="alert danger">{warning}</div> : null}
+      {error ? <div className="alert danger">{error}</div> : null}
+      <div className="case-list-meta"><span>{isLoading ? 'Cargando actividades...' : 'Subtareas activas y trazables'}</span><strong>{subtasks.length} subtarea{subtasks.length === 1 ? '' : 's'}</strong></div>
+      <section className="card table-card"><SubtasksTable rows={subtasks} onEdit={setEditing} onDelete={(task) => void remove(task)} /></section>
+      {creating ? <SubtaskFormModal cases={cases} onClose={() => setCreating(false)} onSaved={(message) => { setCreating(false); showToast(message); }} /> : null}
+      {editing ? <SubtaskFormModal cases={cases} initial={editing} onClose={() => setEditing(null)} onSaved={(message) => { setEditing(null); showToast(message); }} /> : null}
     </Page>
   );
 }
 
 export function DocumentsPage() {
-  const { openModal } = useSigcActions();
+  const { showToast } = useSigcActions();
+  const { data: cases } = useSigcCases();
+  const { data: documents, isLoading, warning, error } = useSigcDocuments();
+  const [query, setQuery] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [versioning, setVersioning] = useState<SigcDocument | null>(null);
+
+  const filtered = documents.filter((document) => {
+    const value = query.trim().toLowerCase();
+    if (!value) return true;
+    return [document.name, document.category, document.caseRadicado, document.caseSubject, document.ownerName].some((item) => item.toLowerCase().includes(value));
+  });
+  const versions = documents.reduce((sum, document) => sum + document.currentVersion, 0);
+  const inReview = documents.filter((document) => document.state === 'En revisión').length;
+  const approved = documents.filter((document) => document.state === 'Aprobado').length;
+
+  async function openDocument(document: SigcDocument) {
+    try {
+      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible abrir el documento.');
+    }
+  }
+
+  async function removeDocument(document: SigcDocument) {
+    if (!window.confirm(`¿Eliminar lógicamente "${document.name}"? Sus ${document.currentVersion} versión(es) permanecerán intactas en auditoría y almacenamiento.`)) return;
+    try {
+      await sigcService.deleteDocument(document.id);
+      showToast('Documento eliminado lógicamente.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible eliminar el documento.');
+    }
+  }
+
   return (
     <Page>
-      <PageHead title="Gestión documental" description="Repositorio por caso con control de versiones: ningún archivo se sobrescribe, cada cambio crea una nueva versión." actions={<><button className="btn btn-white"><Filter size={17} /> Filtrar</button><button className="btn btn-primary" onClick={() => openModal('document')}><Upload size={17} /> Cargar documento</button></>} />
-      <section className="document-kpis">{[['Documentos', '186'], ['Versiones creadas', '412'], ['En revisión', '24'], ['Aprobados', '129']].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
-      <section className="card table-card"><DocumentsTable /></section>
+      <PageHead title="Gestión documental" description="Repositorio real por caso con versiones inmutables: cada nueva carga crea una versión y nunca sobrescribe la anterior." actions={<button className="btn btn-primary" onClick={() => setUploading(true)}><Upload size={17} /> Cargar documento</button>} />
+      <section className="document-kpis">{[['Documentos', String(documents.length)], ['Versiones creadas', String(versions)], ['En revisión', String(inReview)], ['Aprobados', String(approved)]].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
+      <section className="card filter-card"><div className="filter-search-field document-search"><Search size={17} /><input className="field" placeholder="Buscar por documento, caso, categoría o responsable" value={query} onChange={(event) => setQuery(event.target.value)} /></div></section>
+      {warning ? <div className="alert danger">{warning}</div> : null}
+      {error ? <div className="alert danger">{error}</div> : null}
+      <div className="case-list-meta"><span>{isLoading ? 'Consultando Storage y metadatos...' : 'Versionamiento y eliminación lógica activos'}</span><strong>{filtered.length} documento{filtered.length === 1 ? '' : 's'}</strong></div>
+      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onVersion={setVersioning} onDelete={(document) => void removeDocument(document)} /></section>
+      {uploading ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
+      {versioning ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
     </Page>
   );
 }
@@ -700,30 +808,39 @@ function CasesTable({ rows, compact = false }: { rows: SigcCase[]; compact?: boo
   );
 }
 
-function SubtasksTable() {
+function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit: (task: SigcSubtask) => void; onDelete: (task: SigcSubtask) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table subtasks-table">
-        <thead><tr>{['Subtarea', 'Caso', 'Responsable', 'Fecha límite', 'Estado', 'Prioridad', 'Comentarios', 'Adjuntos', 'Avance'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{subtasks.map((task) => <tr key={task.title}><td><strong>{task.title}</strong></td><td>{task.caseId}</td><td>{task.owner}</td><td>{task.due}</td><td><Badge tone={stateTones[task.state] ?? 'tone-slate'}>{task.state}</Badge></td><td><Badge tone={priorityTones[task.priority]}>{task.priority}</Badge></td><td>{task.comments}</td><td>{task.attachments}</td><td><div className="progress-cell"><Progress value={task.progress} /><b>{task.progress}%</b></div></td></tr>)}</tbody>
+        <thead><tr>{['Subtarea', 'Caso', 'Responsable', 'Fecha límite', 'Estado', 'Prioridad', 'Comentarios', 'Adjuntos', 'Avance', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
+        <tbody>{rows.length ? rows.map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small>{task.description || 'Sin descripción'}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(task.caseRadicado)}`}>{task.caseRadicado}</Link><small>{task.caseSubject}</small></td><td>{task.responsibleName}</td><td>{task.due}</td><td><Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge></td><td><Badge tone={priorityTones[task.priority]}>{task.priority}</Badge></td><td>{task.comments}</td><td>{task.attachments}</td><td><div className="progress-cell"><Progress value={task.progress} /><b>{task.progress}%</b></div></td><td><div className="table-actions"><button className="btn btn-white icon-only small" title="Editar" onClick={() => onEdit(task)}><Edit3 size={14} /></button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(task)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={10}><div className="empty-inline">No hay subtareas para los filtros seleccionados.</div></td></tr>}</tbody>
       </table>
     </div>
   );
 }
 
-function DocumentsTable() {
+function DocumentsTable({ rows, onOpen, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onVersion: (document: SigcDocument) => void; onDelete: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
-        <thead><tr>{['Archivo', 'Caso', 'Tipo', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{documents.map((doc) => <tr key={doc.name}><td><strong className="file-name"><File size={16} />{doc.name}</strong></td><td>{doc.caseId}</td><td>{doc.type}</td><td><Badge tone="tone-slate">{doc.version}</Badge></td><td>{doc.owner}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><button className="btn btn-white small">Ver</button><button className="btn btn-soft small">Nueva versión</button></td></tr>)}</tbody>
+        <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );
 }
 
-function SubtaskMini({ task }: { task: { title: string; state: string; owner: string; due: string; progress: number } }) {
-  return <div className="subtask-mini"><div><strong>{task.title}</strong><Badge tone={stateTones[task.state] ?? 'tone-slate'}>{task.state}</Badge></div><small>{task.owner} · {task.due}</small><Progress value={task.progress} /></div>;
+function SubtaskMini({ task }: { task: SigcSubtask }) {
+  return <div className="subtask-mini"><div><strong>{task.title}</strong><Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge></div><small>{task.responsibleName} · {task.due} · {task.comments} comentarios · {task.attachments} adjuntos</small><Progress value={task.progress} /></div>;
+}
+
+function ActivityIcon({ eventType }: { eventType: string }) {
+  if (eventType.startsWith('comment.')) return <MessageCircle size={15} />;
+  if (eventType.startsWith('document.')) return <File size={15} />;
+  if (eventType.startsWith('subtask.')) return <CalendarCheck size={15} />;
+  if (eventType.startsWith('assignment.')) return <UserPlus size={15} />;
+  if (eventType.includes('state')) return <RefreshCw size={15} />;
+  return <CheckCircle2 size={15} />;
 }
 
 function CaseCard({ item }: { item: SigcCase }) {
@@ -750,26 +867,6 @@ function CaseDrawer({ item, onClose }: { item: SigcCase; onClose: () => void }) 
       </div>
     </aside>
   );
-}
-
-function ActionModal({ kind, onClose, onSave }: { kind: Exclude<ModalKind, null>; onClose: () => void; onSave: () => void }) {
-  const content = getModalContent(kind);
-  return (
-    <section className="modal open">
-      <header><h3>{content.title}</h3><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
-      <div className="modal-body">{content.body}<div className="modal-actions"><button className="btn btn-white" onClick={onClose}>Cancelar</button><button className="btn btn-primary" onClick={onSave}>Guardar</button></div></div>
-    </section>
-  );
-}
-
-function getModalContent(kind: Exclude<ModalKind, null>): { title: string; body: ReactNode } {
-  const selectUsers = <select className="field"><option>Laura Méndez</option><option>Felipe Vargas</option><option>Mónica Díaz</option></select>;
-  if (kind === 'assign') return { title: 'Asignar responsable', body: <><>{selectUsers}</><textarea className="field textarea" placeholder="Observaciones de asignación" /></> };
-  if (kind === 'state') return { title: 'Cambiar estado', body: <><select className="field"><option>En Gestión</option><option>En Revisión / Aprobación</option><option>Aprobado</option><option>Cerrado</option></select><textarea className="field textarea" placeholder="Justificación del cambio" /></> };
-  if (kind === 'sla') return { title: 'Modificar SLA excepcionalmente', body: <><input className="field" type="datetime-local" /><textarea className="field textarea" placeholder="Justificación obligatoria para auditoría" /></> };
-  if (kind === 'comment') return { title: 'Agregar comentario interno', body: <><textarea className="field textarea tall" placeholder="Comentario interno no eliminable" /><div className="upload-zone small">Adjuntar archivos opcionalmente</div></> };
-  if (kind === 'document') return { title: 'Cargar documento / nueva versión', body: <><input className="field" type="file" /><select className="field"><option>Documento nuevo</option><option>Nueva versión de documento existente</option></select><textarea className="field textarea" placeholder="Descripción de la versión" /></> };
-  return { title: 'Crear subtarea', body: <><input className="field" placeholder="Nombre de la subtarea" />{selectUsers}<input className="field" type="date" /><select className="field"><option>Prioridad</option><option>Crítica</option><option>Alta</option><option>Media</option><option>Baja</option></select></> };
 }
 
 function Toast({ visible, text }: { visible: boolean; text: string }) {
@@ -807,7 +904,6 @@ function initials(name = '') {
 // Type augmentation helper for outlet context without leaking implementation details to every page.
 type SigcActions = {
   openDrawer: (id: string) => void;
-  openModal: (kind: Exclude<ModalKind, null>) => void;
   showToast: (text: string) => void;
 };
 

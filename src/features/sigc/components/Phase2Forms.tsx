@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { Check, LoaderCircle, Plus, Trash2, X } from 'lucide-react';
+import { Check, LoaderCircle, Paperclip, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { AllowedCaseState, ManualCaseAssignmentInput } from '../domain/types';
 import { useAllowedCaseStates, usePublicCaseTypes, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
@@ -70,7 +70,7 @@ export function PublicCaseForm() {
         <input className="field wide" placeholder="Asunto *" value={values.subject} onChange={(event) => setField('subject', event.target.value)} required minLength={4} maxLength={300} />
         <textarea className="field textarea wide" placeholder="Descripción detallada *" value={values.description} onChange={(event) => setField('description', event.target.value)} required minLength={10} maxLength={10000} />
         <input className="sigc-honeypot" tabIndex={-1} autoComplete="off" aria-hidden="true" value={values.website} onChange={(event) => setField('website', event.target.value)} />
-        <div className="upload-zone wide phase-note"><strong>Adjuntos</strong><span>La carga y versionamiento de archivos se habilita en la Fase 3.</span></div>
+        <div className="upload-zone wide phase-note"><strong>Adjuntos del expediente</strong><span>El equipo interno puede cargar y versionar archivos después de la radicación.</span></div>
       </div>
       {submitError ? <div className="alert danger">{submitError}</div> : null}
       <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading || !caseTypes.length}>
@@ -98,6 +98,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
   const [isSubmitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [createdDueAt, setCreatedDueAt] = useState<string | null>(null);
+  const [initialFiles, setInitialFiles] = useState<File[]>([]);
 
   const selectedType = catalogs?.caseTypes.find((item) => item.id === values.caseTypeId);
   const validAssignments = useMemo(() => assignments.filter((item) => item.areaId), [assignments]);
@@ -124,6 +125,9 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
     setSubmitting(true);
     try {
       const result = await sigcService.createManualCase({ ...values, assignments: validAssignments });
+      for (const file of initialFiles) {
+        await sigcService.uploadDocument({ caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual' });
+      }
       setCreatedDueAt(result.dueAt);
       onCreated(result.radicado);
     } catch (error) {
@@ -198,8 +202,9 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
           </div>
         </section>
         <section className="card card-block">
-          <div className="card-block-head"><div><h3>Adjuntos</h3><p>Gestión documental en Fase 3.</p></div></div>
-          <div className="upload-zone small phase-note">La carga de documentos se habilita en la siguiente fase.</div>
+          <div className="card-block-head"><div><h3>Adjuntos iniciales</h3><p>Se guardarán como documentos versionados del nuevo caso.</p></div></div>
+          <label className="upload-zone small clickable-upload"><Upload size={18} /><strong>Seleccionar archivos</strong><span>Máximo 100 MB por archivo.</span><input type="file" multiple onChange={(event) => setInitialFiles(Array.from(event.target.files ?? []))} /></label>
+          {initialFiles.length ? <div className="selected-files">{initialFiles.map((file) => <span key={`${file.name}-${file.size}`}><Paperclip size={14} /> {file.name}</span>)}</div> : null}
         </section>
       </aside>
     </form>

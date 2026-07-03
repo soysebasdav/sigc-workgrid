@@ -1,8 +1,13 @@
 import type {
+  AddCommentInput,
+  AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
   ChangeCaseStateInput,
+  CreateSubtaskInput,
   CreatedCaseResult,
+  CreatedCommentResult,
+  CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
   PublicCaseTypeOption,
@@ -11,7 +16,14 @@ import type {
   SigcCaseFilters,
   SigcCasePage,
   SigcCatalogs,
-  SigcMember
+  SigcComment,
+  SigcDocument,
+  SigcMember,
+  SigcSubtask,
+  SigcSubtaskFilters,
+  SigcTimelineEvent,
+  UpdateSubtaskInput,
+  UploadCaseDocumentInput
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -25,6 +37,22 @@ export interface SigcRepository {
   createManualCase(input: ManualCaseCreateInput): Promise<CreatedCaseResult>;
   assignCase(input: CaseAssignmentInput): Promise<void>;
   changeCaseState(input: ChangeCaseStateInput): Promise<void>;
+
+  listSubtasks(filters?: SigcSubtaskFilters): Promise<SigcSubtask[]>;
+  createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult>;
+  updateSubtask(input: UpdateSubtaskInput): Promise<void>;
+  deleteSubtask(subtaskId: string): Promise<void>;
+
+  listCaseComments(caseId: string): Promise<SigcComment[]>;
+  addComment(input: AddCommentInput): Promise<CreatedCommentResult>;
+
+  listDocuments(caseId?: string): Promise<SigcDocument[]>;
+  uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument>;
+  addDocumentVersion(input: AddDocumentVersionInput): Promise<void>;
+  deleteDocument(documentId: string): Promise<void>;
+  getDocumentSignedUrl(storagePath: string): Promise<string>;
+
+  listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]>;
 }
 
 export interface PublicSigcRepository {

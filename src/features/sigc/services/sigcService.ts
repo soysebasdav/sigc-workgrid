@@ -1,9 +1,14 @@
 import { dataMode } from '../../../lib/supabaseClient';
 import type {
+  AddCommentInput,
+  AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
   ChangeCaseStateInput,
+  CreateSubtaskInput,
   CreatedCaseResult,
+  CreatedCommentResult,
+  CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
   PublicCaseTypeOption,
@@ -12,7 +17,14 @@ import type {
   SigcCaseFilters,
   SigcCasePage,
   SigcCatalogs,
+  SigcComment,
+  SigcDocument,
   SigcMember,
+  SigcSubtask,
+  SigcSubtaskFilters,
+  SigcTimelineEvent,
+  UpdateSubtaskInput,
+  UploadCaseDocumentInput,
   SigcRepositoryResult
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
@@ -101,5 +113,94 @@ export const sigcService = {
   async changeCaseState(input: ChangeCaseStateInput): Promise<void> {
     await mutationRepository().changeCaseState(input);
     emitSigcDataChanged();
+  },
+
+  listSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcRepositoryResult<SigcSubtask[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listSubtasks(filters), () => demoSigcRepository.listSubtasks(filters));
+  },
+
+  async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
+    const repository = mutationRepository();
+    const result = await repository.createSubtask(input);
+    for (const file of input.files ?? []) {
+      await repository.uploadDocument({
+        caseId: input.caseId,
+        name: file.name,
+        category: 'Adjunto de subtarea',
+        file,
+        subtaskId: result.subtaskId
+      });
+    }
+    emitSigcDataChanged();
+    return result;
+  },
+
+  async updateSubtask(input: UpdateSubtaskInput): Promise<void> {
+    const repository = mutationRepository();
+    await repository.updateSubtask(input);
+    for (const file of input.files ?? []) {
+      await repository.uploadDocument({
+        caseId: input.caseId,
+        name: file.name,
+        category: 'Adjunto de subtarea',
+        file,
+        subtaskId: input.subtaskId
+      });
+    }
+    emitSigcDataChanged();
+  },
+
+  async deleteSubtask(subtaskId: string): Promise<void> {
+    await mutationRepository().deleteSubtask(subtaskId);
+    emitSigcDataChanged();
+  },
+
+  getCaseComments(caseId: string): Promise<SigcRepositoryResult<SigcComment[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseComments(caseId), () => demoSigcRepository.listCaseComments(caseId));
+  },
+
+  async addComment(input: AddCommentInput): Promise<CreatedCommentResult> {
+    const repository = mutationRepository();
+    const result = await repository.addComment(input);
+    for (const file of input.files ?? []) {
+      await repository.uploadDocument({
+        caseId: input.caseId,
+        name: file.name,
+        category: 'Adjunto de comentario',
+        file,
+        commentId: result.commentId,
+        subtaskId: input.subtaskId
+      });
+    }
+    emitSigcDataChanged();
+    return result;
+  },
+
+  getDocuments(caseId?: string): Promise<SigcRepositoryResult<SigcDocument[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listDocuments(caseId), () => demoSigcRepository.listDocuments(caseId));
+  },
+
+  async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
+    const document = await mutationRepository().uploadDocument(input);
+    emitSigcDataChanged();
+    return document;
+  },
+
+  async addDocumentVersion(input: AddDocumentVersionInput): Promise<void> {
+    await mutationRepository().addDocumentVersion(input);
+    emitSigcDataChanged();
+  },
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await mutationRepository().deleteDocument(documentId);
+    emitSigcDataChanged();
+  },
+
+  getDocumentSignedUrl(storagePath: string): Promise<string> {
+    return mutationRepository().getDocumentSignedUrl(storagePath);
+  },
+
+  getCaseTimeline(caseId: string): Promise<SigcRepositoryResult<SigcTimelineEvent[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseTimeline(caseId), () => demoSigcRepository.listCaseTimeline(caseId));
   }
 };

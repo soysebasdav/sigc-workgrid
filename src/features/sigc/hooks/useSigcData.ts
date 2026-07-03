@@ -7,8 +7,13 @@ import type {
   SigcCaseFilters,
   SigcCasePage,
   SigcCatalogs,
+  SigcComment,
   SigcDataSource,
-  SigcMember
+  SigcDocument,
+  SigcMember,
+  SigcSubtask,
+  SigcSubtaskFilters,
+  SigcTimelineEvent
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -105,4 +110,30 @@ export function useAllowedCaseStates(caseId: string | undefined): AsyncState<All
 
 export function usePublicCaseTypes(): AsyncState<PublicCaseTypeOption[]> {
   return useSigcQuery('public-case-types', [], () => sigcService.getPublicCaseTypes(), false);
+}
+
+
+export function useSigcSubtasks(filters: SigcSubtaskFilters = {}): AsyncState<SigcSubtask[]> {
+  const key = useMemo(() => `subtasks:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, [], () => sigcService.listSubtasks(filters));
+}
+
+export function useCaseComments(caseId: string | undefined): AsyncState<SigcComment[]> {
+  return useSigcQuery(
+    `comments:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseComments(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
+}
+
+export function useSigcDocuments(caseId?: string): AsyncState<SigcDocument[]> {
+  return useSigcQuery(`documents:${caseId ?? 'all'}`, [], () => sigcService.getDocuments(caseId));
+}
+
+export function useCaseTimeline(caseId: string | undefined): AsyncState<SigcTimelineEvent[]> {
+  return useSigcQuery(
+    `timeline:${caseId ?? 'missing'}`,
+    [],
+    () => caseId ? sigcService.getCaseTimeline(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+  );
 }
