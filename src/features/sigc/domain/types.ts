@@ -695,3 +695,262 @@ export interface SaveAutomationRuleInput {
   sortOrder: number;
   isActive: boolean;
 }
+
+// SIGC Fases 7 y 8 · analítica, reportes y operación SaaS
+export interface AnalyticsValue {
+  id?: string;
+  label: string;
+  value: number;
+}
+
+export interface DashboardSummary {
+  openCases: number;
+  closedCases: number;
+  overdueCases: number;
+  dueSoonCases: number;
+  createdToday: number;
+  criticalCases: number;
+  slaCompliancePct: number;
+  avgResolutionHours: number;
+}
+
+export interface DashboardMonthlyPoint {
+  month: string;
+  label: string;
+  created: number;
+  closed: number;
+}
+
+export interface DashboardCriticalCase {
+  id: string;
+  radicado: string;
+  subject: string;
+  priority: string;
+  owner: string;
+  dueAt?: string | null;
+  overdue: boolean;
+}
+
+export interface DashboardWorkItem {
+  id: string;
+  title: string;
+  caseId: string;
+  radicado: string;
+  dueAt?: string | null;
+  state: string;
+  progress: number;
+}
+
+export interface DashboardActivityItem {
+  id: number | string;
+  eventType: string;
+  entityType: string;
+  actor: string;
+  createdAt: string;
+  caseId?: string | null;
+  radicado?: string | null;
+}
+
+export interface SigcDashboardAnalytics {
+  organizationId: string;
+  generatedAt: string;
+  summary: DashboardSummary;
+  monthly: DashboardMonthlyPoint[];
+  byArea: AnalyticsValue[];
+  byOwner: AnalyticsValue[];
+  byType: AnalyticsValue[];
+  byPriority: AnalyticsValue[];
+  criticalCases: DashboardCriticalCase[];
+  myWork: DashboardWorkItem[];
+  recentActivity: DashboardActivityItem[];
+}
+
+export interface SigcReportFilters {
+  from: string;
+  to: string;
+  stateId?: string;
+  areaId?: string;
+  ownerId?: string;
+  caseTypeId?: string;
+  priorityId?: string;
+  overdueOnly?: boolean;
+}
+
+export interface SigcReportRow {
+  id: string;
+  radicado: string;
+  subject: string;
+  requesterName: string;
+  requesterCompany: string;
+  source: string;
+  riskLevel?: string;
+  openedAt: string;
+  dueAt?: string | null;
+  closedAt?: string | null;
+  progress: number;
+  updatedAt: string;
+  caseType: string;
+  state: string;
+  priority: string;
+  area: string;
+  owner: string;
+  overdue: boolean;
+  slaMet?: boolean | null;
+  resolutionHours?: number | null;
+}
+
+export interface SigcReportSummary {
+  totalCases: number;
+  openCases: number;
+  closedCases: number;
+  overdueCases: number;
+  slaCompliancePct: number;
+  avgResolutionHours: number;
+}
+
+export interface SigcReportResult {
+  organizationId: string;
+  generatedAt: string;
+  from: string;
+  to: string;
+  summary: SigcReportSummary;
+  byArea: AnalyticsValue[];
+  byOwner: AnalyticsValue[];
+  byType: AnalyticsValue[];
+  byState: AnalyticsValue[];
+  byPriority: AnalyticsValue[];
+  rows: SigcReportRow[];
+  isTruncated: boolean;
+}
+
+export interface SaasBranding {
+  productName: string;
+  shortName: string;
+  logoUrl?: string | null;
+  primaryColor: string;
+  accentColor: string;
+  sidebarColor: string;
+  supportEmail?: string | null;
+  customDomain?: string | null;
+}
+
+export interface SaasPlan {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  monthlyPriceCop: number;
+  limits: Record<string, number>;
+  features: Record<string, boolean>;
+}
+
+export interface SaasSubscription {
+  status: 'trialing' | 'active' | 'past_due' | 'suspended' | 'cancelled';
+  trialEndsAt?: string | null;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  plan: SaasPlan;
+}
+
+export interface SaasUsage {
+  members: number;
+  cases: number;
+  activeCases: number;
+  automations: number;
+  storageBytes: number;
+}
+
+export interface SaasOrganizationOption {
+  id: string;
+  name: string;
+  slug: string;
+  roleName: string;
+  roleCode: string;
+  planCode: string;
+  planName: string;
+  isActive: boolean;
+}
+
+export interface SaasInvitation {
+  id: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  token: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface SaasOnboardingStep {
+  code: string;
+  label: string;
+  completed: boolean;
+}
+
+export interface SaasHealth {
+  errorsLast24h: number;
+  auditEvents30d: number;
+  queuedEmails: number;
+}
+
+export interface SaasActiveOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  isActive: boolean;
+  createdAt: string;
+  createdBy?: string | null;
+  settings: Record<string, unknown>;
+}
+
+export interface SigcSaasContext {
+  activeOrganization: SaasActiveOrganization;
+  branding: SaasBranding;
+  subscription: SaasSubscription;
+  usage: SaasUsage;
+  organizations: SaasOrganizationOption[];
+  invitations: SaasInvitation[];
+  onboarding: SaasOnboardingStep[];
+  health: SaasHealth;
+  canManage: boolean;
+}
+
+export interface UpdateOrganizationProfileInput extends SaasBranding {
+  name: string;
+  slug: string;
+}
+
+export interface CreateSaasOrganizationInput {
+  name: string;
+  slug: string;
+}
+
+export interface CreateOrganizationInvitationInput {
+  email: string;
+  roleId: string;
+  expiresDays?: number;
+}
+
+export interface CreatedOrganizationInvitation {
+  invitationId: string;
+  token: string;
+  expiresAt: string;
+}
+
+export interface PublicOrganizationInvitation {
+  organizationName: string;
+  organizationSlug: string;
+  email: string;
+  roleName: string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  expiresAt: string;
+}
+
+export interface ClientErrorInput {
+  message: string;
+  stack?: string;
+  route?: string;
+  severity?: 'info' | 'warning' | 'error' | 'fatal';
+  metadata?: Record<string, unknown>;
+}

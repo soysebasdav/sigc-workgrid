@@ -41,7 +41,16 @@ import type {
   SaveTransitionInput,
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
-  SaveAutomationRuleInput
+  SaveAutomationRuleInput,
+  SigcDashboardAnalytics,
+  SigcReportFilters,
+  SigcReportResult,
+  SigcSaasContext,
+  UpdateOrganizationProfileInput,
+  CreateSaasOrganizationInput,
+  CreateOrganizationInvitationInput,
+  CreatedOrganizationInvitation,
+  ClientErrorInput
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -102,9 +111,22 @@ export interface SigcRepository {
   saveAutomationRule(input: SaveAutomationRuleInput): Promise<void>;
   toggleAutomationRule(id: string, isActive: boolean): Promise<void>;
   runAutomationRule(ruleId: string, caseId: string): Promise<void>;
+
+  getDashboardAnalytics(): Promise<SigcDashboardAnalytics>;
+  getReport(filters: SigcReportFilters): Promise<SigcReportResult>;
+
+  getSaasContext(): Promise<SigcSaasContext>;
+  setActiveOrganization(organizationId: string): Promise<void>;
+  updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void>;
+  createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string>;
+  createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation>;
+  revokeOrganizationInvitation(invitationId: string): Promise<void>;
+  logClientError(input: ClientErrorInput): Promise<void>;
 }
 
 export interface PublicSigcRepository {
   getPublicCaseTypes(): Promise<PublicCaseTypeOption[]>;
   createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult>;
+  getOrganizationInvitation(token: string): Promise<import('../domain/types').PublicOrganizationInvitation | null>;
+  acceptOrganizationInvitation(token: string): Promise<string>;
 }

@@ -35,22 +35,18 @@ import {
   Zap
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
-import { dashboardKpis } from './demoData';
 import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
-import { CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal } from './components/Phase3Forms';
+import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
-import { AdminConfigurationPage } from './components/Phase56Admin';
-import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks } from './hooks/useSigcData';
+import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
+import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
   adminModules,
-  areaDistribution,
   areaTones,
   navItems,
   priorityTones,
-  reportMonths,
-  reportValues,
   stateTones
 } from './ui';
 
@@ -66,6 +62,7 @@ export function SigcShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [topSearch, setTopSearch] = useState('');
   const navigate = useNavigate();
+  const { context: saasContext, style: saasStyle } = useSaasTheme();
   const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases();
 
   if (!currentUser) {
@@ -99,7 +96,7 @@ export function SigcShell() {
   };
 
   return (
-    <div className="sigc-app">
+    <div className="sigc-app" style={saasStyle}>
       <div className={`sigc-overlay ${drawerCase || mobileOpen ? 'open' : ''}`} onClick={closeAll} />
       <aside className={`sigc-sidebar ${mobileOpen ? 'open' : ''}`}>
         <SidebarContent closeMobile={() => setMobileOpen(false)} />
@@ -109,6 +106,7 @@ export function SigcShell() {
         <button className="btn btn-white mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
           <Menu size={18} />
         </button>
+        <OrganizationSwitcher />
         <div className="search-box">
           <Search size={18} />
           <input
@@ -135,7 +133,7 @@ export function SigcShell() {
         <div className="topbar-user">
           <div>
             <strong>{currentUser.name}</strong>
-            <span title={sigcWarning ?? undefined}>{currentUser.role === 'admin' ? 'Administrador SIGC' : 'Usuario SIGC'} · {sigcSource === 'supabase' ? 'Datos reales' : 'Demo'}</span>
+            <span title={sigcWarning ?? undefined}>{currentUser.role === 'admin' ? 'Administrador SIGC' : 'Usuario SIGC'} · {saasContext?.activeOrganization.name ?? (sigcSource === 'supabase' ? 'Datos reales' : 'Demo')}</span>
           </div>
           <div className="avatar">{initials(currentUser.name)}</div>
         </div>
@@ -154,12 +152,13 @@ export function SigcShell() {
 export function SigcLoginPage() {
   const { currentUser, login, isLoading, dataMode } = useApp();
   const navigate = useNavigate();
+  const [loginParams] = useSearchParams();
   const [email, setEmail] = useState('admin@test.com');
   const [password, setPassword] = useState('Admin123*');
   const [error, setError] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
 
-  if (currentUser) return <Navigate to="/dashboard" replace />;
+  if (currentUser) return <Navigate to={loginParams.get('redirect') || '/dashboard'} replace />;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -171,7 +170,7 @@ export function SigcLoginPage() {
         setError(dataMode === 'supabase' ? 'Correo o contraseña inválidos en Supabase Auth.' : 'Correo o contraseña inválidos. Usa las credenciales demo.');
         return;
       }
-      navigate('/dashboard');
+      navigate(loginParams.get('redirect') || '/dashboard');
     } finally {
       setSubmitting(false);
     }
@@ -215,111 +214,6 @@ export function SigcLoginPage() {
         </div>
       </section>
     </main>
-  );
-}
-
-export function DashboardPage() {
-  const { openDrawer, showToast } = useSigcActions();
-  const { data: cases } = useSigcCases();
-  const { data: dashboardSubtasks } = useSigcSubtasks();
-  const criticalCases = cases.filter((item) => item.priority === 'Crítica' || item.sem === 'red');
-
-  return (
-    <Page>
-      <PageHead
-        title="Dashboard principal"
-        description="Control ejecutivo de vencimientos, carga operativa, cumplimiento de SLA y productividad por área."
-        actions={(
-          <>
-            <button className="btn btn-soft" onClick={() => showToast('Indicadores actualizados en tiempo real.')}><RefreshCw size={17} /> Actualizar</button>
-            <Link className="btn btn-primary" to="/reports"><Download size={17} /> Generar reporte</Link>
-          </>
-        )}
-      />
-
-      <section className="hero-card hero-gradient">
-        <div className="hero-content">
-          <div>
-            <span className="chip chip-light">Centro de mando de casos corporativos</span>
-            <h2>Prioriza lo vencido, escala lo crítico y mantiene trazabilidad auditable de cada actuación.</h2>
-            <p>El SIGC transforma solicitudes, contratos, reclamos, tutelas y procesos internos en expedientes operables con SLA, responsables, documentos y auditoría.</p>
-          </div>
-          <div className="hero-stats">
-            <div><span>Carga de hoy</span><strong>34</strong></div>
-            <div><span>Escalados</span><strong>7</strong></div>
-          </div>
-        </div>
-      </section>
-
-      <section className="kpi-grid">
-        {dashboardKpis.map(({ label, value, icon: Icon, helper, danger }) => (
-          <article className={`card kpi-card ${danger ? 'danger' : ''}`} key={label}>
-            <div className="kpi-top"><Icon size={21} /><span>{helper}</span></div>
-            <p>{label}</p>
-            <strong>{value}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid-2-1">
-        <CardBlock icon={<BarChart3 />} title="Casos creados vs cerrados por mes" description="Tendencia operativa con lectura rápida de capacidad.">
-          <div className="mini-chart">
-            {reportValues.map((height, index) => (
-              <div className="chart-bar-wrap" key={reportMonths[index]}>
-                <span className="chart-bar" style={{ height: `${height * 1.9}px` }} />
-                <small>{reportMonths[index]}</small>
-              </div>
-            ))}
-          </div>
-        </CardBlock>
-        <CardBlock icon={<BarChart3 />} title="Casos por área" description="Distribución de carga actual.">
-          <div className="area-bars">
-            {areaDistribution.map(([name, value]) => (
-              <div key={name}>
-                <div className="bar-caption"><strong>{name}</strong><span>{value}%</span></div>
-                <Progress value={value * 2.5} />
-              </div>
-            ))}
-          </div>
-        </CardBlock>
-      </section>
-
-      <section className="grid-3">
-        <CardBlock icon={<Zap />} title="Casos críticos" description="Atención inmediata sugerida.">
-          <div className="stack-list">
-            {criticalCases.map((item) => (
-              <button className="compact-card" key={item.id} onClick={() => openDrawer(item.id)}>
-                <div><strong>{item.id}</strong><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge></div>
-                <p>{item.subject}</p>
-                <small><SemDot color={item.sem} /> vence {item.due} · {item.owner}</small>
-              </button>
-            ))}
-          </div>
-        </CardBlock>
-        <CardBlock icon={<CalendarCheck />} title="Mi trabajo de hoy" description="Subtareas y casos asignados.">
-          <div className="check-list">
-            {dashboardSubtasks.slice(0, 4).map((task) => (
-              <label key={task.title}>
-                <input type="checkbox" />
-                <span><strong>{task.title}</strong><small>{task.responsibleName} · {task.due}</small></span>
-                <Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge>
-              </label>
-            ))}
-          </div>
-        </CardBlock>
-        <CardBlock icon={<UserCog />} title="Casos por responsable" description="Carga relativa de trabajo.">
-          {['Laura Méndez', 'Felipe Vargas', 'Mónica Díaz', 'Natalia Bernal', 'Julián Pérez'].map((name, index) => (
-            <div className="owner-row" key={name}>
-              <div className="owner-avatar">{initials(name)}</div>
-              <div>
-                <div><strong>{name}</strong><span>{[29, 21, 17, 14, 11][index]}</span></div>
-                <Progress value={[88, 72, 53, 44, 32][index]} />
-              </div>
-            </div>
-          ))}
-        </CardBlock>
-      </section>
-    </Page>
   );
 }
 
@@ -667,6 +561,7 @@ export function DocumentsPage() {
   const [query, setQuery] = useState('');
   const [uploading, setUploading] = useState(false);
   const [versioning, setVersioning] = useState<SigcDocument | null>(null);
+  const [editingDocument, setEditingDocument] = useState<SigcDocument | null>(null);
 
   const filtered = documents.filter((document) => {
     const value = query.trim().toLowerCase();
@@ -704,32 +599,12 @@ export function DocumentsPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       <div className="case-list-meta"><span>{isLoading ? 'Consultando Storage y metadatos...' : 'Versionamiento y eliminación lógica activos'}</span><strong>{filtered.length} documento{filtered.length === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onVersion={setVersioning} onDelete={(document) => void removeDocument(document)} /></section>
+      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onEdit={setEditingDocument} onVersion={setVersioning} onDelete={(document) => void removeDocument(document)} /></section>
       {uploading ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
       {versioning ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
+      {editingDocument ? <TextDocumentEditorModal document={editingDocument} onClose={() => setEditingDocument(null)} onSaved={(message) => { setEditingDocument(null); showToast(message); }} /> : null}
     </Page>
   );
-}
-
-export function ReportsPage() {
-  const { data: cases } = useSigcCases();
-  return (
-    <Page>
-      <PageHead title="Reportes" description="Generación de reportes filtrables por fecha, estado, área, responsable, tipo de caso y prioridad." actions={<><button className="btn btn-white"><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white"><FileText size={17} /> PDF</button><button className="btn btn-primary"><Download size={17} /> CSV</button></>} />
-      <section className="reports-layout">
-        <CardBlock title="Filtros de reporte" icon={<SlidersHorizontal />}>
-          <div className="form-stack"><input className="field" type="date" /><input className="field" type="date" />{['Estado', 'Área', 'Responsable', 'Tipo de caso', 'Prioridad'].map((label) => <select className="field" key={label}><option>{label}</option></select>)}<button className="btn btn-primary full">Generar reporte</button></div>
-        </CardBlock>
-        <CardBlock title="Vista previa del reporte" description="Resumen antes de exportar." icon={<BarChart3 />} className="report-preview">
-          <CasesTable rows={cases.slice(0, 5)} compact />
-        </CardBlock>
-      </section>
-    </Page>
-  );
-}
-
-export function AdminPage() {
-  return <AdminConfigurationPage />;
 }
 
 export function SimpleLegacyPage({ title, description }: { title: string; description: string }) {
@@ -747,24 +622,28 @@ export function SimpleLegacyPage({ title, description }: { title: string; descri
 
 function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const { currentUser, unreadNotifications } = useApp();
+  const { data: dashboard } = useSigcDashboard();
+  const { context } = useSaasTheme();
+  const compliance = Math.round(dashboard?.summary.slaCompliancePct ?? 0);
+  const critical = dashboard?.summary.criticalCases ?? 0;
   return (
     <div className="sidebar-inner">
       <div className="brand">
-        <div className="brand-mark">S</div>
-        <div><strong>SIGC</strong><span>Sistema Integral de Gestión de Casos</span></div>
+        <WorkspaceBrand compact />
+        <div><strong>{context?.branding.shortName ?? 'SIGC'}</strong><span>{context?.branding.productName ?? 'Sistema Integral de Gestión de Casos'}</span></div>
       </div>
       <nav className="side-nav">
-        {navItems.map(({ to, label, icon: Icon }) => (
-          <NavLink key={to} to={to} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+        {navItems.map(({ to, label, icon: Icon, externalShell }) => (
+          <NavLink key={to} to={to} target={externalShell ? '_blank' : undefined} rel={externalShell ? 'noreferrer' : undefined} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Icon size={17} /><span>{label}</span>{to === '/notifications' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
           </NavLink>
         ))}
       </nav>
       <div className="sidebar-compliance card">
-        <strong>Cumplimiento del mes</strong>
-        <b>92.4%</b>
-        <Progress value={92} />
-        <p>3 casos críticos requieren revisión hoy.</p>
+        <strong>Cumplimiento del SLA</strong>
+        <b>{compliance}%</b>
+        <Progress value={compliance} />
+        <p>{critical} caso{critical === 1 ? '' : 's'} crítico{critical === 1 ? '' : 's'} requiere{critical === 1 ? '' : 'n'} seguimiento.</p>
       </div>
       <NavLink to="/profile" className="sidebar-profile" onClick={closeMobile}>
         <UserCog size={18} />
@@ -851,12 +730,12 @@ function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit
   );
 }
 
-function DocumentsTable({ rows, onOpen, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onVersion: (document: SigcDocument) => void; onDelete: (document: SigcDocument) => void }) {
+function DocumentsTable({ rows, onOpen, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onEdit: (document: SigcDocument) => void; onVersion: (document: SigcDocument) => void; onDelete: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
         <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button>{canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}<button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );

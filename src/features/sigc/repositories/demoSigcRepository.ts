@@ -42,7 +42,17 @@ import type {
   SaveTransitionInput,
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
-  SaveAutomationRuleInput
+  SaveAutomationRuleInput,
+  SigcDashboardAnalytics,
+  SigcReportFilters,
+  SigcReportResult,
+  SigcSaasContext,
+  UpdateOrganizationProfileInput,
+  CreateSaasOrganizationInput,
+  CreateOrganizationInvitationInput,
+  CreatedOrganizationInvitation,
+  ClientErrorInput,
+  PublicOrganizationInvitation
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -658,7 +668,54 @@ export const demoSigcRepository: SigcRepository = {
   async saveReminderRule(_input: SaveReminderRuleInput): Promise<void> {},
   async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
   async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
-  async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {}
+  async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {},
+
+  async getDashboardAnalytics(): Promise<SigcDashboardAnalytics> {
+    const rows = readCases();
+    const terminal = new Set(['Cerrado','Cancelado']);
+    const open = rows.filter((item) => !terminal.has(item.state));
+    const overdue = open.filter((item) => item.sem === 'red');
+    const group = (values: SigcCase[], key: (item: SigcCase) => string) => Array.from(values.reduce((map, item) => map.set(key(item), (map.get(key(item)) ?? 0) + 1), new Map<string, number>())).map(([label, value]) => ({ label, value })).sort((a,b) => b.value-a.value);
+    const now = new Date();
+    const monthly = Array.from({ length: 12 }, (_, offset) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - 11 + offset, 1);
+      return { month: `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`, label: new Intl.DateTimeFormat('es-CO',{month:'short'}).format(date), created: offset < 9 ? Math.max(0, Math.round(rows.length * (offset + 3) / 20)) : rows.length, closed: offset < 9 ? Math.max(0, Math.round(rows.length * (offset + 1) / 24)) : rows.filter((item) => terminal.has(item.state)).length };
+    });
+    return {
+      organizationId: 'demo-org', generatedAt: new Date().toISOString(),
+      summary: { openCases: open.length, closedCases: rows.length-open.length, overdueCases: overdue.length, dueSoonCases: open.filter((item) => item.sem === 'orange').length, createdToday: 0, criticalCases: open.filter((item) => item.priority === 'Crítica').length, slaCompliancePct: 92.4, avgResolutionHours: 34.2 },
+      monthly, byArea: group(open,(item)=>item.area), byOwner: group(open,(item)=>item.owner), byType: group(rows,(item)=>item.type), byPriority: group(open,(item)=>item.priority),
+      criticalCases: open.filter((item)=>item.priority==='Crítica'||item.sem==='red').slice(0,8).map((item)=>({ id:item.databaseId??item.id, radicado:item.radicado, subject:item.subject, priority:item.priority, owner:item.owner, dueAt:item.dueAt, overdue:item.sem==='red' })),
+      myWork: readSubtasks().filter((item)=>item.state!=='completed'&&item.state!=='cancelled').slice(0,8).map((item)=>({ id:item.id,title:item.title,caseId:item.caseId,radicado:item.caseRadicado,dueAt:item.dueAt,state:item.state,progress:item.progress })),
+      recentActivity: readJson<SigcTimelineEvent[]>(TIMELINE_KEY, []).slice(0,10).map((item,index)=>({ id:item.id??index,eventType:item.eventType,entityType:item.entityType,actor:item.actorName,createdAt:item.createdAt,caseId:item.caseId,radicado:rows.find((row)=>row.databaseId===item.caseId||row.id===item.caseId)?.radicado }))
+    };
+  },
+
+  async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {
+    const from = new Date(`${filters.from}T00:00:00`).getTime();
+    const to = new Date(`${filters.to}T23:59:59`).getTime();
+    const terminal = new Set(['Cerrado','Cancelado']);
+    let cases = readCases().filter((item) => { const value = new Date(item.openedAt ?? item.updatedAt ?? Date.now()).getTime(); return value >= from && value <= to; });
+    if (filters.stateId) cases = cases.filter((item)=>item.stateId===filters.stateId);
+    if (filters.areaId) cases = cases.filter((item)=>item.areaId===filters.areaId);
+    if (filters.ownerId) cases = cases.filter((item)=>item.ownerId===filters.ownerId);
+    if (filters.caseTypeId) cases = cases.filter((item)=>item.typeId===filters.caseTypeId);
+    if (filters.priorityId) cases = cases.filter((item)=>item.priorityId===filters.priorityId);
+    if (filters.overdueOnly) cases = cases.filter((item)=>item.sem==='red'&&!terminal.has(item.state));
+    const group = (key: (item: SigcCase) => string) => Array.from(cases.reduce((map,item)=>map.set(key(item),(map.get(key(item))??0)+1),new Map<string,number>())).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
+    const rows = cases.map((item)=>({ id:item.databaseId??item.id,radicado:item.radicado,subject:item.subject,requesterName:item.requester,requesterCompany:item.company,source:item.source,riskLevel:item.risk,openedAt:item.openedAt??item.updatedAt??new Date().toISOString(),dueAt:item.dueAt,closedAt:terminal.has(item.state)?item.updatedAt:null,progress:item.progress,updatedAt:item.updatedAt??new Date().toISOString(),caseType:item.type,state:item.state,priority:item.priority,area:item.area,owner:item.owner,overdue:item.sem==='red'&&!terminal.has(item.state),slaMet:terminal.has(item.state)?item.sem!=='red':null,resolutionHours:null }));
+    return { organizationId:'demo-org',generatedAt:new Date().toISOString(),from:filters.from,to:filters.to,summary:{ totalCases:cases.length,openCases:cases.filter((item)=>!terminal.has(item.state)).length,closedCases:cases.filter((item)=>terminal.has(item.state)).length,overdueCases:cases.filter((item)=>item.sem==='red'&&!terminal.has(item.state)).length,slaCompliancePct:92.4,avgResolutionHours:34.2 },byArea:group((item)=>item.area),byOwner:group((item)=>item.owner),byType:group((item)=>item.type),byState:group((item)=>item.state),byPriority:group((item)=>item.priority),rows,isTruncated:false };
+  },
+
+  async getSaasContext(): Promise<SigcSaasContext> {
+    return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
+  },
+  async setActiveOrganization(_organizationId: string): Promise<void> {},
+  async updateOrganizationProfile(_input: UpdateOrganizationProfileInput): Promise<void> {},
+  async createSaasOrganization(_input: CreateSaasOrganizationInput): Promise<string> { return `demo-org-${crypto.randomUUID()}`; },
+  async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { return { invitationId:`demo-invite-${crypto.randomUUID()}`,token:crypto.randomUUID(),expiresAt:new Date(Date.now()+(input.expiresDays??7)*86400000).toISOString() }; },
+  async revokeOrganizationInvitation(_invitationId: string): Promise<void> {},
+  async logClientError(_input: ClientErrorInput): Promise<void> {}
 };
 
 export const demoPublicSigcRepository: PublicSigcRepository = {
@@ -672,5 +729,7 @@ export const demoPublicSigcRepository: PublicSigcRepository = {
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult> {
     return createCaseBase(input, 'Formulario público', 'Pendiente de Clasificación');
-  }
+  },
+  async getOrganizationInvitation(_token: string): Promise<PublicOrganizationInvitation | null> { return null; },
+  async acceptOrganizationInvitation(_token: string): Promise<string> { return 'demo-org'; }
 };

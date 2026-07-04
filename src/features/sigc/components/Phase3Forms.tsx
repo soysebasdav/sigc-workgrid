@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { FilePlus2, LoaderCircle, Paperclip, Upload, X } from 'lucide-react';
 import type { SigcCase, SigcDocument, SigcSubtask, SubtaskState } from '../domain/types';
 import { useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
@@ -303,6 +303,94 @@ export function DocumentVersionModal({ document, onClose, onSaved }: { document:
           <textarea className="field textarea compact" placeholder="Describe qué cambió en esta versión" value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} />
           {error ? <div className="alert danger">{error}</div> : null}
           <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Versionando...' : `Crear v${document.currentVersion + 1}`}</button></div>
+        </form>
+      </section>
+    </>
+  );
+}
+
+
+function inlineEditableDocument(document: SigcDocument): boolean {
+  const mime = (document.currentMimeType ?? '').toLowerCase();
+  const filename = document.currentFilename.toLowerCase();
+  return mime.startsWith('text/') ||
+    ['application/json', 'application/xml', 'application/javascript'].includes(mime) ||
+    ['.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.log', '.js', '.ts', '.css', '.html'].some((extension) => filename.endsWith(extension));
+}
+
+export function canEditDocumentInline(document: SigcDocument): boolean {
+  return inlineEditableDocument(document);
+}
+
+export function TextDocumentEditorModal({ document, onClose, onSaved }: { document: SigcDocument; onClose: () => void; onSaved: (message: string) => void }) {
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [changeNotes, setChangeNotes] = useState(`Edición en línea de v${document.currentVersion}`);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`No fue posible cargar el archivo (${response.status}).`);
+        const text = await response.text();
+        if (active) setContent(text);
+      } catch (error) {
+        if (active) setError(errorMessage(error));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [document.currentStoragePath]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const mimeType = document.currentMimeType || 'text/plain;charset=utf-8';
+      const file = new File([content], document.currentFilename, { type: mimeType });
+      await sigcService.addDocumentVersion({
+        documentId: document.id,
+        caseId: document.caseId,
+        currentVersion: document.currentVersion,
+        file,
+        changeNotes: changeNotes.trim() || `Edición en línea de v${document.currentVersion}`
+      });
+      onSaved(`Versión ${document.currentVersion + 1} creada desde el editor en línea.`);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="sigc-overlay open" onClick={onClose} />
+      <section className="modal open phase3-modal text-document-editor-modal">
+        <header>
+          <div><h3>Editar en línea · {document.name}</h3><small>{document.currentFilename} · v{document.currentVersion}</small></div>
+          <button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button>
+        </header>
+        <form className="modal-body form-stack text-document-editor-body" onSubmit={save}>
+          <div className="phase3-context"><span>Formato compatible</span><strong>La edición se guardará como v{document.currentVersion + 1}</strong></div>
+          {loading ? <div className="editor-loading"><LoaderCircle className="spin" size={22} /> Cargando contenido...</div> : (
+            <textarea
+              className="field text-document-editor"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              spellCheck={false}
+              aria-label={`Contenido de ${document.currentFilename}`}
+            />
+          )}
+          <input className="field" value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} placeholder="Notas de la nueva versión" />
+          {error ? <div className="alert danger">{error}</div> : null}
+          <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={loading || saving}>{saving ? 'Guardando...' : `Guardar como v${document.currentVersion + 1}`}</button></div>
         </form>
       </section>
     </>

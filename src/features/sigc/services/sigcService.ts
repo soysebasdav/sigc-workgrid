@@ -43,7 +43,17 @@ import type {
   SaveTransitionInput,
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
-  SaveAutomationRuleInput
+  SaveAutomationRuleInput,
+  SigcDashboardAnalytics,
+  SigcReportFilters,
+  SigcReportResult,
+  SigcSaasContext,
+  UpdateOrganizationProfileInput,
+  CreateSaasOrganizationInput,
+  CreateOrganizationInvitationInput,
+  CreatedOrganizationInvitation,
+  PublicOrganizationInvitation,
+  ClientErrorInput
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -283,5 +293,26 @@ export const sigcService = {
   async saveReminderRule(input: SaveReminderRuleInput): Promise<void> { await mutationRepository().saveReminderRule(input); emitSigcDataChanged(); },
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> { await mutationRepository().saveAutomationRule(input); emitSigcDataChanged(); },
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> { await mutationRepository().toggleAutomationRule(id, isActive); emitSigcDataChanged(); },
-  async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); }
+  async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); },
+
+  getDashboardAnalytics(): Promise<SigcRepositoryResult<SigcDashboardAnalytics>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.getDashboardAnalytics(), () => demoSigcRepository.getDashboardAnalytics());
+  },
+  getReport(filters: SigcReportFilters): Promise<SigcRepositoryResult<SigcReportResult>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.getReport(filters), () => demoSigcRepository.getReport(filters));
+  },
+  async getSaasContext(): Promise<SigcRepositoryResult<SigcSaasContext>> {
+    if (dataMode !== 'supabase') return { data: await demoSigcRepository.getSaasContext(), source: 'demo' };
+    return { data: await supabaseSigcRepository.getSaasContext(), source: 'supabase' };
+  },
+  async setActiveOrganization(organizationId: string): Promise<void> { await mutationRepository().setActiveOrganization(organizationId); emitSigcDataChanged(); },
+  async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> { await mutationRepository().updateOrganizationProfile(input); emitSigcDataChanged(); },
+  async createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string> { const id = await mutationRepository().createSaasOrganization(input); emitSigcDataChanged(); return id; },
+  async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { const result = await mutationRepository().createOrganizationInvitation(input); emitSigcDataChanged(); return result; },
+  async revokeOrganizationInvitation(invitationId: string): Promise<void> { await mutationRepository().revokeOrganizationInvitation(invitationId); emitSigcDataChanged(); },
+  getOrganizationInvitation(token: string): Promise<SigcRepositoryResult<PublicOrganizationInvitation | null>> {
+    return withSafeReadFallback(() => supabasePublicSigcRepository.getOrganizationInvitation(token), () => demoPublicSigcRepository.getOrganizationInvitation(token));
+  },
+  async acceptOrganizationInvitation(token: string): Promise<string> { const id = await publicMutationRepository().acceptOrganizationInvitation(token); emitSigcDataChanged(); return id; },
+  async logClientError(input: ClientErrorInput): Promise<void> { if (dataMode === 'supabase') await supabaseSigcRepository.logClientError(input); }
 };

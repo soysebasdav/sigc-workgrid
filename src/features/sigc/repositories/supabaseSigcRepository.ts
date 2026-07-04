@@ -47,7 +47,18 @@ import type {
   SaveReminderRuleInput,
   SaveAutomationRuleInput,
   AutomationCondition,
-  AutomationAction
+  AutomationAction,
+  SigcDashboardAnalytics,
+  SigcReportFilters,
+  SigcReportResult,
+  SigcReportRow,
+  SigcSaasContext,
+  UpdateOrganizationProfileInput,
+  CreateSaasOrganizationInput,
+  CreateOrganizationInvitationInput,
+  CreatedOrganizationInvitation,
+  ClientErrorInput,
+  PublicOrganizationInvitation
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -1296,6 +1307,94 @@ export const supabaseSigcRepository: SigcRepository = {
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { error } = await client.rpc('run_automation_rule_test', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
     if (error) throw error;
+  },
+
+  async getDashboardAnalytics(): Promise<SigcDashboardAnalytics> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_sigc_dashboard', {});
+    if (error) throw error;
+    return data as SigcDashboardAnalytics;
+  },
+
+  async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {
+    const client = requireClient() as any;
+    const from = new Date(`${filters.from}T00:00:00`).toISOString();
+    const to = new Date(`${filters.to}T00:00:00`);
+    to.setDate(to.getDate() + 1);
+    const payload = {
+      stateId: filters.stateId ?? '',
+      areaId: filters.areaId ?? '',
+      ownerId: filters.ownerId ?? '',
+      caseTypeId: filters.caseTypeId ?? '',
+      priorityId: filters.priorityId ?? '',
+      overdueOnly: Boolean(filters.overdueOnly)
+    };
+    const { data, error } = await client.rpc('get_sigc_report', { p_from: from, p_to: to.toISOString(), p_filters: payload });
+    if (error) throw error;
+    const result = (data ?? {}) as any;
+    const rows: SigcReportRow[] = (result.rows ?? []).map((row: any) => ({
+      id: row.id, radicado: row.radicado, subject: row.subject, requesterName: row.requester_name ?? '',
+      requesterCompany: row.requester_company ?? '', source: row.source ?? '', riskLevel: row.risk_level ?? undefined,
+      openedAt: row.opened_at, dueAt: row.due_at ?? null, closedAt: row.closed_at ?? null, progress: Number(row.progress ?? 0),
+      updatedAt: row.updated_at, caseType: row.case_type ?? 'Sin clasificar', state: row.state ?? 'Sin estado',
+      priority: row.priority ?? 'Sin prioridad', area: row.area ?? 'Sin área', owner: row.owner ?? 'Sin responsable',
+      overdue: Boolean(row.overdue), slaMet: row.sla_met ?? null, resolutionHours: row.resolution_hours == null ? null : Number(row.resolution_hours)
+    }));
+    return { ...result, rows } as SigcReportResult;
+  },
+
+  async getSaasContext(): Promise<SigcSaasContext> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_saas_context');
+    if (error) throw error;
+    return data as SigcSaasContext;
+  },
+
+  async setActiveOrganization(organizationId: string): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('set_active_organization', { p_organization_id: organizationId });
+    if (error) throw error;
+  },
+
+  async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('update_organization_profile', {
+      p_name: input.name, p_slug: input.slug, p_product_name: input.productName, p_short_name: input.shortName,
+      p_logo_url: input.logoUrl ?? null, p_primary_color: input.primaryColor, p_accent_color: input.accentColor,
+      p_sidebar_color: input.sidebarColor, p_support_email: input.supportEmail ?? null, p_custom_domain: input.customDomain ?? null
+    });
+    if (error) throw error;
+  },
+
+  async createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('create_saas_organization', { p_name: input.name, p_slug: input.slug });
+    if (error) throw error;
+    return String(data);
+  },
+
+  async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('create_organization_invitation', { p_email: input.email, p_role_id: input.roleId, p_expires_days: input.expiresDays ?? 7 });
+    if (error) throw error;
+    const row = data?.[0];
+    if (!row) throw new Error('No fue posible crear la invitación.');
+    return { invitationId: row.invitation_id, token: row.token, expiresAt: row.expires_at };
+  },
+
+  async revokeOrganizationInvitation(invitationId: string): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('revoke_organization_invitation', { p_invitation_id: invitationId });
+    if (error) throw error;
+  },
+
+  async logClientError(input: ClientErrorInput): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('log_client_error', {
+      p_message: input.message, p_stack: input.stack ?? null, p_route: input.route ?? null,
+      p_severity: input.severity ?? 'error', p_metadata: input.metadata ?? {}
+    });
+    if (error) console.warn('No fue posible registrar el error de cliente:', error);
   }
 };
 
@@ -1329,5 +1428,21 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
     const created = data?.[0];
     if (!created) throw new Error('No fue posible confirmar la radicación.');
     return { caseId: created.case_id, radicado: created.radicado, dueAt: created.due_at };
+  },
+
+  async getOrganizationInvitation(token: string): Promise<PublicOrganizationInvitation | null> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_organization_invitation', { p_token: token });
+    if (error) throw error;
+    const row = data?.[0];
+    if (!row) return null;
+    return { organizationName: row.organization_name, organizationSlug: row.organization_slug, email: row.email, roleName: row.role_name, status: row.status, expiresAt: row.expires_at };
+  },
+
+  async acceptOrganizationInvitation(token: string): Promise<string> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('accept_organization_invitation', { p_token: token });
+    if (error) throw error;
+    return String(data);
   }
 };

@@ -18,7 +18,12 @@ import type {
   SigcCaseReview,
   SigcCaseDelivery,
   SigcCaseReminder,
-  SigcAdminSnapshot
+  SigcAdminSnapshot,
+  SigcDashboardAnalytics,
+  SigcReportFilters,
+  SigcReportResult,
+  SigcSaasContext,
+  PublicOrganizationInvitation
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -178,4 +183,27 @@ export function useCaseReminders(caseId: string | undefined): AsyncState<SigcCas
 
 export function useSigcAdminSnapshot(): AsyncState<SigcAdminSnapshot | null> {
   return useSigcQuery('admin-snapshot', null, () => sigcService.getAdminSnapshot());
+}
+
+
+export function useSigcDashboard(): AsyncState<SigcDashboardAnalytics | null> {
+  return useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics());
+}
+
+export function useSigcReport(filters: SigcReportFilters): AsyncState<SigcReportResult | null> {
+  const key = useMemo(() => `report:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, null, () => sigcService.getReport(filters));
+}
+
+export function useSigcSaasContext(): AsyncState<SigcSaasContext | null> {
+  return useSigcQuery('saas-context', null, () => sigcService.getSaasContext());
+}
+
+export function useOrganizationInvitation(token: string | undefined): AsyncState<PublicOrganizationInvitation | null> {
+  return useSigcQuery(
+    `organization-invitation:${token ?? 'missing'}`,
+    null,
+    () => token ? sigcService.getOrganizationInvitation(token) : Promise.resolve({ data: null, source: 'demo' as const }),
+    false
+  );
 }
