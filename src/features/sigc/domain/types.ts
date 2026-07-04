@@ -441,3 +441,257 @@ export interface SendManualReminderInput {
   message: string;
   recipientUserIds?: string[];
 }
+
+// SIGC Fases 5 y 6 · administración parametrizable y automatizaciones
+export type AdminCatalogKind = 'areas' | 'priorities' | 'caseTypes' | 'states';
+
+export interface AdminCatalogItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  color?: string;
+  sortOrder: number;
+  isActive: boolean;
+  isInitial?: boolean;
+  isTerminal?: boolean;
+}
+
+export interface AdminSlaPolicy {
+  id: string;
+  caseTypeId?: string;
+  caseTypeName: string;
+  name: string;
+  durationValue: number;
+  durationUnit: 'hours' | 'calendar_days' | 'business_days';
+  timezone: string;
+  pauseOnPendingInformation: boolean;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
+export interface AdminHoliday {
+  id: string;
+  holidayDate: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface AdminPermission {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+}
+
+export interface AdminRole {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  isSystem: boolean;
+  isActive: boolean;
+  permissionIds: string[];
+}
+
+export interface AdminMember {
+  membershipId: string;
+  userId: string;
+  name: string;
+  email: string;
+  roleId?: string;
+  roleName: string;
+  isActive: boolean;
+}
+
+export interface AdminWorkflowState {
+  stateId: string;
+  stateName: string;
+  sortOrder: number;
+  isRequired: boolean;
+}
+
+export interface AdminTransition {
+  id: string;
+  caseTypeId?: string;
+  fromStateId: string;
+  toStateId: string;
+  requiredPermissionCode?: string;
+  requiresJustification: boolean;
+  isActive: boolean;
+}
+
+export interface AdminWorkflow {
+  caseTypeId: string;
+  caseTypeName: string;
+  states: AdminWorkflowState[];
+  transitions: AdminTransition[];
+}
+
+export interface AdminEmailTemplate {
+  id: string;
+  code: string;
+  name: string;
+  eventType?: string;
+  subject: string;
+  bodyText: string;
+  isActive: boolean;
+}
+
+export interface AdminReminderRule {
+  id: string;
+  code: string;
+  name: string;
+  triggerKind: 'before_due' | 'overdue';
+  offsetMinutes: number;
+  includeManagers: boolean;
+  isActive: boolean;
+}
+
+export interface AutomationCondition {
+  field: 'case_type_id' | 'priority_id' | 'state_id' | 'primary_area_id' | 'primary_owner_id' | 'source' | 'risk_level' | 'overdue' | 'all_subtasks_completed';
+  operator: 'equals' | 'not_equals' | 'contains' | 'in' | 'is_true' | 'is_false';
+  value: string;
+  values?: string[];
+}
+
+export type AutomationAction =
+  | { type: 'assign_area'; areaId: string }
+  | { type: 'assign_user'; userId: string; areaId?: string }
+  | { type: 'set_priority'; priorityId: string }
+  | { type: 'create_subtask'; title: string; description?: string; responsibleUserId?: string; priorityId?: string; dueInHours?: number }
+  | { type: 'notify_user'; userId: string; title?: string; message?: string }
+  | { type: 'notify_role'; roleCode: string; title?: string; message?: string }
+  | { type: 'suggest_close' };
+
+export interface AutomationRule {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  triggerEvent: string;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+  stopOnError: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  lastRunAt?: string;
+  runCount: number;
+}
+
+export interface AutomationExecution {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  caseId?: string;
+  caseRadicado?: string;
+  triggerEvent: string;
+  status: 'running' | 'success' | 'partial' | 'failed' | 'skipped';
+  matched: boolean;
+  actionsTotal: number;
+  actionsSucceeded: number;
+  errorMessage?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export interface SigcAdminSnapshot {
+  organizationId: string;
+  areas: AdminCatalogItem[];
+  priorities: AdminCatalogItem[];
+  caseTypes: AdminCatalogItem[];
+  states: AdminCatalogItem[];
+  slaPolicies: AdminSlaPolicy[];
+  holidays: AdminHoliday[];
+  permissions: AdminPermission[];
+  roles: AdminRole[];
+  members: AdminMember[];
+  workflows: AdminWorkflow[];
+  emailTemplates: AdminEmailTemplate[];
+  reminderRules: AdminReminderRule[];
+  automationRules: AutomationRule[];
+  automationExecutions: AutomationExecution[];
+}
+
+export interface SaveAdminCatalogInput {
+  kind: AdminCatalogKind;
+  id?: string;
+  code: string;
+  name: string;
+  description?: string;
+  color?: string;
+  sortOrder?: number;
+  isInitial?: boolean;
+  isTerminal?: boolean;
+  isActive?: boolean;
+}
+
+export interface SaveSlaPolicyInput {
+  id?: string;
+  caseTypeId?: string;
+  name: string;
+  durationValue: number;
+  durationUnit: AdminSlaPolicy['durationUnit'];
+  timezone: string;
+  pauseOnPendingInformation: boolean;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
+export interface SaveHolidayInput {
+  id?: string;
+  holidayDate: string;
+  name: string;
+  isActive: boolean;
+}
+
+export interface SaveRoleInput {
+  id?: string;
+  code: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface SaveTransitionInput {
+  id?: string;
+  caseTypeId: string;
+  fromStateId: string;
+  toStateId: string;
+  requiredPermissionCode?: string;
+  requiresJustification: boolean;
+  isActive: boolean;
+}
+
+export interface SaveEmailTemplateInput {
+  id?: string;
+  code: string;
+  name: string;
+  eventType?: string;
+  subject: string;
+  bodyText: string;
+  isActive: boolean;
+}
+
+export interface SaveReminderRuleInput {
+  id?: string;
+  code: string;
+  name: string;
+  triggerKind: AdminReminderRule['triggerKind'];
+  offsetMinutes: number;
+  includeManagers: boolean;
+  isActive: boolean;
+}
+
+export interface SaveAutomationRuleInput {
+  id?: string;
+  code: string;
+  name: string;
+  description?: string;
+  triggerEvent: string;
+  conditions: AutomationCondition[];
+  actions: AutomationAction[];
+  stopOnError: boolean;
+  sortOrder: number;
+  isActive: boolean;
+}

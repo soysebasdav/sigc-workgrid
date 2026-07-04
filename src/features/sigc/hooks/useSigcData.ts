@@ -17,7 +17,8 @@ import type {
   SigcSlaOverride,
   SigcCaseReview,
   SigcCaseDelivery,
-  SigcCaseReminder
+  SigcCaseReminder,
+  SigcAdminSnapshot
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -173,4 +174,8 @@ export function useCaseReminders(caseId: string | undefined): AsyncState<SigcCas
     [],
     () => caseId ? sigcService.getCaseReminders(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
   );
+}
+
+export function useSigcAdminSnapshot(): AsyncState<SigcAdminSnapshot | null> {
+  return useSigcQuery('admin-snapshot', null, () => sigcService.getAdminSnapshot());
 }

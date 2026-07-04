@@ -32,7 +32,16 @@ import type {
   SigcCaseDelivery,
   RegisterCaseDeliveryInput,
   SigcCaseReminder,
-  SendManualReminderInput
+  SendManualReminderInput,
+  SigcAdminSnapshot,
+  SaveAdminCatalogInput,
+  SaveSlaPolicyInput,
+  SaveHolidayInput,
+  SaveRoleInput,
+  SaveTransitionInput,
+  SaveEmailTemplateInput,
+  SaveReminderRuleInput,
+  SaveAutomationRuleInput
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -75,6 +84,24 @@ export interface SigcRepository {
 
   listCaseReminders(caseId: string): Promise<SigcCaseReminder[]>;
   sendManualReminder(input: SendManualReminderInput): Promise<number>;
+
+  getAdminSnapshot(): Promise<SigcAdminSnapshot>;
+  saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void>;
+  setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void>;
+  saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void>;
+  saveHoliday(input: SaveHolidayInput): Promise<void>;
+  deleteHoliday(id: string): Promise<void>;
+  saveRole(input: SaveRoleInput): Promise<string>;
+  setRolePermissions(roleId: string, permissionIds: string[]): Promise<void>;
+  setMemberRole(membershipId: string, roleId: string): Promise<void>;
+  saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void>;
+  saveTransition(input: SaveTransitionInput): Promise<void>;
+  deleteTransition(id: string): Promise<void>;
+  saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void>;
+  saveReminderRule(input: SaveReminderRuleInput): Promise<void>;
+  saveAutomationRule(input: SaveAutomationRuleInput): Promise<void>;
+  toggleAutomationRule(id: string, isActive: boolean): Promise<void>;
+  runAutomationRule(ruleId: string, caseId: string): Promise<void>;
 }
 
 export interface PublicSigcRepository {

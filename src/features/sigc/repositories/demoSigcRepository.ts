@@ -33,7 +33,16 @@ import type {
   SigcCaseDelivery,
   RegisterCaseDeliveryInput,
   SigcCaseReminder,
-  SendManualReminderInput
+  SendManualReminderInput,
+  SigcAdminSnapshot,
+  SaveAdminCatalogInput,
+  SaveSlaPolicyInput,
+  SaveHolidayInput,
+  SaveRoleInput,
+  SaveTransitionInput,
+  SaveEmailTemplateInput,
+  SaveReminderRuleInput,
+  SaveAutomationRuleInput
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -611,7 +620,45 @@ export const demoSigcRepository: SigcRepository = {
     writeJson(REMINDERS_KEY, [...created, ...rows]);
     created.forEach(() => pushTimeline(resolved, 'case.reminder_sent', 'Recordatorio enviado', input.message));
     return created.length;
-  }
+  },
+
+  async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
+    const states = catalogs.states.map((item, index) => ({ id: item.id, code: `STATE_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true, isInitial: index === 0, isTerminal: ['Cerrado', 'Cancelado'].includes(item.name) }));
+    return {
+      organizationId: 'demo-org',
+      areas: catalogs.areas.map((item, index) => ({ id: item.id, code: `AREA_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
+      priorities: catalogs.priorities.map((item, index) => ({ id: item.id, code: `PRIORITY_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
+      caseTypes: catalogs.caseTypes.map((item, index) => ({ id: item.id, code: `TYPE_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
+      states,
+      slaPolicies: catalogs.caseTypes.map((item, index) => ({ id: `demo-sla-${index}`, caseTypeId: item.id, caseTypeName: item.name, name: `SLA ${item.name}`, durationValue: item.name === 'Acción de Tutela' ? 24 : 5, durationUnit: item.name === 'Acción de Tutela' ? 'hours' : 'calendar_days', timezone: 'America/Bogota', pauseOnPendingInformation: true, isDefault: true, isActive: true })),
+      holidays: [],
+      permissions: [{ id: 'p1', code: 'admin.manage_configuration', name: 'Administrar configuración' }, { id: 'p2', code: 'automation.manage', name: 'Administrar automatizaciones' }],
+      roles: catalogs.roles.map((item, index) => ({ id: item.id, code: `role_${index}`, name: item.name, isSystem: true, isActive: true, permissionIds: index === 0 ? ['p1', 'p2'] : [] })),
+      members: members.map((member, index) => ({ membershipId: `demo-membership-${index}`, userId: member.userId, name: member.name, email: member.email, roleId: catalogs.roles[index % catalogs.roles.length]?.id, roleName: member.roleName, isActive: true })),
+      workflows: catalogs.caseTypes.map((item) => ({ caseTypeId: item.id, caseTypeName: item.name, states: states.map((state, index) => ({ stateId: state.id, stateName: state.name, sortOrder: index * 10, isRequired: true })), transitions: [] })),
+      emailTemplates: [{ id: 'template-1', code: 'CASE_CREATED', name: 'Confirmación de radicación', eventType: 'case_created', subject: 'Confirmación {{radicado}}', bodyText: 'Tu solicitud {{radicado}} fue registrada.', isActive: true }],
+      reminderRules: [{ id: 'reminder-1', code: 'BEFORE_24H', name: '24 horas antes', triggerKind: 'before_due', offsetMinutes: 1440, includeManagers: false, isActive: true }],
+      automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], actions: [], stopOnError: true, sortOrder: 10, isActive: true, runCount: 0 }],
+      automationExecutions: []
+    };
+  },
+
+  async saveAdminCatalog(_input: SaveAdminCatalogInput): Promise<void> {},
+  async setAdminCatalogActive(_kind: SaveAdminCatalogInput['kind'], _id: string, _isActive: boolean): Promise<void> {},
+  async saveSlaPolicy(_input: SaveSlaPolicyInput): Promise<void> {},
+  async saveHoliday(_input: SaveHolidayInput): Promise<void> {},
+  async deleteHoliday(_id: string): Promise<void> {},
+  async saveRole(input: SaveRoleInput): Promise<string> { return input.id ?? `demo-role-${crypto.randomUUID()}`; },
+  async setRolePermissions(_roleId: string, _permissionIds: string[]): Promise<void> {},
+  async setMemberRole(_membershipId: string, _roleId: string): Promise<void> {},
+  async saveWorkflowStates(_caseTypeId: string, _stateIds: string[]): Promise<void> {},
+  async saveTransition(_input: SaveTransitionInput): Promise<void> {},
+  async deleteTransition(_id: string): Promise<void> {},
+  async saveEmailTemplate(_input: SaveEmailTemplateInput): Promise<void> {},
+  async saveReminderRule(_input: SaveReminderRuleInput): Promise<void> {},
+  async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
+  async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
+  async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {}
 };
 
 export const demoPublicSigcRepository: PublicSigcRepository = {

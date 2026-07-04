@@ -36,7 +36,18 @@ import type {
   SigcCaseDelivery,
   RegisterCaseDeliveryInput,
   SigcCaseReminder,
-  SendManualReminderInput
+  SendManualReminderInput,
+  SigcAdminSnapshot,
+  SaveAdminCatalogInput,
+  SaveSlaPolicyInput,
+  SaveHolidayInput,
+  SaveRoleInput,
+  SaveTransitionInput,
+  SaveEmailTemplateInput,
+  SaveReminderRuleInput,
+  SaveAutomationRuleInput,
+  AutomationCondition,
+  AutomationAction
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -331,6 +342,7 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
     case 'case.review_returned': return { title: 'Respuesta devuelta', description: 'La revisión solicitó ajustes antes de aprobar.' };
     case 'case.sent': return { title: 'Respuesta enviada', description: 'Se registró el envío al destinatario.' };
     case 'case.reminder_sent': return { title: 'Recordatorio enviado', description: text(afterData?.message) || 'Se envió un recordatorio de seguimiento.' };
+    case 'automation.executed': return { title: 'Automatización ejecutada', description: text(metadata.ruleName) || 'Una regla automática actuó sobre el expediente.' };
     case 'assignment.created': return { title: 'Nueva asignación', description: 'Se agregó un área o responsable al caso.' };
     case 'assignment.updated': return { title: 'Asignación actualizada', description: 'Se modificó una asignación del caso.' };
     case 'subtask.created': return { title: 'Subtarea creada', description: titleValue || 'Se creó una nueva actividad de seguimiento.' };
@@ -1069,6 +1081,221 @@ export const supabaseSigcRepository: SigcRepository = {
     });
     if (error) throw error;
     return Number(data ?? 0);
+  },
+
+  async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, cases] = await Promise.all([
+      client.from('areas').select('*').eq('organization_id', organizationId).order('sort_order'),
+      client.from('priorities').select('*').eq('organization_id', organizationId).order('sort_order'),
+      client.from('case_types').select('*').eq('organization_id', organizationId).order('name'),
+      client.from('case_states').select('*').eq('organization_id', organizationId).order('sort_order'),
+      client.from('sla_policies').select('*').eq('organization_id', organizationId).order('name'),
+      client.from('organization_holidays').select('*').eq('organization_id', organizationId).order('holiday_date'),
+      client.from('permissions').select('*').order('code'),
+      client.from('roles').select('*').eq('organization_id', organizationId).order('name'),
+      client.from('role_permissions').select('role_id,permission_id'),
+      client.from('organization_members').select('*').eq('organization_id', organizationId).order('joined_at'),
+      client.from('profiles').select('id,name,email'),
+      client.from('case_type_states').select('*'),
+      client.from('state_transitions').select('*').eq('organization_id', organizationId).order('created_at'),
+      client.from('email_templates').select('*').eq('organization_id', organizationId).order('name'),
+      client.from('reminder_rules').select('*').eq('organization_id', organizationId).order('offset_minutes', { ascending: false }),
+      client.from('automation_rules').select('*').eq('organization_id', organizationId).order('sort_order'),
+      client.from('automation_executions').select('*').eq('organization_id', organizationId).order('started_at', { ascending: false }).limit(100),
+      client.from('cases').select('id,radicado').eq('organization_id', organizationId).is('deleted_at', null)
+    ]);
+    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, cases];
+    const failed = results.find((result) => result.error);
+    if (failed?.error) throw failed.error;
+
+    const mapCatalogItem = (row: any) => ({
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      description: row.description ?? undefined,
+      color: row.color ?? undefined,
+      sortOrder: Number(row.sort_order ?? 0),
+      isActive: Boolean(row.is_active),
+      isInitial: row.is_initial == null ? undefined : Boolean(row.is_initial),
+      isTerminal: row.is_terminal == null ? undefined : Boolean(row.is_terminal)
+    });
+    const rolePermissionMap = new Map<string, string[]>();
+    for (const row of rolePermissions.data ?? []) {
+      rolePermissionMap.set(row.role_id, [...(rolePermissionMap.get(row.role_id) ?? []), row.permission_id]);
+    }
+    const profileMap = new Map<string, { name: string; email: string }>((profiles.data ?? []).map((row: any) => [row.id, { name: row.name, email: row.email }]));
+    const roleMap = new Map<string, { name: string }>((roles.data ?? []).map((row: any) => [row.id, { name: row.name }]));
+    const caseTypeMap = new Map((caseTypes.data ?? []).map((row: any) => [row.id, row.name]));
+    const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row.name]));
+    const ruleMap = new Map((automationRules.data ?? []).map((row: any) => [row.id, row.name]));
+    const caseMap = new Map((cases.data ?? []).map((row: any) => [row.id, row.radicado]));
+
+    const workflows = (caseTypes.data ?? []).map((caseType: any) => ({
+      caseTypeId: caseType.id,
+      caseTypeName: caseType.name,
+      states: (caseTypeStates.data ?? [])
+        .filter((row: any) => row.case_type_id === caseType.id)
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((row: any) => ({ stateId: row.state_id, stateName: stateMap.get(row.state_id) ?? 'Estado', sortOrder: row.sort_order, isRequired: Boolean(row.is_required) })),
+      transitions: (transitions.data ?? [])
+        .filter((row: any) => row.case_type_id === caseType.id)
+        .map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, fromStateId: row.from_state_id, toStateId: row.to_state_id, requiredPermissionCode: row.required_permission_code ?? undefined, requiresJustification: Boolean(row.requires_justification), isActive: Boolean(row.is_active) }))
+    }));
+
+    return {
+      organizationId,
+      areas: (areas.data ?? []).map(mapCatalogItem),
+      priorities: (priorities.data ?? []).map(mapCatalogItem),
+      caseTypes: (caseTypes.data ?? []).map(mapCatalogItem),
+      states: (states.data ?? []).map(mapCatalogItem),
+      slaPolicies: (slaPolicies.data ?? []).map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, caseTypeName: row.case_type_id ? caseTypeMap.get(row.case_type_id) ?? 'Tipo de caso' : 'General', name: row.name, durationValue: row.duration_value, durationUnit: row.duration_unit, timezone: row.timezone ?? 'America/Bogota', pauseOnPendingInformation: Boolean(row.pause_on_pending_information), isDefault: Boolean(row.is_default), isActive: Boolean(row.is_active) })),
+      holidays: (holidays.data ?? []).map((row: any) => ({ id: row.id, holidayDate: row.holiday_date, name: row.name, isActive: Boolean(row.is_active) })),
+      permissions: (permissions.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined })),
+      roles: (roles.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined, isSystem: Boolean(row.is_system), isActive: Boolean(row.is_active), permissionIds: rolePermissionMap.get(row.id) ?? [] })),
+      members: (memberships.data ?? []).map((row: any) => { const profile = profileMap.get(row.user_id); const role = row.role_id ? roleMap.get(row.role_id) : null; return { membershipId: row.id, userId: row.user_id, name: profile?.name ?? 'Usuario', email: profile?.email ?? '', roleId: row.role_id ?? undefined, roleName: role?.name ?? 'Sin rol', isActive: Boolean(row.is_active) }; }),
+      workflows,
+      emailTemplates: (templates.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, eventType: row.event_type ?? undefined, subject: row.subject, bodyText: row.body_text, isActive: Boolean(row.is_active) })),
+      reminderRules: (reminderRules.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, triggerKind: row.trigger_kind, offsetMinutes: row.offset_minutes, includeManagers: Boolean(row.include_managers), isActive: Boolean(row.is_active) })),
+      automationRules: (automationRules.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined, triggerEvent: row.trigger_event, conditions: (row.conditions ?? []) as AutomationCondition[], actions: (row.actions ?? []) as AutomationAction[], stopOnError: Boolean(row.stop_on_error), sortOrder: Number(row.sort_order ?? 0), isActive: Boolean(row.is_active), lastRunAt: row.last_run_at ?? undefined, runCount: Number(row.run_count ?? 0) })),
+      automationExecutions: (automationExecutions.data ?? []).map((row: any) => ({ id: row.id, ruleId: row.rule_id, ruleName: ruleMap.get(row.rule_id) ?? 'Regla', caseId: row.case_id ?? undefined, caseRadicado: row.case_id ? caseMap.get(row.case_id) : undefined, triggerEvent: row.trigger_event, status: row.status, matched: Boolean(row.matched), actionsTotal: row.actions_total, actionsSucceeded: row.actions_succeeded, errorMessage: row.error_message ?? undefined, startedAt: row.started_at, finishedAt: row.finished_at ?? undefined }))
+    };
+  },
+
+  async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const tableMap = { areas: 'areas', priorities: 'priorities', caseTypes: 'case_types', states: 'case_states' } as const;
+    const payload: Record<string, unknown> = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), is_active: input.isActive ?? true };
+    if (input.kind !== 'priorities' && input.description !== undefined) payload.description = input.description || null;
+    if (input.color !== undefined) payload.color = input.color || null;
+    if (input.kind !== 'caseTypes') payload.sort_order = input.sortOrder ?? 0;
+    if (input.kind === 'states') { payload.is_initial = Boolean(input.isInitial); payload.is_terminal = Boolean(input.isTerminal); }
+    const table = tableMap[input.kind];
+    const result = input.id ? await client.from(table).update(payload).eq('id', input.id) : await client.from(table).insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void> {
+    const client = requireClient() as any;
+    const tableMap = { areas: 'areas', priorities: 'priorities', caseTypes: 'case_types', states: 'case_states' } as const;
+    const { error } = await client.from(tableMap[kind]).update({ is_active: isActive }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    if (input.isDefault && input.caseTypeId) {
+      const reset = await client.from('sla_policies').update({ is_default: false }).eq('organization_id', organizationId).eq('case_type_id', input.caseTypeId);
+      if (reset.error) throw reset.error;
+    }
+    const payload = { organization_id: organizationId, case_type_id: input.caseTypeId || null, name: input.name.trim(), duration_value: input.durationValue, duration_unit: input.durationUnit, timezone: input.timezone || 'America/Bogota', pause_on_pending_information: input.pauseOnPendingInformation, is_default: input.isDefault, is_active: input.isActive };
+    const result = input.id ? await client.from('sla_policies').update(payload).eq('id', input.id) : await client.from('sla_policies').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async saveHoliday(input: SaveHolidayInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload = { organization_id: organizationId, holiday_date: input.holidayDate, name: input.name.trim(), is_active: input.isActive };
+    const result = input.id ? await client.from('organization_holidays').update(payload).eq('id', input.id) : await client.from('organization_holidays').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async deleteHoliday(id: string): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.from('organization_holidays').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async saveRole(input: SaveRoleInput): Promise<string> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload = { organization_id: organizationId, code: input.code.trim().toLowerCase(), name: input.name.trim(), description: input.description || null, is_active: input.isActive };
+    const query = input.id ? client.from('roles').update(payload).eq('id', input.id).select('id').single() : client.from('roles').insert(payload).select('id').single();
+    const { data, error } = await query;
+    if (error) throw error;
+    return data.id;
+  },
+
+  async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
+    const client = requireClient() as any;
+    const removed = await client.from('role_permissions').delete().eq('role_id', roleId);
+    if (removed.error) throw removed.error;
+    if (permissionIds.length) {
+      const inserted = await client.from('role_permissions').insert(permissionIds.map((permissionId) => ({ role_id: roleId, permission_id: permissionId })));
+      if (inserted.error) throw inserted.error;
+    }
+  },
+
+  async setMemberRole(membershipId: string, roleId: string): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.from('organization_members').update({ role_id: roleId, updated_at: new Date().toISOString() }).eq('id', membershipId);
+    if (error) throw error;
+  },
+
+  async saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void> {
+    const client = requireClient() as any;
+    const removed = await client.from('case_type_states').delete().eq('case_type_id', caseTypeId);
+    if (removed.error) throw removed.error;
+    if (stateIds.length) {
+      const inserted = await client.from('case_type_states').insert(stateIds.map((stateId, index) => ({ case_type_id: caseTypeId, state_id: stateId, sort_order: (index + 1) * 10, is_required: true })));
+      if (inserted.error) throw inserted.error;
+    }
+  },
+
+  async saveTransition(input: SaveTransitionInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload = { organization_id: organizationId, case_type_id: input.caseTypeId, from_state_id: input.fromStateId, to_state_id: input.toStateId, required_permission_code: input.requiredPermissionCode || null, requires_justification: input.requiresJustification, is_active: input.isActive };
+    const result = input.id ? await client.from('state_transitions').update(payload).eq('id', input.id) : await client.from('state_transitions').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async deleteTransition(id: string): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.from('state_transitions').delete().eq('id', id);
+    if (error) throw error;
+  },
+
+  async saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), event_type: input.eventType || null, subject: input.subject, body_text: input.bodyText, is_active: input.isActive };
+    const result = input.id ? await client.from('email_templates').update(payload).eq('id', input.id) : await client.from('email_templates').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async saveReminderRule(input: SaveReminderRuleInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), trigger_kind: input.triggerKind, offset_minutes: input.offsetMinutes, include_managers: input.includeManagers, is_active: input.isActive };
+    const result = input.id ? await client.from('reminder_rules').update(payload).eq('id', input.id) : await client.from('reminder_rules').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> {
+    const client = requireClient() as any;
+    const organizationId = await ensureOrganization();
+    const payload: Record<string, unknown> = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), description: input.description || null, trigger_event: input.triggerEvent, conditions: input.conditions, actions: input.actions, stop_on_error: input.stopOnError, sort_order: input.sortOrder, is_active: input.isActive, updated_by: (await client.auth.getUser()).data.user?.id ?? null };
+    if (!input.id) payload.created_by = payload.updated_by;
+    const result = input.id ? await client.from('automation_rules').update(payload).eq('id', input.id) : await client.from('automation_rules').insert(payload);
+    if (result.error) throw result.error;
+  },
+
+  async toggleAutomationRule(id: string, isActive: boolean): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.from('automation_rules').update({ is_active: isActive }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async runAutomationRule(ruleId: string, caseId: string): Promise<void> {
+    const client = requireClient() as any;
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { error } = await client.rpc('run_automation_rule_test', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
+    if (error) throw error;
   }
 };
 

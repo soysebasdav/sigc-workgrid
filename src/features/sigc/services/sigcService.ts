@@ -34,7 +34,16 @@ import type {
   SigcCaseDelivery,
   RegisterCaseDeliveryInput,
   SigcCaseReminder,
-  SendManualReminderInput
+  SendManualReminderInput,
+  SigcAdminSnapshot,
+  SaveAdminCatalogInput,
+  SaveSlaPolicyInput,
+  SaveHolidayInput,
+  SaveRoleInput,
+  SaveTransitionInput,
+  SaveEmailTemplateInput,
+  SaveReminderRuleInput,
+  SaveAutomationRuleInput
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -253,5 +262,26 @@ export const sigcService = {
     const count = await mutationRepository().sendManualReminder(input);
     emitSigcDataChanged();
     return count;
-  }
+  },
+
+  getAdminSnapshot(): Promise<SigcRepositoryResult<SigcAdminSnapshot>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.getAdminSnapshot(), () => demoSigcRepository.getAdminSnapshot());
+  },
+
+  async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> { await mutationRepository().saveAdminCatalog(input); emitSigcDataChanged(); },
+  async setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void> { await mutationRepository().setAdminCatalogActive(kind, id, isActive); emitSigcDataChanged(); },
+  async saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void> { await mutationRepository().saveSlaPolicy(input); emitSigcDataChanged(); },
+  async saveHoliday(input: SaveHolidayInput): Promise<void> { await mutationRepository().saveHoliday(input); emitSigcDataChanged(); },
+  async deleteHoliday(id: string): Promise<void> { await mutationRepository().deleteHoliday(id); emitSigcDataChanged(); },
+  async saveRole(input: SaveRoleInput): Promise<string> { const id = await mutationRepository().saveRole(input); emitSigcDataChanged(); return id; },
+  async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> { await mutationRepository().setRolePermissions(roleId, permissionIds); emitSigcDataChanged(); },
+  async setMemberRole(membershipId: string, roleId: string): Promise<void> { await mutationRepository().setMemberRole(membershipId, roleId); emitSigcDataChanged(); },
+  async saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void> { await mutationRepository().saveWorkflowStates(caseTypeId, stateIds); emitSigcDataChanged(); },
+  async saveTransition(input: SaveTransitionInput): Promise<void> { await mutationRepository().saveTransition(input); emitSigcDataChanged(); },
+  async deleteTransition(id: string): Promise<void> { await mutationRepository().deleteTransition(id); emitSigcDataChanged(); },
+  async saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void> { await mutationRepository().saveEmailTemplate(input); emitSigcDataChanged(); },
+  async saveReminderRule(input: SaveReminderRuleInput): Promise<void> { await mutationRepository().saveReminderRule(input); emitSigcDataChanged(); },
+  async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> { await mutationRepository().saveAutomationRule(input); emitSigcDataChanged(); },
+  async toggleAutomationRule(id: string, isActive: boolean): Promise<void> { await mutationRepository().toggleAutomationRule(id, isActive); emitSigcDataChanged(); },
+  async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); }
 };

@@ -40,6 +40,7 @@ import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseRevi
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
+import { AdminConfigurationPage } from './components/Phase56Admin';
 import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
@@ -728,20 +729,7 @@ export function ReportsPage() {
 }
 
 export function AdminPage() {
-  return (
-    <Page>
-      <PageHead title="Administración / configuración" description="Panel SaaS para parametrizar áreas, flujos, SLA, permisos, plantillas, notificaciones y automatizaciones sin tocar código." actions={<><button className="btn btn-white"><RefreshCw size={17} /> Auditoría</button><button className="btn btn-primary"><Plus size={17} /> Nuevo parámetro</button></>} />
-      <section className="admin-grid">{adminModules.map(({ title, value, icon: Icon }) => <article className="card admin-card" key={title}><div className="kpi-icon"><Icon size={20} /></div><strong>{title}</strong><span>{value}</span></article>)}</section>
-      <section className="grid-2 admin-detail">
-        <CardBlock title="Flujo por tipo de caso" description="Estados aplicables según proceso." icon={<BarChart3 />}>
-          {['Acción de Tutela', 'Contrato', 'Reclamo', 'Requerimiento Interno'].map((name, index) => <div className="flow-card" key={name}><div><strong>{name}</strong><span>{[8, 9, 7, 6][index]} estados</span></div><div className="chip-row">{['Clasificado', 'Asignado', 'En Gestión', 'Aprobado'].map((state) => <Badge key={state} tone={stateTones[state]}>{state}</Badge>)}</div></div>)}
-        </CardBlock>
-        <CardBlock title="Automatizaciones activas" description="Reglas parametrizables para escalar y notificar." icon={<Zap />}>
-          {['Asignar tutelas a Jurídica automáticamente', 'Escalar casos críticos vencidos al Director', 'Crear subtarea al cargar documento de respuesta', 'Sugerir cierre cuando subtareas estén al 100%', 'Recordar 24 horas antes del vencimiento'].map((rule, index) => <div className="automation-row" key={rule}><div><strong>{rule}</strong><span>Regla {String(index + 1).padStart(2, '0')} · Activa</span></div><button className="btn btn-soft">Editar</button></div>)}
-        </CardBlock>
-      </section>
-    </Page>
-  );
+  return <AdminConfigurationPage />;
 }
 
 export function SimpleLegacyPage({ title, description }: { title: string; description: string }) {
