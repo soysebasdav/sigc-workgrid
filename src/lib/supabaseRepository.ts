@@ -1,5 +1,5 @@
 import type { Session, User as SupabaseAuthUser } from '@supabase/supabase-js';
-import type { AppSettings, AppState, Notification, Task, User } from '../types';
+import type { AppSettings, AppState, Notification, User } from '../types';
 import { supabase } from './supabaseClient';
 
 function requireSupabase() {
@@ -8,20 +8,18 @@ function requireSupabase() {
 }
 
 
-async function tryEnsureSigcOrganization(): Promise<void> {
+async function ensureSigcOrganization(): Promise<string> {
   const client = requireSupabase();
-  const { error } = await client.rpc('ensure_user_organization');
-  if (error) {
-    // Compatibilidad de Fase 0: la app puede iniciar antes de aplicar la migración de Fase 1.
-    console.warn('SIGC: ensure_user_organization aún no está disponible o falló.', error.message);
-  }
+  const { data, error } = await client.rpc('ensure_user_organization');
+  if (error) throw error;
+  if (!data) throw new Error('No fue posible resolver la organización activa del usuario.');
+  return String(data);
 }
 
 function mapProfile(row: {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'user';
   created_at: string;
   updated_at: string;
 }): User {
@@ -30,33 +28,12 @@ function mapProfile(row: {
     name: row.name,
     email: row.email,
     password: '',
-    role: row.role,
+    role: 'user',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function mapTask(row: {
-  id: string;
-  user_id: string;
-  title: string;
-  description: string | null;
-  status: Task['status'];
-  due_date: string | null;
-  created_at: string;
-  updated_at: string;
-}): Task {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    title: row.title,
-    description: row.description ?? '',
-    status: row.status,
-    dueDate: row.due_date,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
 
 function mapNotification(row: {
   id: string;
@@ -86,11 +63,10 @@ function mapNotification(row: {
   };
 }
 
-function mapSettings(rows: Array<{ setting_key: string; setting_value: string }>): AppSettings {
-  const timeout = rows.find((row) => row.setting_key === 'inactivity_timeout_minutes')?.setting_value;
-  return {
-    inactivityTimeoutMinutes: Math.max(1, Number(timeout) || 10)
-  };
+function mapSettings(payload: unknown): AppSettings {
+  const data = payload && typeof payload === 'object' ? payload as Record<string, any> : {};
+  const timeout = Number(data.security?.inactivityTimeoutMinutes ?? 10);
+  return { inactivityTimeoutMinutes: Math.max(1, Number.isFinite(timeout) ? timeout : 10), organizationId: typeof data.organizationId === 'string' ? data.organizationId : null };
 }
 
 export async function getCurrentSession(): Promise<Session | null> {
@@ -131,25 +107,30 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
     };
   }
 
-  await tryEnsureSigcOrganization();
+  const organizationId = await ensureSigcOrganization();
 
-  const [profilesResponse, tasksResponse, notificationsResponse, settingsResponse] = await Promise.all([
-    client.from('profiles').select('id,name,email,role,created_at,updated_at').order('created_at', { ascending: true }),
-    client.from('tasks').select('id,user_id,title,description,status,due_date,created_at,updated_at').order('created_at', { ascending: false }),
-    (client as any).from('notifications').select('id,recipient_user_id,actor_user_id,task_id,case_id,type,title,message,action_url,is_read,created_at').order('created_at', { ascending: false }),
-    client.from('app_settings').select('setting_key,setting_value')
+  const [profileResponse, notificationsResponse, settingsResponse] = await Promise.all([
+    client.from('profiles').select('id,name,email,created_at,updated_at').eq('id', currentUserId).single(),
+    (client as any)
+      .from('notifications')
+      .select('id,recipient_user_id,actor_user_id,task_id,case_id,type,title,message,action_url,is_read,created_at')
+      .eq('recipient_user_id', currentUserId)
+      .eq('organization_id', organizationId)
+      .is('task_id', null)
+      .order('created_at', { ascending: false })
+      .limit(250),
+    (client as any).rpc('get_runtime_settings')
   ]);
 
-  if (profilesResponse.error) throw profilesResponse.error;
-  if (tasksResponse.error) throw tasksResponse.error;
+  if (profileResponse.error) throw profileResponse.error;
   if (notificationsResponse.error) throw notificationsResponse.error;
   if (settingsResponse.error) throw settingsResponse.error;
 
   return {
     currentUserId,
-    users: profilesResponse.data.map(mapProfile),
-    tasks: tasksResponse.data.map(mapTask),
-    notifications: notificationsResponse.data.map(mapNotification),
+    users: [mapProfile(profileResponse.data)],
+    tasks: [],
+    notifications: (notificationsResponse.data ?? []).map(mapNotification),
     settings: mapSettings(settingsResponse.data)
   };
 }
@@ -159,7 +140,7 @@ export async function signInWithPassword(email: string, password: string): Promi
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error || !data.user) return null;
   await ensureProfile(data.user);
-  await tryEnsureSigcOrganization();
+  await ensureSigcOrganization();
   return data.user.id;
 }
 

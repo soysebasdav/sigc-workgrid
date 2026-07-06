@@ -45,6 +45,7 @@ export interface Notification {
 
 export interface AppSettings {
   inactivityTimeoutMinutes: number;
+  organizationId?: string | null;
 }
 
 export interface AppState {

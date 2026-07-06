@@ -60,7 +60,9 @@ import type {
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
   ClientErrorInput,
-  PublicOrganizationInvitation
+  PublicOrganizationInvitation,
+  SigcAgendaSnapshot,
+  SigcAgendaItem
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -479,8 +481,8 @@ export const supabaseSigcRepository: SigcRepository = {
     if (profiles.error) throw profiles.error;
     if (roles.error) throw roles.error;
 
-    const profileMap = new Map((profiles.data ?? []).map((item) => [item.id, item]));
-    const roleMap = new Map((roles.data ?? []).map((item) => [item.id, item.name]));
+    const profileMap = new Map<string, { id: string; name: string; email: string }>((profiles.data ?? []).map((item) => [item.id, item as { id: string; name: string; email: string }]));
+    const roleMap = new Map<string, string>((roles.data ?? []).map((item) => [String(item.id), String(item.name)]));
 
     return (memberships ?? [])
       .map((membership) => {
@@ -634,7 +636,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const relatedError = casesResult.error ?? profilesResult.error ?? prioritiesResult.error ?? commentsResult.error ?? documentsResult.error;
     if (relatedError) throw relatedError;
 
-    const caseMap = new Map((casesResult.data ?? []).map((item) => [item.id, item]));
+    const caseMap = new Map<string, { id: string; radicado: string; subject: string }>((casesResult.data ?? []).map((item) => [item.id, item as { id: string; radicado: string; subject: string }]));
     const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
     const priorityMap = new Map((prioritiesResult.data ?? []).map((item) => [item.id, item.name]));
     const commentCounts = new Map<string, number>();
@@ -780,7 +782,7 @@ export const supabaseSigcRepository: SigcRepository = {
     ]);
     const relatedError = casesResult.error ?? profilesResult.error ?? versionsResult.error;
     if (relatedError) throw relatedError;
-    const caseMap = new Map((casesResult.data ?? []).map((item) => [item.id, item]));
+    const caseMap = new Map<string, { id: string; radicado: string; subject: string }>((casesResult.data ?? []).map((item) => [item.id, item as { id: string; radicado: string; subject: string }]));
     const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
     type VersionSummary = { document_id: string; version_number: number; original_filename: string; storage_path: string; mime_type: string | null; size_bytes: number };
     const versionMap = new Map<string, VersionSummary>();
@@ -1320,6 +1322,48 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_sigc_dashboard', {});
     if (error) throw error;
     return data as SigcDashboardAnalytics;
+  },
+
+  async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_sigc_agenda', { p_from: from, p_to: to });
+    if (error) throw error;
+    if (!data || typeof data !== 'object') throw new Error('La agenda SIGC no devolvió un resultado válido.');
+    const raw = data as Record<string, any>;
+    const items: SigcAgendaItem[] = Array.isArray(raw.items) ? raw.items.map((item: Record<string, any>) => ({
+      id: String(item.id ?? ''),
+      kind: item.kind as SigcAgendaItem['kind'],
+      caseId: String(item.caseId ?? ''),
+      caseRadicado: String(item.caseRadicado ?? 'Caso'),
+      caseSubject: String(item.caseSubject ?? ''),
+      title: String(item.title ?? 'Actividad'),
+      description: String(item.description ?? ''),
+      scheduledAt: String(item.scheduledAt ?? ''),
+      dateKey: String(item.dateKey ?? ''),
+      state: String(item.state ?? ''),
+      priority: String(item.priority ?? 'Media'),
+      owner: String(item.owner ?? 'Sin responsable'),
+      area: String(item.area ?? 'Sin área'),
+      progress: Number(item.progress ?? 0),
+      completed: Boolean(item.completed),
+      overdue: Boolean(item.overdue),
+      actionUrl: String(item.actionUrl ?? `/cases/${item.caseId ?? ''}`),
+      metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {}
+    })) : [];
+    return {
+      organizationId: String(raw.organizationId ?? ''),
+      timezone: String(raw.timezone ?? 'America/Bogota'),
+      from: String(raw.from ?? from),
+      to: String(raw.to ?? to),
+      summary: {
+        total: Number(raw.summary?.total ?? items.length),
+        overdue: Number(raw.summary?.overdue ?? items.filter((item) => item.overdue).length),
+        dueToday: Number(raw.summary?.dueToday ?? 0),
+        next7Days: Number(raw.summary?.next7Days ?? 0),
+        pendingReviews: Number(raw.summary?.pendingReviews ?? items.filter((item) => item.kind === 'review_pending').length)
+      },
+      items
+    };
   },
 
   async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {

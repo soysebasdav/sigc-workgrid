@@ -57,6 +57,10 @@ function canAccessTask(user: User | null, task: Task): boolean {
   return task.userId === user.id;
 }
 
+function isSigcNotification(notification: Notification): boolean {
+  return Boolean(notification.caseId) || notification.type.startsWith('case_');
+}
+
 function makeNotification(input: Omit<Notification, 'id' | 'createdAt' | 'isRead'>): Notification {
   return {
     ...input,
@@ -69,7 +73,7 @@ function makeNotification(input: Omit<Notification, 'id' | 'createdAt' | 'isRead
 function showSupabaseAdminNotice(action: string): void {
   window.alert(
     `${action}\n\nEn modo Supabase esta acción necesita Supabase Auth Admin, Edge Function o backend con service_role. ` +
-      'Por seguridad no se debe usar service_role desde React. Por ahora crea/elimina usuarios desde Supabase Authentication y administra nombre/rol desde la tabla profiles.'
+      'Por seguridad no se debe usar service_role desde React. La gestión de membresías y roles se realiza mediante el módulo RBAC del SIGC.'
   );
 }
 
@@ -162,7 +166,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const unreadNotifications = useMemo(() => {
     if (!currentUser) return 0;
-    return state.notifications.filter((notification) => notification.recipientUserId === currentUser.id && !notification.isRead).length;
+    return state.notifications.filter((notification) => notification.recipientUserId === currentUser.id && isSigcNotification(notification) && !notification.isRead).length;
   }, [currentUser, state.notifications]);
 
   async function login(email: string, password: string): Promise<boolean> {
@@ -203,37 +207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
 
     if (runtimeMode === 'supabase') {
-      const timestamp = nowISO();
-      const assigneeId = currentUser.role === 'admin' ? values.userId : currentUser.id;
-      const { data, error } = await supabase!
-        .from('tasks')
-        .insert({
-          user_id: assigneeId,
-          title: values.title.trim(),
-          description: values.description.trim() || null,
-          status: values.status,
-          due_date: values.dueDate || null,
-          created_at: timestamp,
-          updated_at: timestamp
-        })
-        .select('id')
-        .single();
-
-      if (error) throw error;
-
-      if (data && assigneeId !== currentUser.id) {
-        await supabase!.from('notifications').insert({
-          recipient_user_id: assigneeId,
-          actor_user_id: currentUser.id,
-          task_id: data.id,
-          type: 'task_created',
-          title: 'Nueva tarea asignada',
-          message: `${currentUser.name} te asignó la tarea ${values.title.trim()}.`
-        });
-      }
-
-      await reloadSupabaseState(currentUser.id);
-      return;
+      throw new Error('El módulo legacy de tareas fue sustituido por casos y subtareas en la Fase 10.');
     }
 
     const timestamp = nowISO();
@@ -272,34 +246,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!existingTask || !canAccessTask(currentUser, existingTask)) return;
 
     if (runtimeMode === 'supabase') {
-      const assigneeId = currentUser.role === 'admin' ? values.userId : existingTask.userId;
-      const { error } = await supabase!
-        .from('tasks')
-        .update({
-          user_id: assigneeId,
-          title: values.title.trim(),
-          description: values.description.trim() || null,
-          status: values.status,
-          due_date: values.dueDate || null,
-          updated_at: nowISO()
-        })
-        .eq('id', taskId);
-
-      if (error) throw error;
-
-      if (assigneeId !== currentUser.id) {
-        await supabase!.from('notifications').insert({
-          recipient_user_id: assigneeId,
-          actor_user_id: currentUser.id,
-          task_id: taskId,
-          type: 'task_updated',
-          title: 'Tarea actualizada',
-          message: `${currentUser.name} actualizó la tarea ${values.title.trim()}.`
-        });
-      }
-
-      await reloadSupabaseState(currentUser.id);
-      return;
+      throw new Error('El módulo legacy de tareas fue sustituido por casos y subtareas en la Fase 10.');
     }
 
     commit((previous) => {
@@ -344,10 +291,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!existingTask || !canAccessTask(currentUser, existingTask)) return;
 
     if (runtimeMode === 'supabase') {
-      const { error } = await supabase!.from('tasks').delete().eq('id', taskId);
-      if (error) throw error;
-      await reloadSupabaseState(currentUser.id);
-      return;
+      throw new Error('El módulo legacy de tareas fue sustituido por casos y subtareas en la Fase 10.');
     }
 
     commit((previous) => ({
@@ -359,7 +303,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   async function markNotificationRead(notificationId: string): Promise<void> {
     if (runtimeMode === 'supabase') {
-      const { error } = await supabase!.from('notifications').update({ is_read: true }).eq('id', notificationId);
+      const { error } = await supabase!.from('notifications').update({ is_read: true, read_at: nowISO() }).eq('id', notificationId).eq('recipient_user_id', currentUser?.id ?? '');
       if (error) throw error;
       await reloadSupabaseState(currentUser?.id ?? null);
       return;
@@ -377,11 +321,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
 
     if (runtimeMode === 'supabase') {
-      const { error } = await supabase!
+      let query = supabase!
         .from('notifications')
-        .update({ is_read: true })
+        .update({ is_read: true, read_at: nowISO() })
         .eq('recipient_user_id', currentUser.id)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .is('task_id', null);
+      if (state.settings.organizationId) query = query.eq('organization_id', state.settings.organizationId);
+      const { error } = await query;
       if (error) throw error;
       await reloadSupabaseState(currentUser.id);
       return;
@@ -420,18 +367,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentUser?.role !== 'admin') return;
 
     if (runtimeMode === 'supabase') {
-      const { error } = await supabase!
-        .from('profiles')
-        .update({
-          name: values.name.trim(),
-          email: normalizeEmail(values.email),
-          role: values.role,
-          updated_at: nowISO()
-        })
-        .eq('id', userId);
-      if (error) throw error;
-      await reloadSupabaseState(currentUser.id);
-      return;
+      throw new Error('La gestión legacy de usuarios fue sustituida por membresías y roles RBAC en la Fase 9.');
     }
 
     commit((previous) => {
@@ -525,13 +461,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sanitized = Math.max(1, Number(values.inactivityTimeoutMinutes) || 10);
 
     if (runtimeMode === 'supabase') {
-      const { error } = await supabase!
-        .from('app_settings')
-        .upsert({
-          setting_key: 'inactivity_timeout_minutes',
-          setting_value: String(sanitized),
-          updated_at: nowISO()
-        }, { onConflict: 'setting_key' });
+      const { error } = await (supabase as any)!.rpc('update_runtime_settings', {
+        p_inactivity_timeout_minutes: sanitized
+      });
       if (error) throw error;
       await reloadSupabaseState(currentUser.id);
       return;

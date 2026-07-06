@@ -55,7 +55,8 @@ import type {
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
   PublicOrganizationInvitation,
-  ClientErrorInput
+  ClientErrorInput,
+  SigcAgendaSnapshot
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -305,6 +306,10 @@ export const sigcService = {
 
   getDashboardAnalytics(): Promise<SigcRepositoryResult<SigcDashboardAnalytics>> {
     return withSafeReadFallback(() => supabaseSigcRepository.getDashboardAnalytics(), () => demoSigcRepository.getDashboardAnalytics());
+  },
+  async getAgenda(from: string, to: string): Promise<SigcRepositoryResult<SigcAgendaSnapshot>> {
+    if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAgenda(from, to), source: 'demo' };
+    return { data: await supabaseSigcRepository.getAgenda(from, to), source: 'supabase' };
   },
   getReport(filters: SigcReportFilters): Promise<SigcRepositoryResult<SigcReportResult>> {
     return withSafeReadFallback(() => supabaseSigcRepository.getReport(filters), () => demoSigcRepository.getReport(filters));

@@ -52,7 +52,8 @@ import type {
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
-  ClientErrorInput
+  ClientErrorInput,
+  SigcAgendaSnapshot
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -116,6 +117,7 @@ export interface SigcRepository {
   runAutomationRule(ruleId: string, caseId: string): Promise<void>;
 
   getDashboardAnalytics(): Promise<SigcDashboardAnalytics>;
+  getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot>;
   getReport(filters: SigcReportFilters): Promise<SigcReportResult>;
 
   getSaasContext(): Promise<SigcSaasContext>;

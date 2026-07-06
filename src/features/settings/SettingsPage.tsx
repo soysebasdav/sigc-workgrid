@@ -31,9 +31,9 @@ export function SettingsPage() {
   return (
     <div className="profile-grid">
       <Card>
-        <CardHeader title="Parámetros generales" description="Fase 9 mantiene temporalmente este parámetro legacy mientras la Fase 10 migra toda la configuración al núcleo organizacional." />
+        <CardHeader title="Parámetros generales" description="Parámetros operativos de la organización activa. Desde la Fase 10 ya no dependen de app_settings." />
         <form className="stack" onSubmit={handleSubmit}>
-          <Field label="Cierre por inactividad" hint="Valor en minutos. La escritura está protegida por admin.manage_configuration en Supabase.">
+          <Field label="Cierre por inactividad" hint="Valor en minutos para la organización activa. La escritura está protegida por admin.manage_configuration.">
             <Input type="number" min={1} value={timeout} onChange={(event) => setTimeoutValue(event.target.value)} />
           </Field>
           {saved ? <div className="alert success">Configuración guardada correctamente.</div> : null}
@@ -44,7 +44,7 @@ export function SettingsPage() {
       <Card className="identity-card">
         {dataMode === 'supabase' ? <ShieldCheck size={28} /> : <Settings2 size={28} />}
         <strong>{dataMode === 'supabase' ? 'Autorización RBAC activa' : 'Modo demo local'}</strong>
-        <p>{dataMode === 'supabase' ? `Tu rol ${roleName} accede por permiso organizacional. app_settings queda como puente temporal hasta la consolidación de la Fase 10.` : 'La configuración vive en localStorage durante la demo.'}</p>
+        <p>{dataMode === 'supabase' ? `Tu rol ${roleName} accede por permiso organizacional. La configuración operativa vive en organizations.settings y se aplica por empresa.` : 'La configuración vive en localStorage durante la demo.'}</p>
       </Card>
     </div>
   );

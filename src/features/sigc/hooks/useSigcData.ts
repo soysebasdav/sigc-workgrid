@@ -25,7 +25,8 @@ import type {
   SigcReportResult,
   SigcSaasContext,
   SigcAuthorizationContext,
-  PublicOrganizationInvitation
+  PublicOrganizationInvitation,
+  SigcAgendaSnapshot
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -199,6 +200,16 @@ export function useSigcAdminSnapshot(): AsyncState<SigcAdminSnapshot | null> {
 
 export function useSigcDashboard(enabled = true): AsyncState<SigcDashboardAnalytics | null> {
   return useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics(), true, enabled);
+}
+
+export function useSigcAgenda(from: string, to: string, enabled = true): AsyncState<SigcAgendaSnapshot | null> {
+  return useSigcQuery(
+    `agenda:${from}:${to}`,
+    null,
+    () => sigcService.getAgenda(from, to),
+    true,
+    enabled
+  );
 }
 
 export function useSigcReport(filters: SigcReportFilters): AsyncState<SigcReportResult | null> {

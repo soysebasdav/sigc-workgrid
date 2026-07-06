@@ -24,7 +24,7 @@ export function NotificationsPage() {
   const notifications = useMemo(() => {
     if (!currentUser) return [];
     return state.notifications
-      .filter((notification) => notification.recipientUserId === currentUser.id)
+      .filter((notification) => notification.recipientUserId === currentUser.id && (Boolean(notification.caseId) || notification.type.startsWith('case_')))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [currentUser, state.notifications]);
 
@@ -38,7 +38,9 @@ export function NotificationsPage() {
 
       {notifications.length ? (
         <div className="notification-list">
-          {notifications.map((notification) => (
+          {notifications.map((notification) => {
+            const actionUrl = notification.actionUrl ?? (notification.caseId ? `/cases/${notification.caseId}` : null);
+            return (
             <article className={`notification-item ${notification.isRead ? '' : 'unread'}`} key={notification.id}>
               <div className="notification-icon"><BellRing size={18} /></div>
               <div>
@@ -49,11 +51,12 @@ export function NotificationsPage() {
                 </div>
                 <p>{notification.message}</p>
                 <span>{formatDateTime(notification.createdAt)}</span>
-                {notification.actionUrl ? <div className="notification-action"><Link to={notification.actionUrl} onClick={() => !notification.isRead && void markNotificationRead(notification.id)}><ExternalLink size={14} /> Abrir expediente</Link></div> : null}
+                {actionUrl ? <div className="notification-action"><Link to={actionUrl} onClick={() => !notification.isRead && void markNotificationRead(notification.id)}><ExternalLink size={14} /> Abrir expediente</Link></div> : null}
               </div>
               {!notification.isRead ? <Button variant="ghost" onClick={() => markNotificationRead(notification.id)}>Marcar leída</Button> : null}
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <EmptyState title="Sin notificaciones" description="Cuando un caso requiera tu atención, aparecerá aquí." />

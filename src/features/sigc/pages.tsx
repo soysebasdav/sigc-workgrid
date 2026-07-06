@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
 import { useAuthorization } from '../authz/AuthorizationProvider';
-import { PERMISSIONS } from '../authz/permissions';
+import { CASE_READ_PERMISSIONS, PERMISSIONS } from '../authz/permissions';
 import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';

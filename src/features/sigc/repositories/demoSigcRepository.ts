@@ -54,7 +54,9 @@ import type {
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
   ClientErrorInput,
-  PublicOrganizationInvitation
+  PublicOrganizationInvitation,
+  SigcAgendaSnapshot,
+  SigcAgendaItem
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -676,6 +678,54 @@ export const demoSigcRepository: SigcRepository = {
   async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
   async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
   async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {},
+
+  async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
+    const start = new Date(`${from}T00:00:00`).getTime();
+    const end = new Date(`${to}T23:59:59.999`).getTime();
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const cases = readCases();
+    const caseById = new Map(cases.map((item) => [item.databaseId ?? item.id, item]));
+    const items: SigcAgendaItem[] = [];
+    const push = (item: SigcAgendaItem) => {
+      const time = new Date(item.scheduledAt).getTime();
+      if (Number.isFinite(time) && time >= start && time <= end) items.push(item);
+    };
+
+    for (const item of cases) {
+      if (!item.dueAt || ['Cerrado', 'Cancelado'].includes(item.state)) continue;
+      push({ id:`case:${item.databaseId ?? item.id}`, kind:'case_due', caseId:item.databaseId ?? item.id, caseRadicado:item.radicado, caseSubject:item.subject, title:`Vence ${item.radicado}`, description:item.subject, scheduledAt:item.dueAt, dateKey:item.dueAt.slice(0,10), state:item.state, priority:item.priority, owner:item.owner, area:item.area, progress:item.progress, completed:false, overdue:new Date(item.dueAt).getTime()<Date.now(), actionUrl:`/cases/${item.radicado}`, metadata:{} });
+    }
+    for (const [caseId, group] of Object.entries(readAssignments())) for (const assignment of group) {
+      if (!assignment.dueAt || ['completed','cancelled'].includes(assignment.state)) continue;
+      const caseItem = caseById.get(caseId) ?? cases.find((item) => item.id === caseId || item.radicado === caseId);
+      if (!caseItem) continue;
+      push({ id:`assignment:${assignment.id}`, kind:'assignment_due', caseId:caseItem.databaseId ?? caseItem.id, caseRadicado:caseItem.radicado, caseSubject:caseItem.subject, title:`Entrega de ${assignment.areaName}`, description:assignment.observations ?? 'Asignación del caso', scheduledAt:assignment.dueAt, dateKey:assignment.dueAt.slice(0,10), state:assignment.state, priority:caseItem.priority, owner:assignment.responsibleName, area:assignment.areaName, progress:assignment.progress, completed:false, overdue:new Date(assignment.dueAt).getTime()<Date.now(), actionUrl:`/cases/${caseItem.radicado}`, metadata:{} });
+    }
+    for (const subtask of readSubtasks()) {
+      if (!subtask.dueAt || ['completed','cancelled'].includes(subtask.state)) continue;
+      push({ id:`subtask:${subtask.id}`, kind:'subtask_due', caseId:subtask.caseId, caseRadicado:subtask.caseRadicado, caseSubject:subtask.caseSubject, title:subtask.title, description:subtask.description, scheduledAt:subtask.dueAt, dateKey:subtask.dueAt.slice(0,10), state:subtask.stateLabel, priority:subtask.priority, owner:subtask.responsibleName, area:caseById.get(subtask.caseId)?.area ?? 'Sin área', progress:subtask.progress, completed:false, overdue:new Date(subtask.dueAt).getTime()<Date.now(), actionUrl:`/cases/${subtask.caseRadicado}`, metadata:{} });
+    }
+    for (const review of readJson<SigcCaseReview[]>(REVIEWS_KEY, [])) {
+      if (review.status !== 'pending') continue;
+      const caseItem = caseById.get(review.caseId);
+      if (!caseItem) continue;
+      const scheduledAt = caseItem.dueAt ?? review.requestedAt;
+      push({ id:`review:${review.id}`, kind:'review_pending', caseId:review.caseId, caseRadicado:caseItem.radicado, caseSubject:caseItem.subject, title:`Revisión pendiente · ronda ${review.reviewRound}`, description:review.requestNote ?? 'Respuesta pendiente de revisión o aprobación.', scheduledAt, dateKey:scheduledAt.slice(0,10), state:'Pendiente', priority:caseItem.priority, owner:review.reviewerName || 'Sin revisor', area:caseItem.area, progress:caseItem.progress, completed:false, overdue:new Date(scheduledAt).getTime()<Date.now(), actionUrl:`/cases/${caseItem.radicado}`, metadata:{ reviewRound: review.reviewRound } });
+    }
+    for (const reminder of readJson<SigcCaseReminder[]>(REMINDERS_KEY, [])) {
+      const caseItem = caseById.get(reminder.caseId);
+      if (!caseItem) continue;
+      push({ id:`reminder:${reminder.id}`, kind:'reminder', caseId:reminder.caseId, caseRadicado:caseItem.radicado, caseSubject:caseItem.subject, title:reminder.reminderType === 'manual' ? 'Recordatorio manual' : 'Recordatorio automático', description:reminder.message, scheduledAt:reminder.deliveredAt, dateKey:reminder.deliveredAt.slice(0,10), state:'Enviado', priority:caseItem.priority, owner:reminder.recipientName, area:caseItem.area, progress:caseItem.progress, completed:true, overdue:false, actionUrl:`/cases/${caseItem.radicado}`, metadata:{ reminderType: reminder.reminderType } });
+    }
+
+    items.sort((a,b)=>a.scheduledAt.localeCompare(b.scheduledAt));
+    const next7 = Date.now() + 7*86400000;
+    return {
+      organizationId:'demo-org', timezone:'America/Bogota', from, to,
+      summary:{ total:items.length, overdue:items.filter((item)=>item.overdue&&!item.completed).length, dueToday:items.filter((item)=>item.dateKey===todayKey).length, next7Days:items.filter((item)=>{const t=new Date(item.scheduledAt).getTime(); return t>=Date.now()&&t<=next7&&!item.completed;}).length, pendingReviews:items.filter((item)=>item.kind==='review_pending').length },
+      items
+    };
+  },
 
   async getDashboardAnalytics(): Promise<SigcDashboardAnalytics> {
     const rows = readCases();

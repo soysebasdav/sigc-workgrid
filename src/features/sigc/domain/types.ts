@@ -976,3 +976,44 @@ export interface ClientErrorInput {
   severity?: 'info' | 'warning' | 'error' | 'fatal';
   metadata?: Record<string, unknown>;
 }
+
+// SIGC Fase 10 · agenda operativa centrada en casos
+export type SigcAgendaItemKind = 'case_due' | 'assignment_due' | 'subtask_due' | 'review_pending' | 'reminder';
+
+export interface SigcAgendaItem {
+  id: string;
+  kind: SigcAgendaItemKind;
+  caseId: string;
+  caseRadicado: string;
+  caseSubject: string;
+  title: string;
+  description: string;
+  scheduledAt: string;
+  dateKey: string;
+  state: string;
+  priority: string;
+  owner: string;
+  area: string;
+  progress: number;
+  completed: boolean;
+  overdue: boolean;
+  actionUrl: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SigcAgendaSummary {
+  total: number;
+  overdue: number;
+  dueToday: number;
+  next7Days: number;
+  pendingReviews: number;
+}
+
+export interface SigcAgendaSnapshot {
+  organizationId: string;
+  timezone: string;
+  from: string;
+  to: string;
+  summary: SigcAgendaSummary;
+  items: SigcAgendaItem[];
+}
