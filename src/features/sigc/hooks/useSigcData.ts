@@ -19,10 +19,12 @@ import type {
   SigcCaseDelivery,
   SigcCaseReminder,
   SigcAdminSnapshot,
+  SigcUserManagementSnapshot,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
   SigcSaasContext,
+  SigcAuthorizationContext,
   PublicOrganizationInvitation
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
@@ -40,12 +42,13 @@ function useSigcQuery<T>(
   key: string,
   initialData: T,
   loader: () => Promise<{ data: T; source: SigcDataSource; warning?: string }>,
-  listenForMutations = true
+  listenForMutations = true,
+  enabled = true
 ): AsyncState<T> {
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<Omit<AsyncState<T>, 'reload'>>({
     data: initialData,
-    isLoading: true,
+    isLoading: enabled,
     source: 'demo',
     warning: null,
     error: null
@@ -62,6 +65,10 @@ function useSigcQuery<T>(
 
   useEffect(() => {
     let active = true;
+    if (!enabled) {
+      setState({ data: initialData, isLoading: false, source: 'demo', warning: null, error: null });
+      return () => { active = false; };
+    }
     setState((current) => ({ ...current, isLoading: true, error: null }));
     void loader()
       .then((result) => {
@@ -72,13 +79,13 @@ function useSigcQuery<T>(
       });
     return () => { active = false; };
     // key captures filter/identifier changes; revision captures explicit/global invalidation.
-  }, [key, revision]);
+  }, [key, revision, enabled]);
 
   return { ...state, reload };
 }
 
-export function useSigcCases(): AsyncState<SigcCase[]> {
-  return useSigcQuery('all-cases', [], () => sigcService.listCases());
+export function useSigcCases(enabled = true): AsyncState<SigcCase[]> {
+  return useSigcQuery('all-cases', [], () => sigcService.listCases(), true, enabled);
 }
 
 export function useSigcCaseSearch(filters: SigcCaseFilters): AsyncState<SigcCasePage> {
@@ -181,13 +188,17 @@ export function useCaseReminders(caseId: string | undefined): AsyncState<SigcCas
   );
 }
 
+export function useSigcUserManagementSnapshot(): AsyncState<SigcUserManagementSnapshot | null> {
+  return useSigcQuery('user-management-snapshot', null, () => sigcService.getUserManagementSnapshot());
+}
+
 export function useSigcAdminSnapshot(): AsyncState<SigcAdminSnapshot | null> {
   return useSigcQuery('admin-snapshot', null, () => sigcService.getAdminSnapshot());
 }
 
 
-export function useSigcDashboard(): AsyncState<SigcDashboardAnalytics | null> {
-  return useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics());
+export function useSigcDashboard(enabled = true): AsyncState<SigcDashboardAnalytics | null> {
+  return useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics(), true, enabled);
 }
 
 export function useSigcReport(filters: SigcReportFilters): AsyncState<SigcReportResult | null> {
@@ -197,6 +208,10 @@ export function useSigcReport(filters: SigcReportFilters): AsyncState<SigcReport
 
 export function useSigcSaasContext(): AsyncState<SigcSaasContext | null> {
   return useSigcQuery('saas-context', null, () => sigcService.getSaasContext());
+}
+
+export function useSigcAuthorizationContext(): AsyncState<SigcAuthorizationContext | null> {
+  return useSigcQuery('authorization-context', null, () => sigcService.getAuthorizationContext());
 }
 
 export function useOrganizationInvitation(token: string | undefined): AsyncState<PublicOrganizationInvitation | null> {

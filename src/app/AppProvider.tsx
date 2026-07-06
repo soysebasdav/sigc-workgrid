@@ -520,7 +520,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   async function updateSettings(values: { inactivityTimeoutMinutes: number }): Promise<void> {
-    if (currentUser?.role !== 'admin') return;
+    if (!currentUser) return;
+    if (runtimeMode !== 'supabase' && currentUser.role !== 'admin') return;
     const sanitized = Math.max(1, Number(values.inactivityTimeoutMinutes) || 10);
 
     if (runtimeMode === 'supabase') {

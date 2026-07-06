@@ -36,6 +36,7 @@ import type {
   SigcCaseReminder,
   SendManualReminderInput,
   SigcAdminSnapshot,
+  SigcUserManagementSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -48,6 +49,7 @@ import type {
   SigcReportFilters,
   SigcReportResult,
   SigcSaasContext,
+  SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
@@ -274,8 +276,14 @@ export const sigcService = {
     return count;
   },
 
-  getAdminSnapshot(): Promise<SigcRepositoryResult<SigcAdminSnapshot>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.getAdminSnapshot(), () => demoSigcRepository.getAdminSnapshot());
+  async getUserManagementSnapshot(): Promise<SigcRepositoryResult<SigcUserManagementSnapshot>> {
+    if (dataMode !== 'supabase') return { data: await demoSigcRepository.getUserManagementSnapshot(), source: 'demo' };
+    return { data: await supabaseSigcRepository.getUserManagementSnapshot(), source: 'supabase' };
+  },
+
+  async getAdminSnapshot(): Promise<SigcRepositoryResult<SigcAdminSnapshot>> {
+    if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAdminSnapshot(), source: 'demo' };
+    return { data: await supabaseSigcRepository.getAdminSnapshot(), source: 'supabase' };
   },
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> { await mutationRepository().saveAdminCatalog(input); emitSigcDataChanged(); },
@@ -304,6 +312,10 @@ export const sigcService = {
   async getSaasContext(): Promise<SigcRepositoryResult<SigcSaasContext>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getSaasContext(), source: 'demo' };
     return { data: await supabaseSigcRepository.getSaasContext(), source: 'supabase' };
+  },
+  async getAuthorizationContext(): Promise<SigcRepositoryResult<SigcAuthorizationContext>> {
+    if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAuthorizationContext(), source: 'demo' };
+    return { data: await supabaseSigcRepository.getAuthorizationContext(), source: 'supabase' };
   },
   async setActiveOrganization(organizationId: string): Promise<void> { await mutationRepository().setActiveOrganization(organizationId); emitSigcDataChanged(); },
   async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> { await mutationRepository().updateOrganizationProfile(input); emitSigcDataChanged(); },

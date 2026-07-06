@@ -38,6 +38,7 @@ import type {
   SigcCaseReminder,
   SendManualReminderInput,
   SigcAdminSnapshot,
+  SigcUserManagementSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -53,6 +54,7 @@ import type {
   SigcReportResult,
   SigcReportRow,
   SigcSaasContext,
+  SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
@@ -1094,6 +1096,14 @@ export const supabaseSigcRepository: SigcRepository = {
     return Number(data ?? 0);
   },
 
+  async getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_user_management_context');
+    if (error) throw error;
+    if (!data || typeof data !== 'object') throw new Error('No fue posible cargar la gestión de usuarios.');
+    return data as SigcUserManagementSnapshot;
+  },
+
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
     const client = requireClient() as any;
     const organizationId = await ensureOrganization();
@@ -1233,17 +1243,13 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
     const client = requireClient() as any;
-    const removed = await client.from('role_permissions').delete().eq('role_id', roleId);
-    if (removed.error) throw removed.error;
-    if (permissionIds.length) {
-      const inserted = await client.from('role_permissions').insert(permissionIds.map((permissionId) => ({ role_id: roleId, permission_id: permissionId })));
-      if (inserted.error) throw inserted.error;
-    }
+    const { error } = await client.rpc('set_role_permissions', { p_role_id: roleId, p_permission_ids: permissionIds });
+    if (error) throw error;
   },
 
   async setMemberRole(membershipId: string, roleId: string): Promise<void> {
     const client = requireClient() as any;
-    const { error } = await client.from('organization_members').update({ role_id: roleId, updated_at: new Date().toISOString() }).eq('id', membershipId);
+    const { error } = await client.rpc('set_organization_member_role', { p_membership_id: membershipId, p_role_id: roleId });
     if (error) throw error;
   },
 
@@ -1348,6 +1354,14 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_saas_context');
     if (error) throw error;
     return data as SigcSaasContext;
+  },
+
+  async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
+    const client = requireClient() as any;
+    const { data, error } = await client.rpc('get_authorization_context');
+    if (error) throw error;
+    if (!data || typeof data !== 'object') throw new Error('No fue posible resolver el contexto de autorización.');
+    return data as SigcAuthorizationContext;
   },
 
   async setActiveOrganization(organizationId: string): Promise<void> {

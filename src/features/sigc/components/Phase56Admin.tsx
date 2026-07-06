@@ -49,6 +49,8 @@ import type {
   SigcAdminSnapshot
 } from '../domain/types';
 import { useSigcAdminSnapshot, useSigcCases } from '../hooks/useSigcData';
+import { useAuthorization } from '../../authz/AuthorizationProvider';
+import { PERMISSIONS } from '../../authz/permissions';
 import { sigcService } from '../services/sigcService';
 
 type AdminTab = 'catalogs' | 'sla' | 'roles' | 'workflows' | 'templates' | 'automations';
@@ -252,20 +254,54 @@ function ReminderModal({ item, onClose, showToast }: { item: AdminReminderRule |
 }
 
 function RolesPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast: (text: string) => void }) {
+  const { authorization, can } = useAuthorization();
+  const canManageUsers = can(PERMISSIONS.adminManageUsers);
   const [selectedRoleId, setSelectedRoleId] = useState(data.roles[0]?.id ?? '');
   const role = data.roles.find((item) => item.id === selectedRoleId) ?? data.roles[0];
+  const protectedAdminRole = Boolean(role?.isSystem && role.code === 'admin');
   const [permissionIds, setPermissionIds] = useState<string[]>(role?.permissionIds ?? []);
   const [roleEdit, setRoleEdit] = useState<AdminRole | null | 'new'>(null);
   useEffect(() => setPermissionIds(role?.permissionIds ?? []), [role?.id, role?.permissionIds.join('|')]);
-  async function savePermissions() { if (!role) return; try { await sigcService.setRolePermissions(role.id, permissionIds); showToast(`Permisos de ${role.name} actualizados.`); } catch (error) { showToast(errorMessage(error)); } }
-  async function updateMember(membershipId: string, roleId: string) { try { await sigcService.setMemberRole(membershipId, roleId); showToast('Rol del usuario actualizado.'); } catch (error) { showToast(errorMessage(error)); } }
-  return <div className="phase56-two-column"><section><SectionHead title="Roles y permisos" description="Define capacidades independientes por perfil." action={<button className="btn btn-primary" onClick={() => setRoleEdit('new')}><Plus size={16} /> Nuevo rol</button>} /><div className="phase56-role-layout"><aside>{data.roles.map((item) => <button key={item.id} className={role?.id === item.id ? 'active' : ''} onClick={() => setSelectedRoleId(item.id)}><strong>{item.name}</strong><span>{item.permissionIds.length} permisos</span></button>)}</aside><div>{role ? <><header className="phase56-permission-head"><div><strong>{role.name}</strong><span>{role.description || role.code}</span></div><button className="btn btn-white" onClick={() => setRoleEdit(role)}><Edit3 size={15} /> Editar</button></header><div className="phase56-permissions">{data.permissions.map((permission) => <label key={permission.id}><input type="checkbox" checked={permissionIds.includes(permission.id)} onChange={(e) => setPermissionIds((current) => e.target.checked ? [...current, permission.id] : current.filter((id) => id !== permission.id))} /><div><strong>{permission.name}</strong><span>{permission.code}</span></div></label>)}</div><button className="btn btn-primary full" onClick={() => void savePermissions()}><Save size={16} /> Guardar permisos</button></> : null}</div></div></section><section><SectionHead title="Usuarios de la organización" description="Asigna a cada miembro el rol que determina sus permisos." /><div className="phase56-member-list">{data.members.map((member) => <div key={member.membershipId}><div className="avatar small-avatar">{initials(member.name)}</div><div><strong>{member.name}</strong><span>{member.email}</span></div><select className="input" value={member.roleId ?? ''} onChange={(e) => void updateMember(member.membershipId, e.target.value)}>{data.roles.filter((item) => item.isActive).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div>)}</div></section>{roleEdit ? <RoleModal item={roleEdit === 'new' ? null : roleEdit} onClose={() => setRoleEdit(null)} showToast={showToast} /> : null}</div>;
+
+  async function savePermissions() {
+    if (!role) return;
+    try {
+      await sigcService.setRolePermissions(role.id, permissionIds);
+      showToast(protectedAdminRole ? 'El rol Administrador conserva todos los permisos del sistema.' : `Permisos de ${role.name} actualizados.`);
+    } catch (error) { showToast(errorMessage(error)); }
+  }
+
+  async function updateMember(membershipId: string, roleId: string) {
+    if (!canManageUsers) { showToast('No tienes permiso para administrar usuarios.'); return; }
+    try { await sigcService.setMemberRole(membershipId, roleId); showToast('Rol del usuario actualizado.'); } catch (error) { showToast(errorMessage(error)); }
+  }
+
+  return <div className="phase56-two-column">
+    <section>
+      <SectionHead title="Roles y permisos" description="Define capacidades independientes por perfil. La autoridad proviene del rol organizacional, no de profiles.role." action={<button className="btn btn-primary" onClick={() => setRoleEdit('new')}><Plus size={16} /> Nuevo rol</button>} />
+      <div className="phase56-role-layout">
+        <aside>{data.roles.map((item) => <button key={item.id} className={role?.id === item.id ? 'active' : ''} onClick={() => setSelectedRoleId(item.id)}><strong>{item.name}</strong><span>{item.permissionIds.length} permisos</span></button>)}</aside>
+        <div>{role ? <>
+          <header className="phase56-permission-head"><div><strong>{role.name}</strong><span>{role.description || role.code}</span></div><button className="btn btn-white" onClick={() => setRoleEdit(role)}><Edit3 size={15} /> Editar</button></header>
+          {protectedAdminRole ? <div className="phase56-inline-note"><ShieldCheck size={16} /> El rol Administrador es sistémico y siempre conserva todos los permisos.</div> : null}
+          <div className="phase56-permissions">{data.permissions.map((permission) => <label key={permission.id}><input type="checkbox" checked={permissionIds.includes(permission.id)} disabled={protectedAdminRole} onChange={(e) => setPermissionIds((current) => e.target.checked ? [...current, permission.id] : current.filter((id) => id !== permission.id))} /><div><strong>{permission.name}</strong><span>{permission.code}</span></div></label>)}</div>
+          <button className="btn btn-primary full" onClick={() => void savePermissions()} disabled={protectedAdminRole}><Save size={16} /> {protectedAdminRole ? 'Permisos protegidos' : 'Guardar permisos'}</button>
+        </> : null}</div>
+      </div>
+    </section>
+    <section>
+      <SectionHead title="Usuarios de la organización" description={canManageUsers ? 'Asigna el rol que determina los permisos efectivos de cada miembro.' : 'Puedes consultar miembros, pero no cambiar sus roles.'} />
+      <div className="phase56-member-list">{data.members.map((member) => <div key={member.membershipId}><div className="avatar small-avatar">{initials(member.name)}</div><div><strong>{member.name}</strong><span>{member.email}{member.userId === authorization?.userId ? ' · Tú' : ''}</span></div><select className="input" value={member.roleId ?? ''} disabled={!canManageUsers || member.userId === authorization?.userId || !member.isActive} onChange={(e) => void updateMember(member.membershipId, e.target.value)}>{data.roles.filter((item) => item.isActive).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></div>)}</div>
+      {!canManageUsers ? <div className="phase56-inline-note"><ShieldCheck size={16} /> La asignación de roles requiere admin.manage_users.</div> : null}
+    </section>
+    {roleEdit ? <RoleModal item={roleEdit === 'new' ? null : roleEdit} onClose={() => setRoleEdit(null)} showToast={showToast} /> : null}
+  </div>;
 }
 
 function RoleModal({ item, onClose, showToast }: { item: AdminRole | null; onClose: () => void; showToast: (text: string) => void }) {
   const [form, setForm] = useState<SaveRoleInput>({ id: item?.id, code: item?.code ?? '', name: item?.name ?? '', description: item?.description ?? '', isActive: item?.isActive ?? true });
   async function submit(event: FormEvent) { event.preventDefault(); try { await sigcService.saveRole(form); showToast('Rol guardado.'); onClose(); } catch (error) { showToast(errorMessage(error)); } }
-  return <ConfigModal title={item ? 'Editar rol' : 'Nuevo rol'} onClose={onClose}><form className="stack" onSubmit={submit}><div className="form-grid two"><label className="field-label">Código<input className="input" value={form.code} disabled={item?.isSystem} onChange={(e) => setForm({ ...form, code: e.target.value })} required /></label><label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div><label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><CheckField label="Activo" checked={form.isActive} onChange={(checked) => setForm({ ...form, isActive: checked })} /><button className="btn btn-primary full"><Save size={16} /> Guardar rol</button></form></ConfigModal>;
+  return <ConfigModal title={item ? 'Editar rol' : 'Nuevo rol'} onClose={onClose}><form className="stack" onSubmit={submit}><div className="form-grid two"><label className="field-label">Código<input className="input" value={form.code} disabled={item?.isSystem} onChange={(e) => setForm({ ...form, code: e.target.value })} required /></label><label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div><label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>{item?.isSystem && item.code === 'admin' ? <div className="phase56-inline-note"><ShieldCheck size={16} /> El rol Administrador no puede desactivarse.</div> : <CheckField label="Activo" checked={form.isActive} onChange={(checked) => setForm({ ...form, isActive: checked })} />}<button className="btn btn-primary full"><Save size={16} /> Guardar rol</button></form></ConfigModal>;
 }
 
 function WorkflowsPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast: (text: string) => void }) {

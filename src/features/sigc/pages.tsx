@@ -35,6 +35,8 @@ import {
   Zap
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
+import { useAuthorization } from '../authz/AuthorizationProvider';
+import { PERMISSIONS } from '../authz/permissions';
 import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
@@ -57,13 +59,15 @@ type ToastState = {
 
 export function SigcShell() {
   const { currentUser, logout, resetDemoData, isLoading, dataMode } = useApp();
+  const { can, canAny, roleName } = useAuthorization();
+  const canReadCases = canAny(CASE_READ_PERMISSIONS);
   const [drawerCase, setDrawerCase] = useState<SigcCase | null>(null);
   const [toast, setToast] = useState<ToastState>({ visible: false, text: 'Acción registrada correctamente.' });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [topSearch, setTopSearch] = useState('');
   const navigate = useNavigate();
   const { context: saasContext, style: saasStyle } = useSaasTheme();
-  const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases();
+  const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases(canReadCases);
 
   if (!currentUser) {
     if (isLoading) {
@@ -107,33 +111,35 @@ export function SigcShell() {
           <Menu size={18} />
         </button>
         <OrganizationSwitcher />
-        <div className="search-box">
-          <Search size={18} />
-          <input
-            placeholder="Buscar por radicado, solicitante, empresa o palabra clave..."
-            value={topSearch}
-            onChange={(event) => setTopSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') navigate(`/cases${topSearch.trim() ? `?q=${encodeURIComponent(topSearch.trim())}` : ''}`);
-            }}
-          />
-        </div>
-        <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer(sigcCases.find((item) => item.priority === 'Crítica')?.id ?? sigcCases[0]?.id ?? '')}>
-          <Zap size={17} /> Vista rápida
-        </button>
-        <Link className="btn btn-primary" to="/manual-case">
+        {canReadCases ? <>
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              placeholder="Buscar por radicado, solicitante, empresa o palabra clave..."
+              value={topSearch}
+              onChange={(event) => setTopSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') navigate(`/cases${topSearch.trim() ? `?q=${encodeURIComponent(topSearch.trim())}` : ''}`);
+              }}
+            />
+          </div>
+          <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer(sigcCases.find((item) => item.priority === 'Crítica')?.id ?? sigcCases[0]?.id ?? '')}>
+            <Zap size={17} /> Vista rápida
+          </button>
+        </> : <div className="search-box" aria-hidden="true" />}
+        {can(PERMISSIONS.caseCreate) ? <Link className="btn btn-primary" to="/manual-case">
           <Plus size={17} /> Nuevo caso
-        </Link>
-        <button className="btn btn-white topbar-secondary" onClick={resetDemoData} title="Restaurar datos demo">
+        </Link> : null}
+        {dataMode === 'local' ? <button className="btn btn-white topbar-secondary" onClick={resetDemoData} title="Restaurar datos demo">
           <RefreshCw size={17} /> Demo
-        </button>
+        </button> : null}
         <button className="btn btn-white topbar-secondary" onClick={logout} title="Cerrar sesión">
           <LogOut size={17} /> Salir
         </button>
         <div className="topbar-user">
           <div>
             <strong>{currentUser.name}</strong>
-            <span title={sigcWarning ?? undefined}>{currentUser.role === 'admin' ? 'Administrador SIGC' : 'Usuario SIGC'} · {saasContext?.activeOrganization.name ?? (sigcSource === 'supabase' ? 'Datos reales' : 'Demo')}</span>
+            <span title={sigcWarning ?? undefined}>{roleName} · {saasContext?.activeOrganization.name ?? (sigcSource === 'supabase' ? 'Datos reales' : 'Demo')}</span>
           </div>
           <div className="avatar">{initials(currentUser.name)}</div>
         </div>
@@ -219,6 +225,7 @@ export function SigcLoginPage() {
 
 export function CasesPage() {
   const { showToast } = useSigcActions();
+  const { can } = useAuthorization();
   const [searchParams] = useSearchParams();
   const { data: catalogs } = useSigcCatalogs();
   const { data: members } = useSigcMembers();
@@ -253,7 +260,7 @@ export function CasesPage() {
         actions={(
           <>
             <button className="btn btn-white" onClick={() => showToast('Las vistas guardadas se habilitarán en una fase posterior.')}><Bookmark size={17} /> Guardar vista</button>
-            <Link className="btn btn-primary" to="/manual-case"><Plus size={17} /> Nuevo caso</Link>
+            {can(PERMISSIONS.caseCreate) ? <Link className="btn btn-primary" to="/manual-case"><Plus size={17} /> Nuevo caso</Link> : null}
           </>
         )}
       />
@@ -286,6 +293,7 @@ export function CasesPage() {
 export function CaseDetailPage() {
   const { caseId } = useParams();
   const { showToast } = useSigcActions();
+  const { can } = useAuthorization();
   const { data: item, isLoading, source, warning, error } = useSigcCase(caseId);
   const resolvedCaseId = item?.databaseId ?? caseId;
   const { data: assignments } = useCaseAssignments(resolvedCaseId);
@@ -329,9 +337,9 @@ export function CaseDetailPage() {
         description="Expediente colaborativo con subtareas, comentarios inmutables, documentos versionados y trazabilidad auditable."
         actions={(
           <>
-            <button className="btn btn-white" onClick={() => setDetailModal('assign')}><UserPlus size={17} /> Asignar</button>
-            <button className="btn btn-white" onClick={() => setDetailModal('state')}><RefreshCw size={17} /> Cambiar estado</button>
-            <button className="btn btn-primary" onClick={() => setDetailModal('comment')}><MessageSquarePlus size={17} /> Agregar comentario</button>
+            {can(PERMISSIONS.caseAssign) ? <button className="btn btn-white" onClick={() => setDetailModal('assign')}><UserPlus size={17} /> Asignar</button> : null}
+            {can(PERMISSIONS.caseChangeState) ? <button className="btn btn-white" onClick={() => setDetailModal('state')}><RefreshCw size={17} /> Cambiar estado</button> : null}
+            {can(PERMISSIONS.caseComment) ? <button className="btn btn-primary" onClick={() => setDetailModal('comment')}><MessageSquarePlus size={17} /> Agregar comentario</button> : null}
           </>
         )}
       />
@@ -346,11 +354,11 @@ export function CaseDetailPage() {
           <div className="bar-caption"><strong>Avance general por subtareas</strong><span>{item.progress}%</span></div>
           <Progress value={item.progress} large />
           <div className="button-grid two">
-            <button className="btn btn-soft" onClick={() => setDetailModal('document')}><Upload size={17} /> Cargar doc.</button>
-            <button className="btn btn-white" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar SLA</button>
-            <button className="btn btn-white" onClick={() => setDetailModal('reminder')}><MailCheck size={17} /> Recordatorio</button>
-            {item.state === 'Respuesta Elaborada' ? <button className="btn btn-primary" onClick={() => setDetailModal('review')}><CheckCircle2 size={17} /> Enviar a revisión</button> : null}
-            {item.state === 'Aprobado' ? <button className="btn btn-primary" onClick={() => setDetailModal('delivery')}><MailCheck size={17} /> Registrar envío</button> : null}
+            {can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft" onClick={() => setDetailModal('document')}><Upload size={17} /> Cargar doc.</button> : null}
+            {can(PERMISSIONS.caseOverrideSla) ? <button className="btn btn-white" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar SLA</button> : null}
+            {can(PERMISSIONS.caseSendReminder) ? <button className="btn btn-white" onClick={() => setDetailModal('reminder')}><MailCheck size={17} /> Recordatorio</button> : null}
+            {item.state === 'Respuesta Elaborada' && can(PERMISSIONS.caseReview) ? <button className="btn btn-primary" onClick={() => setDetailModal('review')}><CheckCircle2 size={17} /> Enviar a revisión</button> : null}
+            {item.state === 'Aprobado' && can(PERMISSIONS.caseRegisterDelivery) ? <button className="btn btn-primary" onClick={() => setDetailModal('delivery')}><MailCheck size={17} /> Registrar envío</button> : null}
           </div>
         </div>
       </section>
@@ -393,7 +401,7 @@ export function CaseDetailPage() {
                 <div><span>Fecha límite vigente</span><strong>{item.due}</strong></div>
                 <div><span>Semáforo</span><strong><SemDot color={item.sem} /> {dueStatusLabel(item)}</strong></div>
               </div>
-              <div className="card-inline-actions"><button className="btn btn-white small" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar fecha</button><button className="btn btn-soft small" onClick={() => setDetailModal('reminder')}><MailCheck size={15} /> Recordar</button></div>
+              <div className="card-inline-actions">{can(PERMISSIONS.caseOverrideSla) ? <button className="btn btn-white small" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar fecha</button> : null}{can(PERMISSIONS.caseSendReminder) ? <button className="btn btn-soft small" onClick={() => setDetailModal('reminder')}><MailCheck size={15} /> Recordar</button> : null}</div>
               <div className="phase4-history-list">
                 {slaOverrides.slice(0, 3).map((entry) => <div className="phase4-history-row" key={entry.id}><div><strong>Nueva fecha: {new Date(entry.newDueAt).toLocaleString('es-CO')}</strong><span>{entry.justification}</span></div><small>{entry.changedByName} · {entry.changedLabel}</small></div>)}
                 {!slaOverrides.length ? <div className="empty-inline">No hay modificaciones excepcionales del SLA.</div> : null}
@@ -404,9 +412,9 @@ export function CaseDetailPage() {
               </div>
             </CardBlock>
             <CardBlock title="Revisión, aprobación y envío" description="Flujo formal de revisión antes de remitir la respuesta." icon={<CheckCircle2 />}>
-              {item.state === 'Respuesta Elaborada' ? <div className="phase4-callout"><strong>Respuesta lista para revisión</strong><span>Selecciona un aprobador o envíala a la cola general de revisión.</span><button className="btn btn-primary small" onClick={() => setDetailModal('review')}>Enviar a revisión</button></div> : null}
-              {pendingReview ? <div className="phase4-callout review-pending"><strong>Revisión #{pendingReview.reviewRound} pendiente</strong><span>Revisor: {pendingReview.reviewerName}</span>{pendingReview.requestNote ? <p>{pendingReview.requestNote}</p> : null}<div className="button-grid two"><button className="btn btn-primary small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'approved' })}>Aprobar</button><button className="btn btn-white small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'returned' })}>Devolver</button></div></div> : null}
-              {item.state === 'Aprobado' ? <div className="phase4-callout"><strong>Respuesta aprobada</strong><span>Registra el canal y destinatario para pasar el caso a Enviado.</span><button className="btn btn-primary small" onClick={() => setDetailModal('delivery')}>Registrar envío</button></div> : null}
+              {item.state === 'Respuesta Elaborada' && can(PERMISSIONS.caseReview) ? <div className="phase4-callout"><strong>Respuesta lista para revisión</strong><span>Selecciona un aprobador o envíala a la cola general de revisión.</span><button className="btn btn-primary small" onClick={() => setDetailModal('review')}>Enviar a revisión</button></div> : null}
+              {pendingReview ? <div className="phase4-callout review-pending"><strong>Revisión #{pendingReview.reviewRound} pendiente</strong><span>Revisor: {pendingReview.reviewerName}</span>{pendingReview.requestNote ? <p>{pendingReview.requestNote}</p> : null}{can(PERMISSIONS.caseApprove) ? <div className="button-grid two"><button className="btn btn-primary small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'approved' })}>Aprobar</button><button className="btn btn-white small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'returned' })}>Devolver</button></div> : null}</div> : null}
+              {item.state === 'Aprobado' && can(PERMISSIONS.caseRegisterDelivery) ? <div className="phase4-callout"><strong>Respuesta aprobada</strong><span>Registra el canal y destinatario para pasar el caso a Enviado.</span><button className="btn btn-primary small" onClick={() => setDetailModal('delivery')}>Registrar envío</button></div> : null}
               <div className="phase4-history-list">
                 {reviews.slice(0, 4).map((review) => <div className="phase4-history-row" key={review.id}><div><strong>Revisión #{review.reviewRound} · {review.status === 'pending' ? 'Pendiente' : review.status === 'approved' ? 'Aprobada' : review.status === 'returned' ? 'Devuelta' : 'Cancelada'}</strong><span>{review.reviewerName}{review.decisionComments ? ` · ${review.decisionComments}` : ''}</span></div><small>{review.requestedLabel}</small></div>)}
                 {deliveries.slice(0, 3).map((delivery) => <div className="phase4-history-row" key={delivery.id}><div><strong>Envío · {delivery.channel}</strong><span>{delivery.recipient}{delivery.reference ? ` · Ref. ${delivery.reference}` : ''}</span></div><small>{delivery.deliveredByName} · {delivery.deliveredLabel}</small></div>)}
@@ -416,12 +424,12 @@ export function CaseDetailPage() {
           </section>
           <section className="grid-2">
             <CardBlock title="Subtareas del caso" description={`${caseSubtasks.length} actividad${caseSubtasks.length === 1 ? '' : 'es'} vinculadas al expediente.`} icon={<CalendarCheck />}>
-              <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('subtask')}><Plus size={15} /> Nueva subtarea</button></div>
+              {can(PERMISSIONS.caseManageSubtasks) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('subtask')}><Plus size={15} /> Nueva subtarea</button></div> : null}
               {caseSubtasks.length ? caseSubtasks.slice(0, 6).map((task) => <SubtaskMini task={task} key={task.id} />) : <div className="empty-inline">No hay subtareas creadas.</div>}
             </CardBlock>
             <CardBlock title="Documentos adjuntos" description={`${caseDocuments.length} documento${caseDocuments.length === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
-              <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div>
-              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button></div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
+              {can(PERMISSIONS.documentUpload) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div> : null}
+              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
             </CardBlock>
           </section>
         </div>
@@ -436,17 +444,17 @@ export function CaseDetailPage() {
           <CardBlock title="Descripción" icon={<MessageCircle />}><p className="case-description">{item.description || 'Sin descripción registrada.'}</p></CardBlock>
         </aside>
       </section>
-      {detailModal === 'assign' ? <AssignCaseModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
-      {detailModal === 'state' ? <ChangeCaseStateModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
-      {detailModal === 'comment' ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'subtask' ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'document' ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'sla' ? <SlaOverrideModal caseId={resolvedCaseId!} currentDueAt={item.dueAt} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'reminder' ? <ManualReminderModal caseId={resolvedCaseId!} members={members} assignments={assignments} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'review' ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'delivery' ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {reviewDecision ? <ReviewDecisionModal review={reviewDecision.review} decision={reviewDecision.decision} onClose={() => setReviewDecision(null)} onSaved={(message) => { setReviewDecision(null); showToast(message); }} /> : null}
-      {versionDocument ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}
+      {detailModal === 'assign' && can(PERMISSIONS.caseAssign) ? <AssignCaseModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
+      {detailModal === 'state' && can(PERMISSIONS.caseChangeState) ? <ChangeCaseStateModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
+      {detailModal === 'comment' && can(PERMISSIONS.caseComment) ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'subtask' && can(PERMISSIONS.caseManageSubtasks) ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'document' && can(PERMISSIONS.documentUpload) ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'sla' && can(PERMISSIONS.caseOverrideSla) ? <SlaOverrideModal caseId={resolvedCaseId!} currentDueAt={item.dueAt} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'reminder' && can(PERMISSIONS.caseSendReminder) ? <ManualReminderModal caseId={resolvedCaseId!} members={members} assignments={assignments} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'review' && can(PERMISSIONS.caseReview) ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'delivery' && can(PERMISSIONS.caseRegisterDelivery) ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {reviewDecision && can(PERMISSIONS.caseApprove) ? <ReviewDecisionModal review={reviewDecision.review} decision={reviewDecision.decision} onClose={() => setReviewDecision(null)} onSaved={(message) => { setReviewDecision(null); showToast(message); }} /> : null}
+      {versionDocument && can(PERMISSIONS.documentUpload) ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}
     </Page>
   );
 }
@@ -516,6 +524,8 @@ export function BoardPage() {
 
 export function SubtasksPage() {
   const { showToast } = useSigcActions();
+  const { can } = useAuthorization();
+  const canManageSubtasks = can(PERMISSIONS.caseManageSubtasks);
   const { data: cases } = useSigcCases();
   const { data: members } = useSigcMembers();
   const [filters, setFilters] = useState<{ query: string; state: '' | SigcSubtask['state']; responsibleUserId: string }>({ query: '', state: '', responsibleUserId: '' });
@@ -535,7 +545,7 @@ export function SubtasksPage() {
 
   return (
     <Page>
-      <PageHead title="Módulo de subtareas" description="Control real de actividades por caso, responsable, fecha límite, estado, adjuntos y avance." actions={<button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Nueva subtarea</button>} />
+      <PageHead title="Módulo de subtareas" description="Control real de actividades por caso, responsable, fecha límite, estado, adjuntos y avance." actions={canManageSubtasks ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Nueva subtarea</button> : undefined} />
       <section className="card filter-card">
         <div className="filter-grid phase3-filter-grid">
           <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Buscar subtarea" value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} /></div>
@@ -547,15 +557,18 @@ export function SubtasksPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       <div className="case-list-meta"><span>{isLoading ? 'Cargando actividades...' : 'Subtareas activas y trazables'}</span><strong>{subtasks.length} subtarea{subtasks.length === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><SubtasksTable rows={subtasks} onEdit={setEditing} onDelete={(task) => void remove(task)} /></section>
-      {creating ? <SubtaskFormModal cases={cases} onClose={() => setCreating(false)} onSaved={(message) => { setCreating(false); showToast(message); }} /> : null}
-      {editing ? <SubtaskFormModal cases={cases} initial={editing} onClose={() => setEditing(null)} onSaved={(message) => { setEditing(null); showToast(message); }} /> : null}
+      <section className="card table-card"><SubtasksTable rows={subtasks} onEdit={canManageSubtasks ? setEditing : undefined} onDelete={canManageSubtasks ? (task) => void remove(task) : undefined} /></section>
+      {creating && canManageSubtasks ? <SubtaskFormModal cases={cases} onClose={() => setCreating(false)} onSaved={(message) => { setCreating(false); showToast(message); }} /> : null}
+      {editing && canManageSubtasks ? <SubtaskFormModal cases={cases} initial={editing} onClose={() => setEditing(null)} onSaved={(message) => { setEditing(null); showToast(message); }} /> : null}
     </Page>
   );
 }
 
 export function DocumentsPage() {
   const { showToast } = useSigcActions();
+  const { can } = useAuthorization();
+  const canUploadDocuments = can(PERMISSIONS.documentUpload);
+  const canDeleteDocuments = can(PERMISSIONS.documentDelete);
   const { data: cases } = useSigcCases();
   const { data: documents, isLoading, warning, error } = useSigcDocuments();
   const [query, setQuery] = useState('');
@@ -593,16 +606,16 @@ export function DocumentsPage() {
 
   return (
     <Page>
-      <PageHead title="Gestión documental" description="Repositorio real por caso con versiones inmutables: cada nueva carga crea una versión y nunca sobrescribe la anterior." actions={<button className="btn btn-primary" onClick={() => setUploading(true)}><Upload size={17} /> Cargar documento</button>} />
+      <PageHead title="Gestión documental" description="Repositorio real por caso con versiones inmutables: cada nueva carga crea una versión y nunca sobrescribe la anterior." actions={canUploadDocuments ? <button className="btn btn-primary" onClick={() => setUploading(true)}><Upload size={17} /> Cargar documento</button> : undefined} />
       <section className="document-kpis">{[['Documentos', String(documents.length)], ['Versiones creadas', String(versions)], ['En revisión', String(inReview)], ['Aprobados', String(approved)]].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
       <section className="card filter-card"><div className="filter-search-field document-search"><Search size={17} /><input className="field" placeholder="Buscar por documento, caso, categoría o responsable" value={query} onChange={(event) => setQuery(event.target.value)} /></div></section>
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       <div className="case-list-meta"><span>{isLoading ? 'Consultando Storage y metadatos...' : 'Versionamiento y eliminación lógica activos'}</span><strong>{filtered.length} documento{filtered.length === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onEdit={setEditingDocument} onVersion={setVersioning} onDelete={(document) => void removeDocument(document)} /></section>
-      {uploading ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
-      {versioning ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
-      {editingDocument ? <TextDocumentEditorModal document={editingDocument} onClose={() => setEditingDocument(null)} onSaved={(message) => { setEditingDocument(null); showToast(message); }} /> : null}
+      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
+      {uploading && canUploadDocuments ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
+      {versioning && canUploadDocuments ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
+      {editingDocument && canUploadDocuments ? <TextDocumentEditorModal document={editingDocument} onClose={() => setEditingDocument(null)} onSaved={(message) => { setEditingDocument(null); showToast(message); }} /> : null}
     </Page>
   );
 }
@@ -622,7 +635,8 @@ export function SimpleLegacyPage({ title, description }: { title: string; descri
 
 function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const { currentUser, unreadNotifications } = useApp();
-  const { data: dashboard } = useSigcDashboard();
+  const { can, canAny, canAll, roleName } = useAuthorization();
+  const { data: dashboard } = useSigcDashboard(can(PERMISSIONS.reportsView));
   const { context } = useSaasTheme();
   const compliance = Math.round(dashboard?.summary.slaCompliancePct ?? 0);
   const critical = dashboard?.summary.criticalCases ?? 0;
@@ -633,7 +647,11 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
         <div><strong>{context?.branding.shortName ?? 'SIGC'}</strong><span>{context?.branding.productName ?? 'Sistema Integral de Gestión de Casos'}</span></div>
       </div>
       <nav className="side-nav">
-        {navItems.map(({ to, label, icon: Icon, externalShell }) => (
+        {navItems.filter((item) => {
+          const anyAllowed = !item.anyOf?.length || canAny(item.anyOf);
+          const allAllowed = !item.allOf?.length || canAll(item.allOf);
+          return anyAllowed && allAllowed;
+        }).map(({ to, label, icon: Icon, externalShell }) => (
           <NavLink key={to} to={to} target={externalShell ? '_blank' : undefined} rel={externalShell ? 'noreferrer' : undefined} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
             <Icon size={17} /><span>{label}</span>{to === '/notifications' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
           </NavLink>
@@ -647,7 +665,7 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
       </div>
       <NavLink to="/profile" className="sidebar-profile" onClick={closeMobile}>
         <UserCog size={18} />
-        <div><strong>{currentUser?.name}</strong><span>{currentUser?.role === 'admin' ? 'Administrador' : 'Usuario'}</span></div>
+        <div><strong>{currentUser?.name}</strong><span>{roleName}</span></div>
       </NavLink>
     </div>
   );
@@ -719,23 +737,23 @@ function CasesTable({ rows, compact = false }: { rows: SigcCase[]; compact?: boo
   );
 }
 
-function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit: (task: SigcSubtask) => void; onDelete: (task: SigcSubtask) => void }) {
+function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit?: (task: SigcSubtask) => void; onDelete?: (task: SigcSubtask) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table subtasks-table">
         <thead><tr>{['Subtarea', 'Caso', 'Responsable', 'Fecha límite', 'Estado', 'Prioridad', 'Comentarios', 'Adjuntos', 'Avance', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small>{task.description || 'Sin descripción'}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(task.caseRadicado)}`}>{task.caseRadicado}</Link><small>{task.caseSubject}</small></td><td>{task.responsibleName}</td><td>{task.due}</td><td><Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge></td><td><Badge tone={priorityTones[task.priority]}>{task.priority}</Badge></td><td>{task.comments}</td><td>{task.attachments}</td><td><div className="progress-cell"><Progress value={task.progress} /><b>{task.progress}%</b></div></td><td><div className="table-actions"><button className="btn btn-white icon-only small" title="Editar" onClick={() => onEdit(task)}><Edit3 size={14} /></button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(task)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={10}><div className="empty-inline">No hay subtareas para los filtros seleccionados.</div></td></tr>}</tbody>
+        <tbody>{rows.length ? rows.map((task) => <tr key={task.id}><td><strong>{task.title}</strong><small>{task.description || 'Sin descripción'}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(task.caseRadicado)}`}>{task.caseRadicado}</Link><small>{task.caseSubject}</small></td><td>{task.responsibleName}</td><td>{task.due}</td><td><Badge tone={stateTones[task.stateLabel] ?? 'tone-slate'}>{task.stateLabel}</Badge></td><td><Badge tone={priorityTones[task.priority]}>{task.priority}</Badge></td><td>{task.comments}</td><td>{task.attachments}</td><td><div className="progress-cell"><Progress value={task.progress} /><b>{task.progress}%</b></div></td><td>{onEdit || onDelete ? <div className="table-actions">{onEdit ? <button className="btn btn-white icon-only small" title="Editar" onClick={() => onEdit(task)}><Edit3 size={14} /></button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(task)}><Trash2 size={14} /></button> : null}</div> : <span className="muted">Solo lectura</span>}</td></tr>) : <tr><td colSpan={10}><div className="empty-inline">No hay subtareas para los filtros seleccionados.</div></td></tr>}</tbody>
       </table>
     </div>
   );
 }
 
-function DocumentsTable({ rows, onOpen, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onEdit: (document: SigcDocument) => void; onVersion: (document: SigcDocument) => void; onDelete: (document: SigcDocument) => void }) {
+function DocumentsTable({ rows, onOpen, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
         <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button>{canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}<button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button><button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button></div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );

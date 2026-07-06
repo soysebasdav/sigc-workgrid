@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Save } from 'lucide-react';
+import { Save, ShieldCheck } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Field, Input } from '../../components/ui/Field';
+import { useAuthorization } from '../authz/AuthorizationProvider';
 
 export function ProfilePage() {
   const { currentUser, updateProfile } = useApp();
+  const { roleName, permissions } = useAuthorization();
   const [name, setName] = useState(currentUser?.name ?? '');
   const [email, setEmail] = useState(currentUser?.email ?? '');
   const [password, setPassword] = useState('');
@@ -50,9 +52,10 @@ export function ProfilePage() {
       </Card>
 
       <Card className="identity-card">
-        <span>Rol actual</span>
-        <strong>{currentUser?.role === 'admin' ? 'Administrador' : 'Usuario'}</strong>
-        <p>Los usuarios normales pueden modificar solo su perfil y sus tareas. Los administradores tienen acceso a usuarios y configuración.</p>
+        <ShieldCheck size={28} />
+        <span>Rol en la organización activa</span>
+        <strong>{roleName}</strong>
+        <p>{permissions.size} permiso(s) efectivo(s). Tu acceso ya no depende del rol histórico guardado en el perfil.</p>
       </Card>
     </div>
   );

@@ -34,6 +34,7 @@ import type {
   SigcCaseReminder,
   SendManualReminderInput,
   SigcAdminSnapshot,
+  SigcUserManagementSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -46,6 +47,7 @@ import type {
   SigcReportFilters,
   SigcReportResult,
   SigcSaasContext,
+  SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
@@ -95,6 +97,7 @@ export interface SigcRepository {
   sendManualReminder(input: SendManualReminderInput): Promise<number>;
 
   getAdminSnapshot(): Promise<SigcAdminSnapshot>;
+  getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot>;
   saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void>;
   setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void>;
   saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void>;
@@ -116,6 +119,7 @@ export interface SigcRepository {
   getReport(filters: SigcReportFilters): Promise<SigcReportResult>;
 
   getSaasContext(): Promise<SigcSaasContext>;
+  getAuthorizationContext(): Promise<SigcAuthorizationContext>;
   setActiveOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void>;
   createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string>;

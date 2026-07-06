@@ -23,22 +23,32 @@ import {
   Workflow
 } from 'lucide-react';
 import type { CasePriorityName, CaseStateName } from './domain/types';
+import { CASE_READ_PERMISSIONS, PERMISSIONS, type PermissionCode } from '../authz/permissions';
 
-export const navItems: Array<{ to: string; label: string; icon: LucideIcon; externalShell?: boolean }> = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/cases', label: 'Bandeja de casos', icon: Inbox },
-  { to: '/manual-case', label: 'Creación manual', icon: FilePlus2 },
+export type SigcNavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  externalShell?: boolean;
+  anyOf?: readonly PermissionCode[];
+  allOf?: readonly PermissionCode[];
+};
+
+export const navItems: SigcNavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, allOf: [PERMISSIONS.reportsView] },
+  { to: '/cases', label: 'Bandeja de casos', icon: Inbox, anyOf: CASE_READ_PERMISSIONS },
+  { to: '/manual-case', label: 'Creación manual', icon: FilePlus2, allOf: [PERMISSIONS.caseCreate] },
   { to: '/radicar', label: 'Formulario público', icon: Globe2, externalShell: true },
-  { to: '/board', label: 'Cronograma / tablero', icon: KanbanSquare },
-  { to: '/subtasks', label: 'Subtareas', icon: ListChecks },
-  { to: '/agenda', label: 'Agenda', icon: CalendarDays },
-  { to: '/documents', label: 'Gestión documental', icon: FolderKanban },
-  { to: '/reports', label: 'Reportes', icon: BarChart3 },
-  { to: '/workspace', label: 'Espacio SaaS', icon: Cloud },
+  { to: '/board', label: 'Cronograma / tablero', icon: KanbanSquare, anyOf: CASE_READ_PERMISSIONS },
+  { to: '/subtasks', label: 'Subtareas', icon: ListChecks, anyOf: CASE_READ_PERMISSIONS },
+  { to: '/agenda', label: 'Agenda', icon: CalendarDays, anyOf: CASE_READ_PERMISSIONS },
+  { to: '/documents', label: 'Gestión documental', icon: FolderKanban, anyOf: CASE_READ_PERMISSIONS },
+  { to: '/reports', label: 'Reportes', icon: BarChart3, allOf: [PERMISSIONS.reportsView] },
+  { to: '/workspace', label: 'Espacio SaaS', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/notifications', label: 'Notificaciones', icon: BellRing },
-  { to: '/users', label: 'Usuarios', icon: Users },
-  { to: '/settings', label: 'Configuración', icon: Settings },
-  { to: '/admin', label: 'Administración SIGC', icon: Settings }
+  { to: '/users', label: 'Usuarios', icon: Users, allOf: [PERMISSIONS.adminManageUsers] },
+  { to: '/settings', label: 'Configuración', icon: Settings, allOf: [PERMISSIONS.adminManageConfiguration] },
+  { to: '/admin', label: 'Administración SIGC', icon: Settings, allOf: [PERMISSIONS.adminManageConfiguration] }
 ];
 
 export const areaTones: Record<string, string> = {

@@ -35,6 +35,7 @@ import type {
   SigcCaseReminder,
   SendManualReminderInput,
   SigcAdminSnapshot,
+  SigcUserManagementSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -47,6 +48,7 @@ import type {
   SigcReportFilters,
   SigcReportResult,
   SigcSaasContext,
+  SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
@@ -632,6 +634,11 @@ export const demoSigcRepository: SigcRepository = {
     return created.length;
   },
 
+  async getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot> {
+    const snapshot = await this.getAdminSnapshot();
+    return { organizationId: snapshot.organizationId, roles: snapshot.roles, members: snapshot.members };
+  },
+
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
     const states = catalogs.states.map((item, index) => ({ id: item.id, code: `STATE_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true, isInitial: index === 0, isTerminal: ['Cerrado', 'Cancelado'].includes(item.name) }));
     return {
@@ -709,6 +716,22 @@ export const demoSigcRepository: SigcRepository = {
 
   async getSaasContext(): Promise<SigcSaasContext> {
     return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
+  },
+
+  async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
+    return {
+      userId: 'demo-user-admin',
+      organizationId: 'demo-org',
+      membershipId: 'demo-membership-admin',
+      isActive: true,
+      role: { id: 'demo-role-admin', code: 'admin', name: 'Administrador' },
+      permissions: [
+        'case.create','case.read_all','case.read_assigned','case.assign','case.change_state','case.override_sla','case.approve','case.close',
+        'case.comment','case.manage_subtasks','case.send_reminder','case.review','case.register_delivery',
+        'document.upload','document.delete','admin.manage_users','admin.manage_configuration','automation.view','automation.manage',
+        'reports.view','reports.export','saas.manage_workspace'
+      ]
+    };
   },
   async setActiveOrganization(_organizationId: string): Promise<void> {},
   async updateOrganizationProfile(_input: UpdateOrganizationProfileInput): Promise<void> {},

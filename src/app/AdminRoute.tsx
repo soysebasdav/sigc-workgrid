@@ -1,11 +1,8 @@
-import { Navigate, Outlet } from 'react-router-dom';
-import { useApp } from './AppProvider';
+import { PermissionRoute } from './PermissionRoute';
+import { PERMISSIONS } from '../features/authz/permissions';
 
+// Compatibilidad temporal: el nombre histórico se conserva hasta la limpieza legacy.
+// La autoridad ya no proviene de profiles.role sino del permiso organizacional real.
 export function AdminRoute() {
-  const { currentUser } = useApp();
-
-  if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.role !== 'admin') return <Navigate to="/dashboard" replace />;
-
-  return <Outlet />;
+  return <PermissionRoute allOf={[PERMISSIONS.adminManageUsers]} />;
 }

@@ -16,6 +16,8 @@ import {
   Users
 } from 'lucide-react';
 import type { AnalyticsValue, SigcReportFilters, SigcReportResult, SigcReportRow } from '../domain/types';
+import { useAuthorization } from '../../authz/AuthorizationProvider';
+import { PERMISSIONS } from '../../authz/permissions';
 import { useSigcCatalogs, useSigcDashboard, useSigcMembers, useSigcReport } from '../hooks/useSigcData';
 
 function formatNumber(value: number): string {
@@ -157,6 +159,8 @@ function defaultReportRange(): Pick<SigcReportFilters, 'from' | 'to'> {
 }
 
 export function AnalyticsReportsPage() {
+  const { can } = useAuthorization();
+  const canExport = can(PERMISSIONS.reportsExport);
   const [filters, setFilters] = useState<SigcReportFilters>(() => ({ ...defaultReportRange() }));
   const queryFilters = useMemo(() => ({ ...filters }), [filters]);
   const { data: report, isLoading, error, warning, reload, source } = useSigcReport(queryFilters);
@@ -166,6 +170,10 @@ export function AnalyticsReportsPage() {
 
   function update<K extends keyof SigcReportFilters>(key: K, value: SigcReportFilters[K]) { setFilters((current) => ({ ...current, [key]: value })); }
   function runExport(kind: 'csv' | 'excel' | 'pdf') {
+    if (!canExport) {
+      setMessage('Tu rol puede consultar reportes, pero no exportarlos.');
+      return;
+    }
     if (!report) return;
     try {
       if (kind === 'csv') exportCsv(report);
@@ -176,7 +184,7 @@ export function AnalyticsReportsPage() {
   }
 
   return <div className="page">
-    <header className="page-head"><div><span className="eyebrow">Explotación de datos · Fase 7</span><h1>Reportes reales</h1><p>Filtra el universo de casos y exporta el resultado consolidado con los mismos datos que utiliza el SIGC.</p></div><div className="page-actions"><button className="btn btn-white" onClick={() => runExport('excel')} disabled={!report?.rows.length}><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white" onClick={() => runExport('pdf')} disabled={!report?.rows.length}><FileText size={17} /> PDF</button><button className="btn btn-primary" onClick={() => runExport('csv')} disabled={!report?.rows.length}><Download size={17} /> CSV</button></div></header>
+    <header className="page-head"><div><span className="eyebrow">Explotación de datos · Fase 7</span><h1>Reportes reales</h1><p>Filtra el universo de casos y exporta el resultado consolidado con los mismos datos que utiliza el SIGC.</p></div>{canExport ? <div className="page-actions"><button className="btn btn-white" onClick={() => runExport('excel')} disabled={!report?.rows.length}><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white" onClick={() => runExport('pdf')} disabled={!report?.rows.length}><FileText size={17} /> PDF</button><button className="btn btn-primary" onClick={() => runExport('csv')} disabled={!report?.rows.length}><Download size={17} /> CSV</button></div> : <div className="page-actions"><span className="chip tone-slate">Consulta sin permiso de exportación</span></div>}</header>
 
     <section className="card filter-card"><div className="phase78-report-filters"><label>Desde<input className="field" type="date" value={filters.from} onChange={(event) => update('from', event.target.value)} /></label><label>Hasta<input className="field" type="date" value={filters.to} onChange={(event) => update('to', event.target.value)} /></label><select className="field" value={filters.stateId ?? ''} onChange={(event) => update('stateId', event.target.value || undefined)}><option value="">Todos los estados</option>{catalogs?.states.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.areaId ?? ''} onChange={(event) => update('areaId', event.target.value || undefined)}><option value="">Todas las áreas</option>{catalogs?.areas.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.ownerId ?? ''} onChange={(event) => update('ownerId', event.target.value || undefined)}><option value="">Todos los responsables</option>{members.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}</select><select className="field" value={filters.caseTypeId ?? ''} onChange={(event) => update('caseTypeId', event.target.value || undefined)}><option value="">Todos los tipos</option>{catalogs?.caseTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.priorityId ?? ''} onChange={(event) => update('priorityId', event.target.value || undefined)}><option value="">Todas las prioridades</option>{catalogs?.priorities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className={`btn ${filters.overdueOnly ? 'btn-primary' : 'btn-white'}`} onClick={() => update('overdueOnly', !filters.overdueOnly)}>Solo vencidos</button><button className="btn btn-soft" onClick={reload} disabled={isLoading}><RefreshCw size={17} /> Consultar</button></div></section>
     {warning ? <div className="alert danger">{warning}</div> : null}{error ? <div className="alert danger">{error}</div> : null}{message ? <div className="phase78-inline-message">{message}</div> : null}

@@ -595,6 +595,12 @@ export interface AutomationExecution {
   finishedAt?: string;
 }
 
+export interface SigcUserManagementSnapshot {
+  organizationId: string;
+  roles: AdminRole[];
+  members: AdminMember[];
+}
+
 export interface SigcAdminSnapshot {
   organizationId: string;
   areas: AdminCatalogItem[];
@@ -821,6 +827,22 @@ export interface SigcReportResult {
   byPriority: AnalyticsValue[];
   rows: SigcReportRow[];
   isTruncated: boolean;
+}
+
+
+export interface SigcAuthorizationRole {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface SigcAuthorizationContext {
+  userId: string;
+  organizationId: string;
+  membershipId: string;
+  isActive: boolean;
+  role: SigcAuthorizationRole;
+  permissions: string[];
 }
 
 export interface SaasBranding {
