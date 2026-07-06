@@ -11,7 +11,9 @@ import type {
   CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
-  PublicCaseTypeOption,
+  PublicCaseSubmissionResult,
+  PublicIntakeContext,
+  PublicIntakeLocator,
   SigcAssignment,
   SigcCase,
   SigcCaseFilters,
@@ -51,6 +53,7 @@ import type {
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
+  UpdatePublicIntakeSettingsInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
@@ -120,11 +123,12 @@ export const sigcService = {
     return withSafeReadFallback(() => supabaseSigcRepository.listAllowedStates(caseId), () => demoSigcRepository.listAllowedStates(caseId));
   },
 
-  getPublicCaseTypes(): Promise<SigcRepositoryResult<PublicCaseTypeOption[]>> {
-    return withSafeReadFallback(() => supabasePublicSigcRepository.getPublicCaseTypes(), () => demoPublicSigcRepository.getPublicCaseTypes());
+  async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<SigcRepositoryResult<PublicIntakeContext | null>> {
+    if (dataMode !== 'supabase') return { data: await demoPublicSigcRepository.getPublicIntakeContext(locator), source: 'demo' };
+    return { data: await supabasePublicSigcRepository.getPublicIntakeContext(locator), source: 'supabase' };
   },
 
-  async createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult> {
+  async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const result = await publicMutationRepository().createPublicCase(input);
     emitSigcDataChanged();
     return result;
@@ -324,6 +328,7 @@ export const sigcService = {
   },
   async setActiveOrganization(organizationId: string): Promise<void> { await mutationRepository().setActiveOrganization(organizationId); emitSigcDataChanged(); },
   async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> { await mutationRepository().updateOrganizationProfile(input); emitSigcDataChanged(); },
+  async updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void> { await mutationRepository().updatePublicIntakeSettings(input); emitSigcDataChanged(); },
   async createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string> { const id = await mutationRepository().createSaasOrganization(input); emitSigcDataChanged(); return id; },
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { const result = await mutationRepository().createOrganizationInvitation(input); emitSigcDataChanged(); return result; },
   async revokeOrganizationInvitation(invitationId: string): Promise<void> { await mutationRepository().revokeOrganizationInvitation(invitationId); emitSigcDataChanged(); },

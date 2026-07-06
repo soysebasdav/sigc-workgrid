@@ -80,7 +80,40 @@ export interface PublicCaseTypeOption {
   slaLabel: string;
 }
 
-export interface PublicCaseCreateInput {
+export interface PublicIntakeBranding {
+  productName: string;
+  shortName: string;
+  logoUrl?: string | null;
+  primaryColor: string;
+  accentColor: string;
+  supportEmail?: string | null;
+  customDomain?: string | null;
+}
+
+export interface PublicIntakeSettings {
+  enabled: boolean;
+  formTitle: string;
+  formDescription: string;
+  confirmationMessage: string;
+  allowAttachments: boolean;
+  maxFiles: number;
+  maxFileSizeBytes: number;
+}
+
+export interface PublicIntakeContext {
+  organizationName: string;
+  organizationSlug: string;
+  branding: PublicIntakeBranding;
+  intake: PublicIntakeSettings;
+  caseTypes: PublicCaseTypeOption[];
+}
+
+export interface PublicIntakeLocator {
+  tenant?: string;
+  hostname?: string;
+}
+
+export interface PublicCaseCreateInput extends PublicIntakeLocator {
   caseTypeId: string;
   requesterName: string;
   requesterCompany: string;
@@ -90,6 +123,12 @@ export interface PublicCaseCreateInput {
   subject: string;
   description: string;
   website?: string;
+  attachments?: File[];
+}
+
+export interface PublicCaseSubmissionResult extends CreatedCaseResult {
+  attachmentCount: number;
+  failedAttachments: string[];
 }
 
 export interface ManualCaseAssignmentInput {
@@ -941,6 +980,16 @@ export interface SigcSaasContext {
 export interface UpdateOrganizationProfileInput extends SaasBranding {
   name: string;
   slug: string;
+}
+
+export interface UpdatePublicIntakeSettingsInput {
+  enabled: boolean;
+  formTitle: string;
+  formDescription: string;
+  confirmationMessage: string;
+  allowAttachments: boolean;
+  maxFiles: number;
+  maxFileSizeBytes: number;
 }
 
 export interface CreateSaasOrganizationInput {

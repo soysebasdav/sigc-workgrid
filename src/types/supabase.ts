@@ -322,6 +322,21 @@ export interface Database {
         created_at: string;
       }>;
 
+      public_case_upload_sessions: TableDef<{
+        id: string;
+        token: string;
+        organization_id: string;
+        case_id: string;
+        upload_path_prefix: string;
+        max_files: number;
+        max_file_size_bytes: number;
+        uploaded_files: number;
+        expires_at: string;
+        finalized_at: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+
       audit_events: TableDef<{
         id: number;
         organization_id: string;
@@ -348,12 +363,14 @@ export interface Database {
         Args: { p_organization_id: string; p_year?: number };
         Returns: Array<{ sequence_year: number; sequence_number: number; radicado: string }>;
       };
-      get_public_case_types: {
-        Args: Record<PropertyKey, never>;
-        Returns: Array<{ id: string; name: string; description: string | null; sla_label: string }>;
+      get_public_intake_context: {
+        Args: { p_tenant?: string | null; p_hostname?: string | null };
+        Returns: Json | null;
       };
       submit_public_case: {
         Args: {
+          p_tenant: string | null;
+          p_hostname: string | null;
           p_case_type_id: string;
           p_requester_name: string;
           p_requester_company: string;
@@ -363,8 +380,30 @@ export interface Database {
           p_subject: string;
           p_description: string;
           p_website?: string | null;
+          p_attachment_count?: number;
         };
-        Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
+        Returns: Array<{
+          case_id: string;
+          radicado: string;
+          due_at: string | null;
+          upload_token: string | null;
+          upload_path_prefix: string | null;
+          upload_expires_at: string | null;
+          max_files: number;
+          max_file_size_bytes: number;
+        }>;
+      };
+      register_public_case_attachment: {
+        Args: { p_upload_token: string; p_storage_path: string; p_original_filename: string; p_mime_type: string | null; p_size_bytes: number };
+        Returns: string;
+      };
+      finalize_public_case_upload: {
+        Args: { p_upload_token: string };
+        Returns: number;
+      };
+      update_public_intake_settings: {
+        Args: { p_enabled: boolean; p_form_title: string; p_form_description: string; p_confirmation_message: string; p_allow_attachments: boolean; p_max_files: number; p_max_file_size_bytes: number };
+        Returns: undefined;
       };
       create_internal_case: {
         Args: {

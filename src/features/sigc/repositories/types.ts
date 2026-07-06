@@ -10,7 +10,9 @@ import type {
   CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
-  PublicCaseTypeOption,
+  PublicCaseSubmissionResult,
+  PublicIntakeContext,
+  PublicIntakeLocator,
   SigcAssignment,
   SigcCase,
   SigcCaseFilters,
@@ -49,6 +51,7 @@ import type {
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
+  UpdatePublicIntakeSettingsInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
@@ -124,6 +127,7 @@ export interface SigcRepository {
   getAuthorizationContext(): Promise<SigcAuthorizationContext>;
   setActiveOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void>;
+  updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void>;
   createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string>;
   createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation>;
   revokeOrganizationInvitation(invitationId: string): Promise<void>;
@@ -131,8 +135,8 @@ export interface SigcRepository {
 }
 
 export interface PublicSigcRepository {
-  getPublicCaseTypes(): Promise<PublicCaseTypeOption[]>;
-  createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult>;
+  getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null>;
+  createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult>;
   getOrganizationInvitation(token: string): Promise<import('../domain/types').PublicOrganizationInvitation | null>;
   acceptOrganizationInvitation(token: string): Promise<string>;
 }

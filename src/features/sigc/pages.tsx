@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import {
   Archive,
@@ -42,7 +42,7 @@ import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm }
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
 import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
-import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard } from './hooks/useSigcData';
+import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard, usePublicIntakeContext } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
   adminModules,
@@ -460,22 +460,64 @@ export function CaseDetailPage() {
 }
 
 export function PublicFormPage() {
+  const { tenant } = useParams<{ tenant?: string }>();
+  const hostname = typeof window === 'undefined' ? undefined : window.location.hostname;
+  const { data: context, isLoading, error } = usePublicIntakeContext({ tenant, hostname });
+
+  if (isLoading && !context) {
+    return (
+      <Page centered>
+        <section className="card public-state-card">
+          <RefreshCw className="spin" size={28} />
+          <h2>Preparando el formulario</h2>
+          <p className="muted">Validando la organización y su configuración de radicación...</p>
+        </section>
+      </Page>
+    );
+  }
+
+  if (error || !context || !context.intake.enabled) {
+    return (
+      <Page centered>
+        <section className="card public-state-card">
+          <ShieldCheck size={32} />
+          <h2>Formulario no disponible</h2>
+          <p className="muted">{error ?? 'No existe una radicación pública activa para esta dirección.'}</p>
+          <Link className="btn btn-white" to="/login">Ir al acceso interno</Link>
+        </section>
+      </Page>
+    );
+  }
+
+  const style = {
+    '--primary': context.branding.primaryColor,
+    '--accent': context.branding.accentColor
+  } as CSSProperties;
+
   return (
-    <Page centered>
-      <section className="public-layout">
-        <div className="public-intro hero-gradient">
-          <Badge tone="chip-light">Formulario externo</Badge>
-          <h1>Radica tu solicitud de forma segura.</h1>
-          <p>El SIGC generará un número único e irrepetible y calculará la fecha límite según el tipo de caso.</p>
-          <div className="public-benefits"><span><ShieldCheck /> Radicado automático.</span><span><MailCheck /> Datos listos para notificación.</span><span><CalendarDays /> SLA calculado por configuración.</span></div>
-        </div>
-        <div className="card public-card">
-          <h2>Crear solicitud</h2>
-          <p className="muted">El caso quedará en estado Pendiente de Clasificación.</p>
-          <PublicCaseForm />
-        </div>
-      </section>
-    </Page>
+    <div className="public-tenant-page" style={style}>
+      <Page centered>
+        <section className="public-layout">
+          <div className="public-intro hero-gradient">
+            <div className="public-tenant-brand">
+              {context.branding.logoUrl
+                ? <img className="public-brand-logo" src={context.branding.logoUrl} alt={context.branding.productName} />
+                : <div className="brand-mark large">{context.branding.shortName.slice(0, 1).toUpperCase()}</div>}
+              <div><strong>{context.branding.productName}</strong><span>{context.organizationName}</span></div>
+            </div>
+            <Badge tone="chip-light">Radicación pública</Badge>
+            <h1>{context.intake.formTitle}</h1>
+            <p>{context.intake.formDescription}</p>
+            <div className="public-benefits"><span><ShieldCheck /> Radicado automático.</span><span><MailCheck /> Confirmación de recepción.</span><span><CalendarDays /> SLA calculado por configuración.</span></div>
+            {context.branding.supportEmail ? <p className="public-support">Soporte: <a href={`mailto:${context.branding.supportEmail}`}>{context.branding.supportEmail}</a></p> : null}
+          </div>
+          <div className="card public-card">
+            <div className="public-card-head"><div><span className="eyebrow">{context.organizationSlug}</span><h2>Crear solicitud</h2><p className="muted">El caso quedará en estado Pendiente de Clasificación.</p></div></div>
+            <PublicCaseForm context={context} tenant={tenant} hostname={hostname} />
+          </div>
+        </section>
+      </Page>
+    </div>
   );
 }
 

@@ -12,7 +12,9 @@ import type {
   CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
-  PublicCaseTypeOption,
+  PublicCaseSubmissionResult,
+  PublicIntakeContext,
+  PublicIntakeLocator,
   SemColor,
   SigcAssignment,
   SigcCase,
@@ -56,6 +58,7 @@ import type {
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
+  UpdatePublicIntakeSettingsInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
@@ -121,7 +124,6 @@ type ReminderRow = {
 
 type SimpleProfileRow = { id: string; name: string };
 type SimpleRuleRow = { id: string; name: string };
-type PublicCaseTypeRow = { id: string; name: string; description: string | null; sla_label: string | null };
 
 type CaseQueryRow = {
   id: string;
@@ -1424,6 +1426,20 @@ export const supabaseSigcRepository: SigcRepository = {
     if (error) throw error;
   },
 
+  async updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void> {
+    const client = requireClient() as any;
+    const { error } = await client.rpc('update_public_intake_settings', {
+      p_enabled: input.enabled,
+      p_form_title: input.formTitle,
+      p_form_description: input.formDescription,
+      p_confirmation_message: input.confirmationMessage,
+      p_allow_attachments: input.allowAttachments,
+      p_max_files: input.maxFiles,
+      p_max_file_size_bytes: input.maxFileSizeBytes
+    });
+    if (error) throw error;
+  },
+
   async createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string> {
     const client = requireClient() as any;
     const { data, error } = await client.rpc('create_saas_organization', { p_name: input.name, p_slug: input.slug });
@@ -1457,21 +1473,50 @@ export const supabaseSigcRepository: SigcRepository = {
 };
 
 export const supabasePublicSigcRepository: PublicSigcRepository = {
-  async getPublicCaseTypes(): Promise<PublicCaseTypeOption[]> {
+  async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
     const client = requireClient() as any;
-    const { data, error } = await client.rpc('get_public_case_types');
+    const { data, error } = await client.rpc('get_public_intake_context', {
+      p_tenant: locator.tenant?.trim() || null,
+      p_hostname: locator.hostname?.trim() || null
+    });
     if (error) throw error;
-    return ((data ?? []) as PublicCaseTypeRow[]).map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      slaLabel: item.sla_label ?? 'Sin SLA configurado'
-    }));
+    if (!data || typeof data !== 'object') return null;
+    const raw = data as any;
+    return {
+      organizationName: String(raw.organizationName ?? ''),
+      organizationSlug: String(raw.organizationSlug ?? ''),
+      branding: {
+        productName: String(raw.branding?.productName ?? 'SIGC'),
+        shortName: String(raw.branding?.shortName ?? 'SIGC'),
+        logoUrl: raw.branding?.logoUrl ?? null,
+        primaryColor: String(raw.branding?.primaryColor ?? '#7c3aed'),
+        accentColor: String(raw.branding?.accentColor ?? '#f97316'),
+        supportEmail: raw.branding?.supportEmail ?? null,
+        customDomain: raw.branding?.customDomain ?? null
+      },
+      intake: {
+        enabled: Boolean(raw.intake?.enabled),
+        formTitle: String(raw.intake?.formTitle ?? 'Radica tu solicitud'),
+        formDescription: String(raw.intake?.formDescription ?? 'Completa la información para crear tu caso.'),
+        confirmationMessage: String(raw.intake?.confirmationMessage ?? 'Hemos recibido tu solicitud correctamente.'),
+        allowAttachments: Boolean(raw.intake?.allowAttachments),
+        maxFiles: Number(raw.intake?.maxFiles ?? 5),
+        maxFileSizeBytes: Number(raw.intake?.maxFileSizeBytes ?? 26214400)
+      },
+      caseTypes: Array.isArray(raw.caseTypes) ? raw.caseTypes.map((item: any) => ({
+        id: String(item.id),
+        name: String(item.name),
+        description: item.description ?? null,
+        slaLabel: String(item.slaLabel ?? 'Sin SLA configurado')
+      })) : []
+    };
   },
 
-  async createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult> {
+  async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const client = requireClient() as any;
     const { data, error } = await client.rpc('submit_public_case', {
+      p_tenant: input.tenant?.trim() || null,
+      p_hostname: input.hostname?.trim() || null,
       p_case_type_id: input.caseTypeId,
       p_requester_name: input.requesterName,
       p_requester_company: input.requesterCompany,
@@ -1480,12 +1525,49 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
       p_requester_phone: input.requesterPhone,
       p_subject: input.subject,
       p_description: input.description,
-      p_website: input.website ?? null
+      p_website: input.website ?? null,
+      p_attachment_count: input.attachments?.length ?? 0
     });
     if (error) throw error;
     const created = data?.[0];
     if (!created) throw new Error('No fue posible confirmar la radicación.');
-    return { caseId: created.case_id, radicado: created.radicado, dueAt: created.due_at };
+
+    const failedAttachments: string[] = [];
+    let attachmentCount = 0;
+    const attachments = input.attachments ?? [];
+    const uploadToken = created.upload_token ? String(created.upload_token) : '';
+    const uploadPrefix = created.upload_path_prefix ? String(created.upload_path_prefix) : '';
+
+    if (attachments.length && uploadToken && uploadPrefix) {
+      for (const file of attachments) {
+        const path = `${uploadPrefix}/${crypto.randomUUID()}-${sanitizeFilename(file.name)}`;
+        const { error: uploadError } = await client.storage.from('case-documents').upload(path, file, {
+          upsert: false,
+          contentType: file.type || undefined
+        });
+        if (uploadError) { failedAttachments.push(file.name); continue; }
+
+        const { error: registerError } = await client.rpc('register_public_case_attachment', {
+          p_upload_token: uploadToken,
+          p_storage_path: path,
+          p_original_filename: file.name,
+          p_mime_type: file.type || null,
+          p_size_bytes: file.size
+        });
+        if (registerError) { failedAttachments.push(file.name); continue; }
+        attachmentCount += 1;
+      }
+      const { error: finalizeError } = await client.rpc('finalize_public_case_upload', { p_upload_token: uploadToken });
+      if (finalizeError) console.warn('SIGC: no fue posible cerrar la sesión de adjuntos públicos.', finalizeError);
+    }
+
+    return {
+      caseId: String(created.case_id),
+      radicado: String(created.radicado),
+      dueAt: created.due_at ?? null,
+      attachmentCount,
+      failedAttachments
+    };
   },
 
   async getOrganizationInvitation(token: string): Promise<PublicOrganizationInvitation | null> {

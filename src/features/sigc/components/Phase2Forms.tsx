@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Check, LoaderCircle, Paperclip, Plus, Trash2, Upload, X } from 'lucide-react';
-import type { AllowedCaseState, ManualCaseAssignmentInput } from '../domain/types';
-import { useAllowedCaseStates, usePublicCaseTypes, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
+import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext } from '../domain/types';
+import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
 
 function errorMessage(error: unknown): string {
@@ -14,8 +14,22 @@ function formatDateTime(iso: string | null): string {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 }
 
-export function PublicCaseForm() {
-  const { data: caseTypes, isLoading, warning, error: loadError } = usePublicCaseTypes();
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function PublicCaseForm({
+  context,
+  tenant,
+  hostname
+}: {
+  context: PublicIntakeContext;
+  tenant?: string;
+  hostname?: string;
+}) {
+  const caseTypes = context.caseTypes;
   const [values, setValues] = useState({
     requesterName: '',
     requesterCompany: '',
@@ -27,12 +41,45 @@ export function PublicCaseForm() {
     description: '',
     website: ''
   });
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [isSubmitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [created, setCreated] = useState<{ radicado: string; dueAt: string | null } | null>(null);
+  const [created, setCreated] = useState<{
+    radicado: string;
+    dueAt: string | null;
+    attachmentCount: number;
+    failedAttachments: string[];
+  } | null>(null);
 
   function setField(field: keyof typeof values, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
+  }
+
+  function addAttachments(files: FileList | null) {
+    if (!files || !context.intake.allowAttachments) return;
+    setSubmitError('');
+    const incoming = Array.from(files);
+    const tooLarge = incoming.find((file) => file.size > context.intake.maxFileSizeBytes);
+    if (tooLarge) {
+      setSubmitError(`${tooLarge.name} supera el máximo de ${formatFileSize(context.intake.maxFileSizeBytes)} por archivo.`);
+      return;
+    }
+    setAttachments((current) => {
+      const deduped = [...current];
+      for (const file of incoming) {
+        const exists = deduped.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified);
+        if (!exists) deduped.push(file);
+      }
+      if (deduped.length > context.intake.maxFiles) {
+        setSubmitError(`Puedes adjuntar máximo ${context.intake.maxFiles} archivo(s).`);
+        return deduped.slice(0, context.intake.maxFiles);
+      }
+      return deduped;
+    });
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -40,12 +87,23 @@ export function PublicCaseForm() {
     setSubmitError('');
     setSubmitting(true);
     try {
-      const result = await sigcService.createPublicCase(values);
-      setCreated({ radicado: result.radicado, dueAt: result.dueAt });
-      setValues((current) => ({
-        ...current,
-        requesterName: '', requesterCompany: '', requesterDocument: '', requesterPhone: '', caseTypeId: '', subject: '', description: '', website: ''
-      }));
+      const result = await sigcService.createPublicCase({
+        ...values,
+        tenant,
+        hostname,
+        attachments
+      });
+      setCreated({
+        radicado: result.radicado,
+        dueAt: result.dueAt,
+        attachmentCount: result.attachmentCount,
+        failedAttachments: result.failedAttachments
+      });
+      setValues({
+        requesterName: '', requesterCompany: '', requesterDocument: '', requesterEmail: '', requesterPhone: '',
+        caseTypeId: '', subject: '', description: '', website: ''
+      });
+      setAttachments([]);
     } catch (error) {
       setSubmitError(errorMessage(error));
     } finally {
@@ -55,32 +113,60 @@ export function PublicCaseForm() {
 
   return (
     <form onSubmit={submit} className="form-stack">
-      {warning ? <div className="alert danger">{warning}</div> : null}
-      {loadError ? <div className="alert danger">{loadError}</div> : null}
       <div className="public-form-grid">
         <input className="field" placeholder="Nombre *" value={values.requesterName} onChange={(event) => setField('requesterName', event.target.value)} required minLength={2} />
         <input className="field" placeholder="Empresa" value={values.requesterCompany} onChange={(event) => setField('requesterCompany', event.target.value)} />
         <input className="field" placeholder="Documento" value={values.requesterDocument} onChange={(event) => setField('requesterDocument', event.target.value)} />
         <input className="field" placeholder="Correo *" type="email" value={values.requesterEmail} onChange={(event) => setField('requesterEmail', event.target.value)} required />
         <input className="field" placeholder="Teléfono" value={values.requesterPhone} onChange={(event) => setField('requesterPhone', event.target.value)} />
-        <select className="field" value={values.caseTypeId} onChange={(event) => setField('caseTypeId', event.target.value)} required disabled={isLoading}>
-          <option value="">{isLoading ? 'Cargando tipos...' : 'Tipo de caso *'}</option>
+        <select className="field" value={values.caseTypeId} onChange={(event) => setField('caseTypeId', event.target.value)} required>
+          <option value="">Tipo de caso *</option>
           {caseTypes.map((type) => <option value={type.id} key={type.id}>{type.name} · {type.slaLabel}</option>)}
         </select>
         <input className="field wide" placeholder="Asunto *" value={values.subject} onChange={(event) => setField('subject', event.target.value)} required minLength={4} maxLength={300} />
         <textarea className="field textarea wide" placeholder="Descripción detallada *" value={values.description} onChange={(event) => setField('description', event.target.value)} required minLength={10} maxLength={10000} />
         <input className="sigc-honeypot" tabIndex={-1} autoComplete="off" aria-hidden="true" value={values.website} onChange={(event) => setField('website', event.target.value)} />
-        <div className="upload-zone wide phase-note"><strong>Adjuntos del expediente</strong><span>El equipo interno puede cargar y versionar archivos después de la radicación.</span></div>
+
+        {context.intake.allowAttachments ? (
+          <div className="wide public-attachments">
+            <label className="upload-zone public-upload-zone">
+              <Upload size={22} />
+              <strong>Adjuntar archivos</strong>
+              <span>Máximo {context.intake.maxFiles} archivo(s) · {formatFileSize(context.intake.maxFileSizeBytes)} por archivo.</span>
+              <input
+                type="file"
+                multiple
+                onChange={(event) => { addAttachments(event.target.files); event.currentTarget.value = ''; }}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.mp4,.webm,.mov,.mp3,.wav,.ogg,.m4a,.aac"
+              />
+            </label>
+            {attachments.length ? (
+              <div className="public-attachment-list">
+                {attachments.map((file, index) => (
+                  <div className="public-attachment-item" key={`${file.name}-${file.size}-${file.lastModified}`}>
+                    <span><Paperclip size={16} /><b>{file.name}</b><small>{formatFileSize(file.size)}</small></span>
+                    <button type="button" className="icon-button" aria-label={`Quitar ${file.name}`} onClick={() => removeAttachment(index)}><Trash2 size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="upload-zone wide phase-note"><strong>Adjuntos no habilitados</strong><span>Esta organización no recibe archivos desde el formulario público.</span></div>
+        )}
       </div>
       {submitError ? <div className="alert danger">{submitError}</div> : null}
-      <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading || !caseTypes.length}>
+      <button className="btn btn-primary full" type="submit" disabled={isSubmitting || !caseTypes.length}>
         {isSubmitting ? <><LoaderCircle size={17} className="spin" /> Radicando...</> : 'Enviar solicitud'}
       </button>
       {created ? (
         <div className="confirm-box">
           <strong>Solicitud registrada correctamente</strong>
+          <p>{context.intake.confirmationMessage}</p>
           <p>Tu radicado es <b>{created.radicado}</b>.</p>
           <p>Fecha límite calculada: <b>{formatDateTime(created.dueAt)}</b>.</p>
+          {created.attachmentCount > 0 ? <p>Adjuntos registrados: <b>{created.attachmentCount}</b>.</p> : null}
+          {created.failedAttachments.length ? <p className="public-upload-warning">No se pudieron registrar: {created.failedAttachments.join(', ')}. El caso sí quedó radicado.</p> : null}
         </div>
       ) : null}
     </form>

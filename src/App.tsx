@@ -39,6 +39,9 @@ function LazyRoute({ children }: { children: ReactNode }) {
 const router = createBrowserRouter([
   { path: '/login', element: <SigcLoginPage /> },
   { path: '/radicar', element: <PublicFormPage /> },
+  { path: '/radicar/:tenant', element: <PublicFormPage /> },
+  { path: '/casos', element: <PublicFormPage /> },
+  { path: '/casos/:tenant', element: <PublicFormPage /> },
   { path: '/invite/:token', element: <LazyRoute><InvitationPage /></LazyRoute> },
   { path: '/public-form', element: <Navigate to="/radicar" replace /> },
   {

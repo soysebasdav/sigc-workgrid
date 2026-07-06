@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../../app/AppProvider';
 import { supabase } from '../../../lib/supabaseClient';
-import type { CreateOrganizationInvitationInput, SigcSaasContext, UpdateOrganizationProfileInput } from '../domain/types';
+import type { CreateOrganizationInvitationInput, SigcSaasContext, UpdateOrganizationProfileInput, UpdatePublicIntakeSettingsInput } from '../domain/types';
 import { useOrganizationInvitation, useSigcAdminSnapshot, useSigcSaasContext } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
 
@@ -91,6 +91,84 @@ function BrandingForm({ context, onSaved }: { context: SigcSaasContext; onSaved:
   return <form className="phase8-branding-layout" onSubmit={submit}><section className="card block-card form-stack"><header className="card-title"><div><h2>Organización</h2><p>Nombre comercial y dirección interna del espacio.</p></div><Building2 /></header><label className="field-label">Nombre<input className="field" value={form.name} onChange={(event) => { update('name', event.target.value); if (form.slug === slugify(form.name)) update('slug', slugify(event.target.value)); }} required /></label><label className="field-label">Slug<input className="field" value={form.slug} onChange={(event) => update('slug', slugify(event.target.value))} required /></label><label className="field-label">Correo de soporte<input className="field" type="email" value={form.supportEmail ?? ''} onChange={(event) => update('supportEmail', event.target.value)} /></label><label className="field-label">Dominio personalizado<input className="field" placeholder="casos.empresa.com" value={form.customDomain ?? ''} onChange={(event) => update('customDomain', event.target.value)} /></label></section><section className="card block-card form-stack"><header className="card-title"><div><h2>Identidad visual</h2><p>Se aplica a la navegación del espacio activo.</p></div><Palette /></header><label className="field-label">Nombre del producto<input className="field" value={form.productName} onChange={(event) => update('productName', event.target.value)} /></label><label className="field-label">Nombre corto<input className="field" maxLength={12} value={form.shortName} onChange={(event) => update('shortName', event.target.value)} /></label><label className="field-label">URL del logotipo<input className="field" type="url" placeholder="https://..." value={form.logoUrl ?? ''} onChange={(event) => update('logoUrl', event.target.value)} /></label><div className="phase8-color-grid"><label>Primario<input type="color" value={form.primaryColor} onChange={(event) => update('primaryColor', event.target.value)} /></label><label>Acento<input type="color" value={form.accentColor} onChange={(event) => update('accentColor', event.target.value)} /></label><label>Barra lateral<input type="color" value={form.sidebarColor} onChange={(event) => update('sidebarColor', event.target.value)} /></label></div><div className="phase8-brand-preview" style={{ '--preview-primary': form.primaryColor, '--preview-accent': form.accentColor, '--preview-sidebar': form.sidebarColor } as CSSProperties}><div>{form.logoUrl ? <img src={form.logoUrl} alt="Vista previa" /> : <b>{form.shortName.slice(0,1) || 'S'}</b>}<span><strong>{form.productName}</strong><small>{form.name}</small></span></div><button type="button">Acción principal</button></div>{message ? <div className="phase78-inline-message">{message}</div> : null}<button className="btn btn-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar identidad'}</button></section></form>;
 }
 
+function publicIntakeFromContext(context: SigcSaasContext): UpdatePublicIntakeSettingsInput {
+  const settings = context.activeOrganization.settings;
+  const raw = settings && typeof settings === 'object' && 'publicIntake' in settings
+    ? (settings.publicIntake as Record<string, unknown> | undefined)
+    : undefined;
+  const maxFiles = Number(raw?.maxFiles ?? 5);
+  const maxFileSizeBytes = Number(raw?.maxFileSizeBytes ?? 26214400);
+  return {
+    enabled: raw?.enabled === true || String(raw?.enabled ?? '').toLowerCase() === 'true',
+    formTitle: String(raw?.formTitle ?? 'Radica tu solicitud'),
+    formDescription: String(raw?.formDescription ?? 'Completa la información para crear tu caso.'),
+    confirmationMessage: String(raw?.confirmationMessage ?? 'Hemos recibido tu solicitud correctamente.'),
+    allowAttachments: raw?.allowAttachments !== false && String(raw?.allowAttachments ?? 'true').toLowerCase() !== 'false',
+    maxFiles: Number.isFinite(maxFiles) ? Math.max(0, Math.min(10, maxFiles)) : 5,
+    maxFileSizeBytes: Number.isFinite(maxFileSizeBytes) ? Math.max(1048576, Math.min(104857600, maxFileSizeBytes)) : 26214400
+  };
+}
+
+function PublicIntakeSettingsPanel({ context, onSaved }: { context: SigcSaasContext; onSaved: () => void }) {
+  const [form, setForm] = useState<UpdatePublicIntakeSettingsInput>(() => publicIntakeFromContext(context));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const publicPath = `${window.location.origin}/radicar/${context.activeOrganization.slug}`;
+  const customDomain = context.branding.customDomain ? `https://${context.branding.customDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/radicar` : '';
+
+  useEffect(() => setForm(publicIntakeFromContext(context)), [context.activeOrganization.id, context.activeOrganization.settings]);
+
+  function update<K extends keyof UpdatePublicIntakeSettingsInput>(key: K, value: UpdatePublicIntakeSettingsInput[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await sigcService.updatePublicIntakeSettings(form);
+      setMessage('Configuración de radicación pública actualizada.');
+      onSaved();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No fue posible actualizar la radicación pública.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function copy(value: string) {
+    await navigator.clipboard?.writeText(value);
+    setMessage('Enlace copiado al portapapeles.');
+  }
+
+  return (
+    <form className="phase12-intake-layout" onSubmit={save}>
+      <section className="card block-card form-stack">
+        <header className="card-title"><div><h2>Disponibilidad pública</h2><p>Controla cómo los solicitantes externos radican casos para esta organización.</p></div><Globe2 /></header>
+        <label className="phase12-switch-row"><span><strong>Formulario habilitado</strong><small>Permite resolver esta empresa por slug o dominio personalizado.</small></span><input type="checkbox" checked={form.enabled} onChange={(event) => update('enabled', event.target.checked)} /></label>
+        <label className="field-label">Título del formulario<input className="field" value={form.formTitle} onChange={(event) => update('formTitle', event.target.value)} minLength={3} maxLength={120} required /></label>
+        <label className="field-label">Descripción<textarea className="field textarea-field" value={form.formDescription} onChange={(event) => update('formDescription', event.target.value)} maxLength={500} required /></label>
+        <label className="field-label">Mensaje de confirmación<textarea className="field textarea-field" value={form.confirmationMessage} onChange={(event) => update('confirmationMessage', event.target.value)} maxLength={500} required /></label>
+      </section>
+      <section className="card block-card form-stack">
+        <header className="card-title"><div><h2>Adjuntos y enlaces</h2><p>Define límites de carga y comparte la dirección correcta de esta empresa.</p></div><Clipboard /></header>
+        <label className="phase12-switch-row"><span><strong>Permitir adjuntos</strong><small>Los archivos se guardan en el bucket privado del caso.</small></span><input type="checkbox" checked={form.allowAttachments} onChange={(event) => update('allowAttachments', event.target.checked)} /></label>
+        <div className="grid-2 compact-grid">
+          <label className="field-label">Máximo de archivos<input className="field" type="number" min={0} max={10} value={form.maxFiles} disabled={!form.allowAttachments} onChange={(event) => update('maxFiles', Number(event.target.value))} /></label>
+          <label className="field-label">Máximo por archivo (MB)<input className="field" type="number" min={1} max={100} value={Math.round(form.maxFileSizeBytes / 1048576)} disabled={!form.allowAttachments} onChange={(event) => update('maxFileSizeBytes', Number(event.target.value) * 1048576)} /></label>
+        </div>
+        <div className="phase12-share-links">
+          <div><span>Enlace por organización</span><code>{publicPath}</code><button type="button" className="btn btn-white icon-only small" title="Copiar" onClick={() => void copy(publicPath)}><Copy size={14} /></button></div>
+          {customDomain ? <div><span>Dominio personalizado</span><code>{customDomain}</code><button type="button" className="btn btn-white icon-only small" title="Copiar" onClick={() => void copy(customDomain)}><Copy size={14} /></button></div> : <p className="muted">Configura un dominio personalizado en la pestaña Marca para resolver automáticamente esta organización.</p>}
+        </div>
+        {message ? <div className="phase78-inline-message">{message}</div> : null}
+        <button className="btn btn-primary" disabled={saving}>{saving ? 'Guardando...' : 'Guardar radicación pública'}</button>
+      </section>
+    </form>
+  );
+}
+
 function TeamInvitations({ context, onChanged }: { context: SigcSaasContext; onChanged: () => void }) {
   const { data: admin } = useSigcAdminSnapshot();
   const [form, setForm] = useState<CreateOrganizationInvitationInput>({ email: '', roleId: '', expiresDays: 7 });
@@ -131,10 +209,10 @@ function FirstOrganizationOnboarding({ error }: { error?: string | null }) {
 
 export function SaasManagementPage() {
   const { data: context, isLoading, error, warning, reload } = useSigcSaasContext();
-  const [tab, setTab] = useState<'overview' | 'branding' | 'team' | 'organizations'>('overview');
+  const [tab, setTab] = useState<'overview' | 'branding' | 'public-intake' | 'team' | 'organizations'>('overview');
   if (isLoading && !context) return <div className="page page-centered"><section className="card block-card"><RefreshCw className="spin" /> Cargando espacio SaaS...</section></div>;
   if (!context) return <FirstOrganizationOnboarding error={error ?? warning} />;
-  return <div className="page"><header className="page-head"><div><span className="eyebrow">Producto SaaS · Fase 8</span><h1>Espacio de trabajo</h1><p>Gestiona organización, identidad visual, equipo, consumo y aislamiento multiempresa.</p></div><div className="page-actions"><span className="chip tone-purple">{context.subscription.plan.name}</span><button className="btn btn-soft" onClick={reload}><RefreshCw size={17} /> Actualizar</button></div></header>{warning ? <div className="alert danger">{warning}</div> : null}<div className="phase56-admin-tabs phase8-tabs"><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}><Gauge /> Resumen</button>{context.canManage ? <button className={tab==='branding'?'active':''} onClick={()=>setTab('branding')}><Palette /> Marca</button> : null}{context.canManage ? <button className={tab==='team'?'active':''} onClick={()=>setTab('team')}><Users /> Equipo</button> : null}<button className={tab==='organizations'?'active':''} onClick={()=>setTab('organizations')}><Building2 /> Organizaciones</button></div>{tab==='overview'?<WorkspaceOverview context={context}/>:null}{tab==='branding'&&context.canManage?<BrandingForm context={context} onSaved={reload}/>:null}{tab==='team'&&context.canManage?<TeamInvitations context={context} onChanged={reload}/>:null}{tab==='organizations'?<OrganizationsPanel context={context}/>:null}</div>;
+  return <div className="page"><header className="page-head"><div><span className="eyebrow">Producto SaaS · Fase 12</span><h1>Espacio de trabajo</h1><p>Gestiona organización, identidad visual, radicación pública, equipo, consumo y aislamiento multiempresa.</p></div><div className="page-actions"><span className="chip tone-purple">{context.subscription.plan.name}</span><button className="btn btn-soft" onClick={reload}><RefreshCw size={17} /> Actualizar</button></div></header>{warning ? <div className="alert danger">{warning}</div> : null}<div className="phase56-admin-tabs phase8-tabs"><button className={tab==='overview'?'active':''} onClick={()=>setTab('overview')}><Gauge /> Resumen</button>{context.canManage ? <button className={tab==='branding'?'active':''} onClick={()=>setTab('branding')}><Palette /> Marca</button> : null}{context.canManage ? <button className={tab==='public-intake'?'active':''} onClick={()=>setTab('public-intake')}><Globe2 /> Radicación pública</button> : null}{context.canManage ? <button className={tab==='team'?'active':''} onClick={()=>setTab('team')}><Users /> Equipo</button> : null}<button className={tab==='organizations'?'active':''} onClick={()=>setTab('organizations')}><Building2 /> Organizaciones</button></div>{tab==='overview'?<WorkspaceOverview context={context}/>:null}{tab==='branding'&&context.canManage?<BrandingForm context={context} onSaved={reload}/>:null}{tab==='public-intake'&&context.canManage?<PublicIntakeSettingsPanel context={context} onSaved={reload}/>:null}{tab==='team'&&context.canManage?<TeamInvitations context={context} onChanged={reload}/>:null}{tab==='organizations'?<OrganizationsPanel context={context}/>:null}</div>;
 }
 
 export function InvitationPage() {

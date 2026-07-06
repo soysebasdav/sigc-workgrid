@@ -11,7 +11,9 @@ import type {
   CreatedSubtaskResult,
   ManualCaseCreateInput,
   PublicCaseCreateInput,
-  PublicCaseTypeOption,
+  PublicCaseSubmissionResult,
+  PublicIntakeContext,
+  PublicIntakeLocator,
   SigcAssignment,
   SigcCase,
   SigcCaseFilters,
@@ -50,6 +52,7 @@ import type {
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
+  UpdatePublicIntakeSettingsInput,
   CreateSaasOrganizationInput,
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
@@ -765,7 +768,7 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async getSaasContext(): Promise<SigcSaasContext> {
-    return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
+    return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{publicIntake:{enabled:true,formTitle:'Radica tu solicitud',formDescription:'Cuéntanos qué necesitas y el SIGC generará tu radicado.',confirmationMessage:'Hemos recibido tu solicitud correctamente.',allowAttachments:true,maxFiles:5,maxFileSizeBytes:26214400}}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
@@ -785,6 +788,7 @@ export const demoSigcRepository: SigcRepository = {
   },
   async setActiveOrganization(_organizationId: string): Promise<void> {},
   async updateOrganizationProfile(_input: UpdateOrganizationProfileInput): Promise<void> {},
+  async updatePublicIntakeSettings(_input: UpdatePublicIntakeSettingsInput): Promise<void> {},
   async createSaasOrganization(_input: CreateSaasOrganizationInput): Promise<string> { return `demo-org-${crypto.randomUUID()}`; },
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { return { invitationId:`demo-invite-${crypto.randomUUID()}`,token:crypto.randomUUID(),expiresAt:new Date(Date.now()+(input.expiresDays??7)*86400000).toISOString() }; },
   async revokeOrganizationInvitation(_invitationId: string): Promise<void> {},
@@ -792,16 +796,31 @@ export const demoSigcRepository: SigcRepository = {
 };
 
 export const demoPublicSigcRepository: PublicSigcRepository = {
-  async getPublicCaseTypes(): Promise<PublicCaseTypeOption[]> {
-    return catalogs.caseTypes.map((item) => ({
-      id: item.id,
-      name: item.name,
-      slaLabel: item.name === 'Acción de Tutela' ? '24 horas' : '5 días calendario'
-    }));
+  async getPublicIntakeContext(_locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
+    return {
+      organizationName: 'Organización SIGC Demo',
+      organizationSlug: 'organizacion-sigc-demo',
+      branding: {
+        productName: 'SIGC', shortName: 'SIGC', logoUrl: null,
+        primaryColor: '#7c3aed', accentColor: '#f97316',
+        supportEmail: 'soporte@sigc.demo', customDomain: null
+      },
+      intake: {
+        enabled: true, formTitle: 'Radica tu solicitud',
+        formDescription: 'Cuéntanos qué necesitas y el SIGC generará tu radicado.',
+        confirmationMessage: 'Hemos recibido tu solicitud correctamente.',
+        allowAttachments: true, maxFiles: 5, maxFileSizeBytes: 26214400
+      },
+      caseTypes: catalogs.caseTypes.map((item) => ({
+        id: item.id, name: item.name,
+        slaLabel: item.name === 'Acción de Tutela' ? '24 horas' : '5 días calendario'
+      }))
+    };
   },
 
-  async createPublicCase(input: PublicCaseCreateInput): Promise<CreatedCaseResult> {
-    return createCaseBase(input, 'Formulario público', 'Pendiente de Clasificación');
+  async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
+    const result = createCaseBase(input, 'Formulario público', 'Pendiente de Clasificación');
+    return { ...result, attachmentCount: input.attachments?.length ?? 0, failedAttachments: [] };
   },
   async getOrganizationInvitation(_token: string): Promise<PublicOrganizationInvitation | null> { return null; },
   async acceptOrganizationInvitation(_token: string): Promise<string> { return 'demo-org'; }

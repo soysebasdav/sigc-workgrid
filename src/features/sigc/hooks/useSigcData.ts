@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AllowedCaseState,
-  PublicCaseTypeOption,
+  PublicIntakeContext,
+  PublicIntakeLocator,
   SigcAssignment,
   SigcCase,
   SigcCaseFilters,
@@ -126,8 +127,9 @@ export function useAllowedCaseStates(caseId: string | undefined): AsyncState<All
   );
 }
 
-export function usePublicCaseTypes(): AsyncState<PublicCaseTypeOption[]> {
-  return useSigcQuery('public-case-types', [], () => sigcService.getPublicCaseTypes(), false);
+export function usePublicIntakeContext(locator: PublicIntakeLocator): AsyncState<PublicIntakeContext | null> {
+  const key = useMemo(() => `public-intake:${locator.tenant ?? ''}:${locator.hostname ?? ''}`, [locator.hostname, locator.tenant]);
+  return useSigcQuery(key, null, () => sigcService.getPublicIntakeContext(locator), false);
 }
 
 
