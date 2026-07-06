@@ -278,7 +278,7 @@ function RolesPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast: (
 
   return <div className="phase56-two-column">
     <section>
-      <SectionHead title="Roles y permisos" description="Define capacidades independientes por perfil. La autoridad proviene del rol organizacional, no de profiles.role." action={<button className="btn btn-primary" onClick={() => setRoleEdit('new')}><Plus size={16} /> Nuevo rol</button>} />
+      <SectionHead title="Roles y permisos" description="Define capacidades independientes por perfil. La autoridad proviene del rol y los permisos de la organización activa." action={<button className="btn btn-primary" onClick={() => setRoleEdit('new')}><Plus size={16} /> Nuevo rol</button>} />
       <div className="phase56-role-layout">
         <aside>{data.roles.map((item) => <button key={item.id} className={role?.id === item.id ? 'active' : ''} onClick={() => setSelectedRoleId(item.id)}><strong>{item.name}</strong><span>{item.permissionIds.length} permisos</span></button>)}</aside>
         <div>{role ? <>

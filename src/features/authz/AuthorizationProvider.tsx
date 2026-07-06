@@ -19,9 +19,9 @@ type AuthorizationContextValue = {
 
 const AuthorizationContext = createContext<AuthorizationContextValue | null>(null);
 
-function buildDemoAuthorizationContext(userId: string, isLegacyAdmin: boolean): SigcAuthorizationContext {
-  const roleCode = isLegacyAdmin ? 'admin' : 'analyst';
-  const roleName = isLegacyAdmin ? 'Administrador' : 'Analista';
+function buildDemoAuthorizationContext(userId: string, isDemoAdmin: boolean): SigcAuthorizationContext {
+  const roleCode = isDemoAdmin ? 'admin' : 'analyst';
+  const roleName = isDemoAdmin ? 'Administrador' : 'Analista';
   return {
     userId,
     organizationId: 'demo-org',
@@ -32,7 +32,7 @@ function buildDemoAuthorizationContext(userId: string, isLegacyAdmin: boolean): 
       code: roleCode,
       name: roleName
     },
-    permissions: [...(isLegacyAdmin ? ALL_PERMISSION_CODES : DEMO_ANALYST_PERMISSIONS)]
+    permissions: [...(isDemoAdmin ? ALL_PERMISSION_CODES : DEMO_ANALYST_PERMISSIONS)]
   };
 }
 
@@ -64,7 +64,7 @@ export function AuthorizationProvider({ children }: { children: ReactNode }) {
     }
 
     if (dataMode !== 'supabase') {
-      setAuthorization(buildDemoAuthorizationContext(currentUser.id, currentUser.role === 'admin'));
+      setAuthorization(buildDemoAuthorizationContext(currentUser.id, currentUser.demoRole === 'admin'));
       setError(null);
       setIsLoading(false);
       return () => { active = false; };
@@ -88,7 +88,7 @@ export function AuthorizationProvider({ children }: { children: ReactNode }) {
       });
 
     return () => { active = false; };
-  }, [currentUser?.id, currentUser?.role, dataMode, isSessionLoading, revision]);
+  }, [currentUser?.id, currentUser?.demoRole, dataMode, isSessionLoading, revision]);
 
   const permissions = useMemo(() => new Set(authorization?.permissions ?? []), [authorization?.permissions]);
   const can = useCallback((permission: PermissionCode | string) => permissions.has(permission), [permissions]);

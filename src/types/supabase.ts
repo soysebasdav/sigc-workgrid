@@ -57,50 +57,50 @@ export interface Database {
         id: string;
         name: string;
         email: string;
-        role: 'admin' | 'user';
         created_at: string;
         updated_at: string;
       }, {
         id: string;
         name?: string;
         email: string;
-        role?: 'admin' | 'user';
         created_at?: string;
         updated_at?: string;
       }, {
         name?: string;
         email?: string;
-        role?: 'admin' | 'user';
         updated_at?: string;
-      }>;
-
-      tasks: TableDef<{
-        id: string;
-        user_id: string;
-        title: string;
-        description: string | null;
-        status: 'pending' | 'in_progress' | 'completed';
-        due_date: string | null;
-        created_at: string;
-        updated_at: string;
       }>;
 
       notifications: TableDef<{
         id: string;
         recipient_user_id: string;
         actor_user_id: string | null;
-        task_id: string | null;
-        type: 'task_created' | 'task_updated' | 'task_deleted' | 'system';
+        organization_id: string | null;
+        case_id: string | null;
+        type:
+          | 'system'
+          | 'case_created'
+          | 'case_assigned'
+          | 'case_reassigned'
+          | 'case_comment'
+          | 'case_document'
+          | 'case_state_changed'
+          | 'case_sla_changed'
+          | 'case_due_soon'
+          | 'case_overdue'
+          | 'case_reminder'
+          | 'case_review_requested'
+          | 'case_review_approved'
+          | 'case_review_returned'
+          | 'case_sent';
         title: string;
         message: string;
+        action_url: string | null;
+        metadata: Json;
         is_read: boolean;
+        read_at: string | null;
+        dedupe_key: string | null;
         created_at: string;
-      }>;
-
-      app_settings: TableDef<{
-        setting_key: string;
-        setting_value: string;
-        updated_at: string;
       }>;
 
       organizations: TableDef<{
@@ -139,7 +139,7 @@ export interface Database {
         id: string;
         organization_id: string;
         user_id: string;
-        role_id: string | null;
+        role_id: string;
         is_active: boolean;
         joined_at: string;
         updated_at: string;

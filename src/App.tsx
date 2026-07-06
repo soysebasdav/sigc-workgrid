@@ -58,7 +58,6 @@ const router = createBrowserRouter([
           { path: 'case-detail', element: <Navigate to="/cases/SIG-2026-000003" replace /> },
           { path: 'board', element: <BoardPage /> },
           { path: 'subtasks', element: <SubtasksPage /> },
-          { path: 'tasks', element: <Navigate to="/subtasks" replace /> },
           { path: 'agenda', element: <AgendaPage /> },
           { path: 'documents', element: <DocumentsPage /> }
         ]

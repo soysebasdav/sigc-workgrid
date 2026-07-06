@@ -28,7 +28,6 @@ function mapProfile(row: {
     name: row.name,
     email: row.email,
     password: '',
-    role: 'user',
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -39,7 +38,6 @@ function mapNotification(row: {
   id: string;
   recipient_user_id: string;
   actor_user_id: string | null;
-  task_id: string | null;
   case_id?: string | null;
   type: Notification['type'];
   title: string;
@@ -52,7 +50,6 @@ function mapNotification(row: {
     id: row.id,
     recipientUserId: row.recipient_user_id,
     actorUserId: row.actor_user_id,
-    taskId: row.task_id,
     caseId: row.case_id ?? null,
     type: row.type,
     title: row.title,
@@ -101,7 +98,6 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
     return {
       currentUserId: null,
       users: [],
-      tasks: [],
       notifications: [],
       settings: { inactivityTimeoutMinutes: 10 }
     };
@@ -113,10 +109,9 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
     client.from('profiles').select('id,name,email,created_at,updated_at').eq('id', currentUserId).single(),
     (client as any)
       .from('notifications')
-      .select('id,recipient_user_id,actor_user_id,task_id,case_id,type,title,message,action_url,is_read,created_at')
+      .select('id,recipient_user_id,actor_user_id,case_id,type,title,message,action_url,is_read,created_at')
       .eq('recipient_user_id', currentUserId)
       .eq('organization_id', organizationId)
-      .is('task_id', null)
       .order('created_at', { ascending: false })
       .limit(250),
     (client as any).rpc('get_runtime_settings')
@@ -129,7 +124,6 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
   return {
     currentUserId,
     users: [mapProfile(profileResponse.data)],
-    tasks: [],
     notifications: (notificationsResponse.data ?? []).map(mapNotification),
     settings: mapSettings(settingsResponse.data)
   };

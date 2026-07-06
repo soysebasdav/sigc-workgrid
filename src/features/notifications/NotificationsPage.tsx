@@ -24,7 +24,7 @@ export function NotificationsPage() {
   const notifications = useMemo(() => {
     if (!currentUser) return [];
     return state.notifications
-      .filter((notification) => notification.recipientUserId === currentUser.id && (Boolean(notification.caseId) || notification.type.startsWith('case_')))
+      .filter((notification) => notification.recipientUserId === currentUser.id)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [currentUser, state.notifications]);
 

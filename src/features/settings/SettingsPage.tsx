@@ -31,7 +31,7 @@ export function SettingsPage() {
   return (
     <div className="profile-grid">
       <Card>
-        <CardHeader title="Parámetros generales" description="Parámetros operativos de la organización activa. Desde la Fase 10 ya no dependen de app_settings." />
+        <CardHeader title="Parámetros generales" description="Parámetros operativos de la organización activa. La configuración operativa vive por organización." />
         <form className="stack" onSubmit={handleSubmit}>
           <Field label="Cierre por inactividad" hint="Valor en minutos para la organización activa. La escritura está protegida por admin.manage_configuration.">
             <Input type="number" min={1} value={timeout} onChange={(event) => setTimeoutValue(event.target.value)} />
