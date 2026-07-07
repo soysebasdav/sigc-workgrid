@@ -59,7 +59,12 @@ import type {
   ClientErrorInput,
   PublicOrganizationInvitation,
   SigcAgendaSnapshot,
-  SigcAgendaItem
+  SigcAgendaItem,
+  WorkflowBoardFilters,
+  WorkflowBoardSnapshot,
+  MoveWorkflowCaseInput,
+  MoveWorkflowCaseResult,
+  AutomationRuntimeHealth
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -319,7 +324,20 @@ export const demoSigcRepository: SigcRepository = {
   async searchCases(filters: SigcCaseFilters): Promise<SigcCasePage> {
     const page = Math.max(1, filters.page ?? 1);
     const pageSize = Math.max(5, filters.pageSize ?? 10);
-    const filtered = readCases().filter((item) => matchesFilters(item, filters));
+    const query = filters.query?.trim().toLowerCase() ?? '';
+    const relatedCaseIds = new Set<string>();
+    if (query) {
+      readComments().filter((item) => item.content.toLowerCase().includes(query)).forEach((item) => relatedCaseIds.add(item.caseId));
+      readSubtasks().filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(query)).forEach((item) => relatedCaseIds.add(item.caseId));
+      readDocuments().filter((item) => `${item.name} ${item.category}`.toLowerCase().includes(query)).forEach((item) => relatedCaseIds.add(item.caseId));
+    }
+    const filtered = readCases().filter((item) => {
+      if (!matchesFilters(item, { ...filters, query: undefined })) return false;
+      if (!query) return true;
+      const directMatch = [item.radicado, item.subject, item.description, item.requester, item.company, item.requesterDocument ?? '', item.requesterEmail ?? '', item.requesterPhone ?? '']
+        .some((value) => value.toLowerCase().includes(query));
+      return directMatch || relatedCaseIds.has(item.databaseId ?? item.id) || relatedCaseIds.has(item.id);
+    });
     const start = (page - 1) * pageSize;
     return { items: filtered.slice(start, start + pageSize), total: filtered.length, page, pageSize };
   },
@@ -454,6 +472,68 @@ export const demoSigcRepository: SigcRepository = {
       updatedAt: new Date().toISOString()
     } : current));
     pushTimeline(item.databaseId ?? item.id, 'case.state_changed', 'Estado actualizado', `El caso cambió a ${target.name}.`);
+  },
+
+  async getWorkflowBoard(filters: WorkflowBoardFilters = {}): Promise<WorkflowBoardSnapshot> {
+    const selectedCaseTypeId = filters.caseTypeId ?? catalogs.caseTypes[0]?.id ?? null;
+    const normalized = (filters.query ?? '').trim().toLowerCase();
+    const cases = readCases().filter((item) => {
+      if (selectedCaseTypeId && item.typeId !== selectedCaseTypeId) return false;
+      if (filters.areaId && item.areaId !== filters.areaId) return false;
+      if (filters.ownerId && item.ownerId !== filters.ownerId) return false;
+      if (filters.priorityId && item.priorityId !== filters.priorityId) return false;
+      if (normalized && ![item.radicado, item.subject, item.company, item.requester].some((value) => String(value ?? '').toLowerCase().includes(normalized))) return false;
+      return true;
+    });
+    const workflowStates = catalogs.states.slice(0, 8);
+    return {
+      organizationId: 'demo-org',
+      selectedCaseTypeId,
+      caseTypes: catalogs.caseTypes.map((item) => ({ id: item.id, code: item.id, name: item.name, caseCount: readCases().filter((c) => c.typeId === item.id).length })),
+      columns: workflowStates.map((state, index) => ({
+        stateId: state.id,
+        code: state.id,
+        name: state.name,
+        sortOrder: index * 10,
+        isInitial: index === 0,
+        isTerminal: ['Cerrado', 'Cancelado'].includes(state.name),
+        cards: cases.filter((item) => item.stateId === state.id || item.state === state.name).map((item) => ({
+          id: item.databaseId ?? item.id,
+          radicado: item.radicado,
+          subject: item.subject,
+          company: item.company,
+          requester: item.requester,
+          stateId: state.id,
+          stateName: state.name,
+          priorityId: item.priorityId,
+          priorityName: item.priority,
+          areaId: item.areaId,
+          areaName: item.area,
+          ownerId: item.ownerId,
+          ownerName: item.owner,
+          dueAt: item.dueAt,
+          progress: item.progress,
+          riskLevel: item.risk,
+          source: item.source,
+          updatedAt: item.updatedAt ?? new Date().toISOString(),
+          overdue: item.sem === 'red'
+        }))
+      })),
+      transitions: workflowStates.slice(0, -1).map((state, index) => ({
+        id: `demo-transition-${index}`,
+        fromStateId: state.id,
+        toStateId: workflowStates[index + 1]!.id,
+        requiresJustification: index === 3,
+        allowed: true
+      })),
+      generatedAt: new Date().toISOString()
+    };
+  },
+
+  async moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult> {
+    await this.changeCaseState({ caseId: input.caseId, toStateId: input.toStateId, justification: input.justification });
+    const state = catalogs.states.find((item) => item.id === input.toStateId);
+    return { caseId: input.caseId, stateId: input.toStateId, stateName: state?.name ?? 'Estado', updatedAt: new Date().toISOString() };
   },
 
   async listSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcSubtask[]> {
@@ -660,7 +740,7 @@ export const demoSigcRepository: SigcRepository = {
       workflows: catalogs.caseTypes.map((item) => ({ caseTypeId: item.id, caseTypeName: item.name, states: states.map((state, index) => ({ stateId: state.id, stateName: state.name, sortOrder: index * 10, isRequired: true })), transitions: [] })),
       emailTemplates: [{ id: 'template-1', code: 'CASE_CREATED', name: 'Confirmación de radicación', eventType: 'case_created', subject: 'Confirmación {{radicado}}', bodyText: 'Tu solicitud {{radicado}} fue registrada.', isActive: true }],
       reminderRules: [{ id: 'reminder-1', code: 'BEFORE_24H', name: '24 horas antes', triggerKind: 'before_due', offsetMinutes: 1440, includeManagers: false, isActive: true }],
-      automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], actions: [], stopOnError: true, sortOrder: 10, isActive: true, runCount: 0 }],
+      automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], actions: [{ type: 'assign_area', areaId: catalogs.areas[0]?.id ?? '' }], stopOnError: true, sortOrder: 10, isActive: true, runCount: 0, maxAttempts: 3, retryDelayMinutes: 10 }],
       automationExecutions: []
     };
   },
@@ -681,6 +761,9 @@ export const demoSigcRepository: SigcRepository = {
   async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
   async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
   async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {},
+  async getAutomationRuntimeHealth(): Promise<AutomationRuntimeHealth> {
+    return { organizationId: 'demo-org', generatedAt: new Date().toISOString(), activeRules: 1, executions24h: 4, failedExecutions24h: 0, pendingRetries: 0, reminders24h: 3, queuedEmails: 0, failedEmails: 0, oldestQueuedEmailAt: null };
+  },
 
   async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
     const start = new Date(`${from}T00:00:00`).getTime();
@@ -764,7 +847,16 @@ export const demoSigcRepository: SigcRepository = {
     if (filters.overdueOnly) cases = cases.filter((item)=>item.sem==='red'&&!terminal.has(item.state));
     const group = (key: (item: SigcCase) => string) => Array.from(cases.reduce((map,item)=>map.set(key(item),(map.get(key(item))??0)+1),new Map<string,number>())).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value);
     const rows = cases.map((item)=>({ id:item.databaseId??item.id,radicado:item.radicado,subject:item.subject,requesterName:item.requester,requesterCompany:item.company,source:item.source,riskLevel:item.risk,openedAt:item.openedAt??item.updatedAt??new Date().toISOString(),dueAt:item.dueAt,closedAt:terminal.has(item.state)?item.updatedAt:null,progress:item.progress,updatedAt:item.updatedAt??new Date().toISOString(),caseType:item.type,state:item.state,priority:item.priority,area:item.area,owner:item.owner,overdue:item.sem==='red'&&!terminal.has(item.state),slaMet:terminal.has(item.state)?item.sem!=='red':null,resolutionHours:null }));
-    return { organizationId:'demo-org',generatedAt:new Date().toISOString(),from:filters.from,to:filters.to,summary:{ totalCases:cases.length,openCases:cases.filter((item)=>!terminal.has(item.state)).length,closedCases:cases.filter((item)=>terminal.has(item.state)).length,overdueCases:cases.filter((item)=>item.sem==='red'&&!terminal.has(item.state)).length,slaCompliancePct:92.4,avgResolutionHours:34.2 },byArea:group((item)=>item.area),byOwner:group((item)=>item.owner),byType:group((item)=>item.type),byState:group((item)=>item.state),byPriority:group((item)=>item.priority),rows,isTruncated:false };
+    return {
+      organizationId:'demo-org',generatedAt:new Date().toISOString(),from:filters.from,to:filters.to,
+      summary:{ totalCases:cases.length,openCases:cases.filter((item)=>!terminal.has(item.state)).length,closedCases:cases.filter((item)=>terminal.has(item.state)).length,overdueCases:cases.filter((item)=>item.sem==='red'&&!terminal.has(item.state)).length,slaCompliancePct:92.4,avgResolutionHours:34.2 },
+      byArea:group((item)=>item.area),byOwner:group((item)=>item.owner),byType:group((item)=>item.type),byState:group((item)=>item.state),byPriority:group((item)=>item.priority),
+      byRisk:group((item)=>item.risk || 'Sin riesgo'),
+      agingBuckets:[{label:'0–7 días',value:3},{label:'8–30 días',value:4},{label:'31–90 días',value:2},{label:'90+ días',value:1}],
+      slaByArea:group((item)=>item.area).map((item)=>({...item,total:item.value,compliant:Math.max(0,item.value-1),value:item.value ? Math.round(Math.max(0,item.value-1)/item.value*1000)/10 : 0})),
+      throughput:[{month:'2026-05',label:'May 26',created:6,closed:4},{month:'2026-06',label:'Jun 26',created:9,closed:7},{month:'2026-07',label:'Jul 26',created:5,closed:3}],
+      rows,isTruncated:false
+    };
   },
 
   async getSaasContext(): Promise<SigcSaasContext> {

@@ -56,7 +56,12 @@ import type {
   CreateOrganizationInvitationInput,
   CreatedOrganizationInvitation,
   ClientErrorInput,
-  SigcAgendaSnapshot
+  SigcAgendaSnapshot,
+  WorkflowBoardFilters,
+  WorkflowBoardSnapshot,
+  MoveWorkflowCaseInput,
+  MoveWorkflowCaseResult,
+  AutomationRuntimeHealth
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -70,6 +75,8 @@ export interface SigcRepository {
   createManualCase(input: ManualCaseCreateInput): Promise<CreatedCaseResult>;
   assignCase(input: CaseAssignmentInput): Promise<void>;
   changeCaseState(input: ChangeCaseStateInput): Promise<void>;
+  getWorkflowBoard(filters?: WorkflowBoardFilters): Promise<WorkflowBoardSnapshot>;
+  moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult>;
 
   listSubtasks(filters?: SigcSubtaskFilters): Promise<SigcSubtask[]>;
   createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult>;
@@ -118,6 +125,7 @@ export interface SigcRepository {
   saveAutomationRule(input: SaveAutomationRuleInput): Promise<void>;
   toggleAutomationRule(id: string, isActive: boolean): Promise<void>;
   runAutomationRule(ruleId: string, caseId: string): Promise<void>;
+  getAutomationRuntimeHealth(): Promise<AutomationRuntimeHealth>;
 
   getDashboardAnalytics(): Promise<SigcDashboardAnalytics>;
   getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot>;

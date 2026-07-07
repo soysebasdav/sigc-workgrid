@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from 'react';
 import { Link, Navigate, NavLink, Outlet, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import {
   Archive,
@@ -37,12 +37,12 @@ import {
 import { useApp } from '../../app/AppProvider';
 import { useAuthorization } from '../authz/AuthorizationProvider';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from '../authz/permissions';
-import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview } from './domain/types';
+import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview, WorkflowBoardCard, WorkflowBoardSnapshot } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
 import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
-import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard, usePublicIntakeContext } from './hooks/useSigcData';
+import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard, usePublicIntakeContext, useWorkflowBoard } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
   adminModules,
@@ -115,7 +115,7 @@ export function SigcShell() {
           <div className="search-box">
             <Search size={18} />
             <input
-              placeholder="Buscar por radicado, solicitante, empresa o palabra clave..."
+              placeholder="Buscar en casos, comentarios, subtareas y documentos..."
               value={topSearch}
               onChange={(event) => setTopSearch(event.target.value)}
               onKeyDown={(event) => {
@@ -266,7 +266,7 @@ export function CasesPage() {
       />
       <section className="card filter-card">
         <div className="filter-grid phase2-filter-grid">
-          <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Radicado, asunto, solicitante, empresa o correo" value={filters.query ?? ''} onChange={(event) => setFilter('query', event.target.value)} /></div>
+          <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Caso, solicitante, comentario, subtarea o documento" value={filters.query ?? ''} onChange={(event) => setFilter('query', event.target.value)} /></div>
           <select className="field" value={filters.stateId ?? ''} onChange={(event) => setFilter('stateId', event.target.value || undefined)}><option value="">Todos los estados</option>{catalogs?.states.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
           <select className="field" value={filters.areaId ?? ''} onChange={(event) => setFilter('areaId', event.target.value || undefined)}><option value="">Todas las áreas</option>{catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
           <select className="field" value={filters.ownerId ?? ''} onChange={(event) => setFilter('ownerId', event.target.value || undefined)}><option value="">Todos los responsables</option>{members.map((item) => <option value={item.userId} key={item.userId}>{item.name}</option>)}</select>
@@ -536,30 +536,189 @@ export function ManualCasePage() {
 }
 
 export function BoardPage() {
-  const { data: cases } = useSigcCases();
-  const states = ['Pendiente de Clasificación', 'Asignado', 'En Gestión', 'En Revisión / Aprobación', 'Cerrado'];
   const { showToast } = useSigcActions();
+  const { can } = useAuthorization();
+  const canMove = can(PERMISSIONS.caseChangeState);
+  const { data: catalogs } = useSigcCatalogs();
+  const { data: members } = useSigcMembers();
+  const [filters, setFilters] = useState({ caseTypeId: '', query: '', areaId: '', ownerId: '', priorityId: '' });
+  const { data, isLoading, error, warning, reload } = useWorkflowBoard({
+    caseTypeId: filters.caseTypeId || undefined,
+    query: filters.query || undefined,
+    areaId: filters.areaId || undefined,
+    ownerId: filters.ownerId || undefined,
+    priorityId: filters.priorityId || undefined
+  });
+  const [board, setBoard] = useState<WorkflowBoardSnapshot | null>(null);
+  const [dragging, setDragging] = useState<{ card: WorkflowBoardCard; fromStateId: string } | null>(null);
+  const [movingCaseId, setMovingCaseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (data) {
+      setBoard(data);
+      if (!filters.caseTypeId && data.selectedCaseTypeId) {
+        setFilters((current) => ({ ...current, caseTypeId: data.selectedCaseTypeId ?? '' }));
+      }
+    }
+  }, [data, filters.caseTypeId]);
+
+  function updateFilter(key: keyof typeof filters, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function optimisticMove(snapshot: WorkflowBoardSnapshot, cardId: string, fromStateId: string, toStateId: string): WorkflowBoardSnapshot {
+    let moved: WorkflowBoardCard | null = null;
+    const columns = snapshot.columns.map((column) => {
+      if (column.stateId !== fromStateId) return column;
+      const card = column.cards.find((item) => item.id === cardId) ?? null;
+      moved = card;
+      return { ...column, cards: column.cards.filter((item) => item.id !== cardId) };
+    });
+    if (!moved) return snapshot;
+    const targetName = columns.find((column) => column.stateId === toStateId)?.name ?? moved.stateName;
+    return {
+      ...snapshot,
+      columns: columns.map((column) => column.stateId === toStateId
+        ? { ...column, cards: [{ ...moved!, stateId: toStateId, stateName: targetName, updatedAt: new Date().toISOString() }, ...column.cards] }
+        : column)
+    };
+  }
+
+  async function dropCard(event: DragEvent<HTMLDivElement>, toStateId: string) {
+    event.preventDefault();
+    if (!dragging || !board || movingCaseId) return;
+    const { card, fromStateId } = dragging;
+    setDragging(null);
+    if (fromStateId === toStateId) return;
+
+    const transition = board.transitions.find((item) => item.fromStateId === fromStateId && item.toStateId === toStateId);
+    if (!transition || !transition.allowed) {
+      showToast(transition?.requiredPermissionCode ? `No tienes el permiso ${transition.requiredPermissionCode}.` : 'Esa transición no está permitida para este flujo.');
+      return;
+    }
+
+    let justification: string | undefined;
+    if (transition.requiresJustification) {
+      const value = window.prompt('Esta transición exige una justificación:');
+      if (value == null) return;
+      if (value.trim().length < 3) {
+        showToast('La justificación debe contener al menos 3 caracteres.');
+        return;
+      }
+      justification = value.trim();
+    }
+
+    const previous = board;
+    setBoard(optimisticMove(board, card.id, fromStateId, toStateId));
+    setMovingCaseId(card.id);
+    try {
+      await sigcService.moveCaseInWorkflow({
+        caseId: card.id,
+        toStateId,
+        expectedFromStateId: fromStateId,
+        justification
+      });
+      showToast(`${card.radicado} movido correctamente.`);
+      reload();
+    } catch (moveError) {
+      setBoard(previous);
+      showToast(moveError instanceof Error ? moveError.message : 'No fue posible mover el caso. El tablero fue restaurado.');
+    } finally {
+      setMovingCaseId(null);
+    }
+  }
+
+  const totalCards = board?.columns.reduce((sum, column) => sum + column.cards.length, 0) ?? 0;
+
   return (
     <Page>
       <PageHead
-        title="Cronograma / tablero operativo"
-        description="Visualiza los casos como tarjetas de trabajo por estado, con vencimiento, semáforo, responsable y progreso."
-        actions={<><button className="btn btn-white"><CalendarDays size={17} /> Vista timeline</button><button className="btn btn-soft" onClick={() => showToast('Movimiento visual registrado en el prototipo.')}><Move size={17} /> Modo arrastrar</button></>}
+        title="Tablero operativo por flujo"
+        description="Columnas generadas desde el flujo del tipo de caso. Cada movimiento valida transición, permiso, justificación y concurrencia en la base de datos."
+        actions={<button className="btn btn-soft" onClick={reload} disabled={isLoading}><RefreshCw size={17} /> Actualizar</button>}
       />
+
+      <section className="card filter-card workflow-board-filters">
+        <div className="filter-grid">
+          <label className="field-label">Tipo de caso
+            <select className="field" value={filters.caseTypeId} onChange={(event) => updateFilter('caseTypeId', event.target.value)}>
+              {(board?.caseTypes ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} ({item.caseCount})</option>)}
+            </select>
+          </label>
+          <label className="field-label">Buscar
+            <input className="field" placeholder="Radicado, asunto, empresa..." value={filters.query} onChange={(event) => updateFilter('query', event.target.value)} />
+          </label>
+          <label className="field-label">Área
+            <select className="field" value={filters.areaId} onChange={(event) => updateFilter('areaId', event.target.value)}>
+              <option value="">Todas</option>{catalogs?.areas.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="field-label">Responsable
+            <select className="field" value={filters.ownerId} onChange={(event) => updateFilter('ownerId', event.target.value)}>
+              <option value="">Todos</option>{members.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="field-label">Prioridad
+            <select className="field" value={filters.priorityId} onChange={(event) => updateFilter('priorityId', event.target.value)}>
+              <option value="">Todas</option>{catalogs?.priorities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+        </div>
+      </section>
+
+      {warning ? <div className="alert danger">{warning}</div> : null}
+      {error ? <div className="alert danger">{error}</div> : null}
+      <div className="case-list-meta">
+        <span>{isLoading ? 'Sincronizando flujo...' : `${board?.columns.length ?? 0} estados · ${board?.transitions.length ?? 0} transiciones válidas`}</span>
+        <strong>{totalCards} caso{totalCards === 1 ? '' : 's'}</strong>
+      </div>
+
       <section className="kanban-scroll">
-        <div className="kanban-grid">
-          {states.map((state) => {
-            const columnItems = cases.filter((item) => item.state === state).concat(cases.filter((item) => item.state !== state).slice(0, state === 'Cerrado' ? 0 : 1)).slice(0, 3);
+        <div className="kanban-grid workflow-kanban-grid" style={{ '--workflow-columns': Math.max(board?.columns.length ?? 1, 1) } as CSSProperties}>
+          {board?.columns.map((column) => {
+            const sourceStateId = dragging?.fromStateId;
+            const transition = sourceStateId ? board.transitions.find((item) => item.fromStateId === sourceStateId && item.toStateId === column.stateId) : null;
+            const canDrop = Boolean(dragging && sourceStateId !== column.stateId && transition?.allowed);
             return (
-              <div className="kanban-col" key={state}>
-                <header><strong>{state}</strong><Badge tone="tone-white">{cases.filter((item) => item.state === state).length || 1}</Badge></header>
-                {columnItems.map((item) => <CaseCard item={item} key={`${state}-${item.id}`} />)}
-                {state === 'Cerrado' ? <div className="empty-kanban"><Archive /><span>Sin cierres hoy</span></div> : null}
+              <div
+                className={`kanban-col workflow-kanban-col ${canDrop ? 'can-drop' : ''} ${dragging && sourceStateId !== column.stateId && !canDrop ? 'blocked-drop' : ''}`}
+                key={column.stateId}
+                onDragOver={(event) => { if (canDrop) event.preventDefault(); }}
+                onDrop={(event) => void dropCard(event, column.stateId)}
+              >
+                <header>
+                  <span className="workflow-state-dot" style={{ background: column.color ?? undefined }} />
+                  <strong>{column.name}</strong>
+                  <Badge tone="tone-white">{column.cards.length}</Badge>
+                </header>
+                <div className="workflow-column-body">
+                  {column.cards.map((card) => (
+                    <article
+                      className={`workflow-card ${card.overdue ? 'overdue' : ''} ${movingCaseId === card.id ? 'moving' : ''}`}
+                      key={card.id}
+                      draggable={canMove && !movingCaseId}
+                      onDragStart={() => setDragging({ card, fromStateId: column.stateId })}
+                      onDragEnd={() => setDragging(null)}
+                    >
+                      <div className="workflow-card-head">
+                        <Link to={`/cases/${encodeURIComponent(card.radicado)}`} className="radicado">{card.radicado}</Link>
+                        <span className={`chip ${card.overdue ? 'tone-red' : 'tone-slate'}`}>{card.priorityName}</span>
+                      </div>
+                      <strong>{card.subject}</strong>
+                      <p>{card.company || card.requester}</p>
+                      <div className="workflow-card-meta"><span>{card.areaName}</span><span>{card.ownerName}</span></div>
+                      <div className="workflow-card-progress"><span><i style={{ width: `${card.progress}%` }} /></span><b>{card.progress}%</b></div>
+                      <small>{card.dueAt ? `${card.overdue ? 'Vencido' : 'Límite'} · ${new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' }).format(new Date(card.dueAt))}` : 'Sin fecha límite'}</small>
+                    </article>
+                  ))}
+                  {!column.cards.length ? <div className="empty-kanban"><Archive /><span>Sin casos</span></div> : null}
+                </div>
               </div>
             );
           })}
         </div>
       </section>
+      {!canMove ? <div className="phase56-inline-note"><ShieldCheck size={16} /> Tu rol puede consultar el tablero, pero no cambiar estados.</div> : null}
     </Page>
   );
 }

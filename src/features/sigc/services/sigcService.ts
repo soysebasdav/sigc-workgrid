@@ -59,7 +59,12 @@ import type {
   CreatedOrganizationInvitation,
   PublicOrganizationInvitation,
   ClientErrorInput,
-  SigcAgendaSnapshot
+  SigcAgendaSnapshot,
+  WorkflowBoardFilters,
+  WorkflowBoardSnapshot,
+  MoveWorkflowCaseInput,
+  MoveWorkflowCaseResult,
+  AutomationRuntimeHealth
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -86,6 +91,11 @@ async function withSafeReadFallback<T>(remote: () => Promise<T>, local: () => Pr
   }
 }
 
+async function withStrictRead<T>(remote: () => Promise<T>, local: () => Promise<T>): Promise<SigcRepositoryResult<T>> {
+  if (dataMode !== 'supabase') return { data: await local(), source: 'demo' };
+  return { data: await remote(), source: 'supabase' };
+}
+
 function mutationRepository() {
   return dataMode === 'supabase' ? supabaseSigcRepository : demoSigcRepository;
 }
@@ -100,7 +110,7 @@ export const sigcService = {
   },
 
   searchCases(filters: SigcCaseFilters): Promise<SigcRepositoryResult<SigcCasePage>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.searchCases(filters), () => demoSigcRepository.searchCases(filters));
+    return withStrictRead(() => supabaseSigcRepository.searchCases(filters), () => demoSigcRepository.searchCases(filters));
   },
 
   getCase(identifier: string): Promise<SigcRepositoryResult<SigcCase | null>> {
@@ -148,6 +158,16 @@ export const sigcService = {
   async changeCaseState(input: ChangeCaseStateInput): Promise<void> {
     await mutationRepository().changeCaseState(input);
     emitSigcDataChanged();
+  },
+
+  getWorkflowBoard(filters: WorkflowBoardFilters = {}): Promise<SigcRepositoryResult<WorkflowBoardSnapshot>> {
+    return withStrictRead(() => supabaseSigcRepository.getWorkflowBoard(filters), () => demoSigcRepository.getWorkflowBoard(filters));
+  },
+
+  async moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult> {
+    const result = await mutationRepository().moveCaseInWorkflow(input);
+    emitSigcDataChanged();
+    return result;
   },
 
   listSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcRepositoryResult<SigcSubtask[]>> {
@@ -308,15 +328,19 @@ export const sigcService = {
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> { await mutationRepository().toggleAutomationRule(id, isActive); emitSigcDataChanged(); },
   async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); },
 
+  getAutomationRuntimeHealth(): Promise<SigcRepositoryResult<AutomationRuntimeHealth>> {
+    return withStrictRead(() => supabaseSigcRepository.getAutomationRuntimeHealth(), () => demoSigcRepository.getAutomationRuntimeHealth());
+  },
+
   getDashboardAnalytics(): Promise<SigcRepositoryResult<SigcDashboardAnalytics>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.getDashboardAnalytics(), () => demoSigcRepository.getDashboardAnalytics());
+    return withStrictRead(() => supabaseSigcRepository.getDashboardAnalytics(), () => demoSigcRepository.getDashboardAnalytics());
   },
   async getAgenda(from: string, to: string): Promise<SigcRepositoryResult<SigcAgendaSnapshot>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAgenda(from, to), source: 'demo' };
     return { data: await supabaseSigcRepository.getAgenda(from, to), source: 'supabase' };
   },
   getReport(filters: SigcReportFilters): Promise<SigcRepositoryResult<SigcReportResult>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.getReport(filters), () => demoSigcRepository.getReport(filters));
+    return withStrictRead(() => supabaseSigcRepository.getReport(filters), () => demoSigcRepository.getReport(filters));
   },
   async getSaasContext(): Promise<SigcRepositoryResult<SigcSaasContext>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getSaasContext(), source: 'demo' };

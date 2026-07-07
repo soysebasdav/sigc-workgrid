@@ -45,7 +45,8 @@ function downloadBlob(filename: string, content: BlobPart, mimeType: string): vo
 }
 
 function csvCell(value: unknown): string {
-  const text = String(value ?? '');
+  const raw = String(value ?? '');
+  const text = /^[=+@-]/.test(raw) ? `'${raw}` : raw;
   return `"${text.replace(/"/g, '""')}"`;
 }
 
@@ -74,14 +75,41 @@ function xmlEscape(value: unknown): string {
 
 function exportExcel(report: SigcReportResult): void {
   const cells = (values: unknown[]) => `<Row>${values.map((value) => `<Cell><Data ss:Type="String">${xmlEscape(value)}</Data></Cell>`).join('')}</Row>`;
-  const body = report.rows.map((row) => cells(REPORT_COLUMNS.map(([key]) => {
+  const detailRows = report.rows.map((row) => cells(REPORT_COLUMNS.map(([key]) => {
     const value = row[key];
     if (key === 'openedAt' || key === 'dueAt' || key === 'closedAt') return value ? formatDate(String(value)) : '';
     if (key === 'overdue') return value ? 'Sí' : 'No';
     if (key === 'slaMet') return value == null ? '' : value ? 'Sí' : 'No';
     return value;
   }))).join('');
-  const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Casos"><Table>${cells(REPORT_COLUMNS.map(([, label]) => label))}${body}</Table></Worksheet></Workbook>`;
+  const summaryRows = [
+    ['Indicador', 'Valor'],
+    ['Total de casos', report.summary.totalCases],
+    ['Casos abiertos', report.summary.openCases],
+    ['Casos cerrados', report.summary.closedCases],
+    ['Casos vencidos', report.summary.overdueCases],
+    ['Cumplimiento SLA', `${report.summary.slaCompliancePct}%`],
+    ['Tiempo promedio de resolución', `${report.summary.avgResolutionHours} h`]
+  ].map(cells).join('');
+  const distributionRows = [
+    ['Dimensión', 'Categoría', 'Valor'],
+    ...report.byArea.map((item) => ['Área', item.label, item.value]),
+    ...report.byOwner.map((item) => ['Responsable', item.label, item.value]),
+    ...report.byState.map((item) => ['Estado', item.label, item.value]),
+    ...report.byType.map((item) => ['Tipo', item.label, item.value]),
+    ...report.byPriority.map((item) => ['Prioridad', item.label, item.value]),
+    ...report.byRisk.map((item) => ['Riesgo', item.label, item.value]),
+    ...report.agingBuckets.map((item) => ['Antigüedad', item.label, item.value])
+  ].map(cells).join('');
+  const slaRows = [
+    ['Área', 'Cumplimiento %', 'Cumplidos', 'Total evaluable'],
+    ...report.slaByArea.map((item) => [item.label, item.value, item.compliant, item.total])
+  ].map(cells).join('');
+  const throughputRows = [
+    ['Mes', 'Creados', 'Cerrados'],
+    ...report.throughput.map((item) => [item.label, item.created, item.closed])
+  ].map(cells).join('');
+  const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Resumen"><Table>${summaryRows}</Table></Worksheet><Worksheet ss:Name="Distribuciones"><Table>${distributionRows}</Table></Worksheet><Worksheet ss:Name="SLA por area"><Table>${slaRows}</Table></Worksheet><Worksheet ss:Name="Throughput"><Table>${throughputRows}</Table></Worksheet><Worksheet ss:Name="Casos"><Table>${cells(REPORT_COLUMNS.map(([, label]) => label))}${detailRows}</Table></Worksheet></Workbook>`;
   downloadBlob(`SIGC_reporte_${report.from.slice(0, 10)}_${report.to.slice(0, 10)}.xls`, xml, 'application/vnd.ms-excel;charset=utf-8');
 }
 
@@ -184,7 +212,7 @@ export function AnalyticsReportsPage() {
   }
 
   return <div className="page">
-    <header className="page-head"><div><span className="eyebrow">Explotación de datos · Fase 7</span><h1>Reportes reales</h1><p>Filtra el universo de casos y exporta el resultado consolidado con los mismos datos que utiliza el SIGC.</p></div>{canExport ? <div className="page-actions"><button className="btn btn-white" onClick={() => runExport('excel')} disabled={!report?.rows.length}><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white" onClick={() => runExport('pdf')} disabled={!report?.rows.length}><FileText size={17} /> PDF</button><button className="btn btn-primary" onClick={() => runExport('csv')} disabled={!report?.rows.length}><Download size={17} /> CSV</button></div> : <div className="page-actions"><span className="chip tone-slate">Consulta sin permiso de exportación</span></div>}</header>
+    <header className="page-head"><div><span className="eyebrow">Explotación de datos · Fase 14</span><h1>Reportes reales</h1><p>Filtra el universo de casos, analiza backlog, SLA y throughput, y exporta el mismo universo visible en el SIGC.</p></div>{canExport ? <div className="page-actions"><button className="btn btn-white" onClick={() => runExport('excel')} disabled={!report?.rows.length}><FileSpreadsheet size={17} /> Excel</button><button className="btn btn-white" onClick={() => runExport('pdf')} disabled={!report?.rows.length}><FileText size={17} /> PDF</button><button className="btn btn-primary" onClick={() => runExport('csv')} disabled={!report?.rows.length}><Download size={17} /> CSV</button></div> : <div className="page-actions"><span className="chip tone-slate">Consulta sin permiso de exportación</span></div>}</header>
 
     <section className="card filter-card"><div className="phase78-report-filters"><label>Desde<input className="field" type="date" value={filters.from} onChange={(event) => update('from', event.target.value)} /></label><label>Hasta<input className="field" type="date" value={filters.to} onChange={(event) => update('to', event.target.value)} /></label><select className="field" value={filters.stateId ?? ''} onChange={(event) => update('stateId', event.target.value || undefined)}><option value="">Todos los estados</option>{catalogs?.states.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.areaId ?? ''} onChange={(event) => update('areaId', event.target.value || undefined)}><option value="">Todas las áreas</option>{catalogs?.areas.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.ownerId ?? ''} onChange={(event) => update('ownerId', event.target.value || undefined)}><option value="">Todos los responsables</option>{members.map((item) => <option key={item.userId} value={item.userId}>{item.name}</option>)}</select><select className="field" value={filters.caseTypeId ?? ''} onChange={(event) => update('caseTypeId', event.target.value || undefined)}><option value="">Todos los tipos</option>{catalogs?.caseTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select className="field" value={filters.priorityId ?? ''} onChange={(event) => update('priorityId', event.target.value || undefined)}><option value="">Todas las prioridades</option>{catalogs?.priorities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className={`btn ${filters.overdueOnly ? 'btn-primary' : 'btn-white'}`} onClick={() => update('overdueOnly', !filters.overdueOnly)}>Solo vencidos</button><button className="btn btn-soft" onClick={reload} disabled={isLoading}><RefreshCw size={17} /> Consultar</button></div></section>
     {warning ? <div className="alert danger">{warning}</div> : null}{error ? <div className="alert danger">{error}</div> : null}{message ? <div className="phase78-inline-message">{message}</div> : null}
@@ -199,6 +227,19 @@ export function AnalyticsReportsPage() {
     </section>
 
     <section className="grid-3 phase78-report-distributions"><AnalyticsPanel title="Por área" description="Distribución del período." icon={<Users size={20} />}><DistributionBars values={report?.byArea ?? []} /></AnalyticsPanel><AnalyticsPanel title="Por tipo" description="Naturaleza de los casos." icon={<BarChart3 size={20} />}><DistributionBars values={report?.byType ?? []} /></AnalyticsPanel><AnalyticsPanel title="Por estado" description="Etapa actual del flujo." icon={<Gauge size={20} />}><DistributionBars values={report?.byState ?? []} /></AnalyticsPanel></section>
+
+    <section className="grid-3 phase78-report-distributions">
+      <AnalyticsPanel title="Riesgo" description="Concentración por nivel declarado." icon={<AlertTriangle size={20} />}><DistributionBars values={report?.byRisk ?? []} /></AnalyticsPanel>
+      <AnalyticsPanel title="Antigüedad del backlog" description="Casos abiertos según días transcurridos." icon={<Clock3 size={20} />}><DistributionBars values={report?.agingBuckets ?? []} /></AnalyticsPanel>
+      <AnalyticsPanel title="SLA por área" description="Porcentaje de cierres dentro de la fecha límite." icon={<ShieldCheck size={20} />}><DistributionBars values={(report?.slaByArea ?? []).map((item) => ({ label: `${item.label} · ${item.compliant}/${item.total}`, value: item.value }))} /></AnalyticsPanel>
+    </section>
+
+    <AnalyticsPanel title="Throughput mensual" description="Casos creados frente a casos cerrados durante el rango consultado." icon={<BarChart3 size={20} />}>
+      <div className="phase78-monthly-chart">{(report?.throughput ?? []).map((item) => {
+        const max = Math.max(1, ...(report?.throughput ?? []).flatMap((point) => [point.created, point.closed]));
+        return <div className="phase78-month" key={item.month}><div className="phase78-month-bars"><i className="created" style={{ height: `${Math.max(4, item.created / max * 180)}px` }} title={`Creados: ${item.created}`} /><i className="closed" style={{ height: `${Math.max(4, item.closed / max * 180)}px` }} title={`Cerrados: ${item.closed}`} /></div><span>{item.label}</span></div>;
+      })}</div>
+    </AnalyticsPanel>
 
     <section className="card table-card phase78-report-table"><div className="phase78-table-head"><div><strong>Detalle del reporte</strong><span>{isLoading ? 'Consultando...' : `${report?.rows.length ?? 0} filas${report?.isTruncated ? ' · limitado a 5.000' : ''}`}</span></div></div><div className="table-scroll"><table className="case-table"><thead><tr>{['Radicado','Tipo','Asunto','Empresa','Área','Responsable','Estado','Prioridad','Creado','Fecha límite','SLA','Avance'].map((item)=><th key={item}>{item}</th>)}</tr></thead><tbody>{report?.rows.length ? report.rows.map((row)=><tr key={row.id}><td><Link className="radicado" to={`/cases/${encodeURIComponent(row.radicado)}`}>{row.radicado}</Link></td><td>{row.caseType}</td><td><strong className="truncate">{row.subject}</strong><small>{row.requesterName}</small></td><td>{row.requesterCompany || '—'}</td><td>{row.area}</td><td>{row.owner}</td><td><span className="chip tone-slate">{row.state}</span></td><td>{row.priority}</td><td>{formatDate(row.openedAt)}</td><td>{formatDate(row.dueAt)}</td><td><span className={`chip ${row.overdue ? 'tone-red' : row.slaMet === false ? 'tone-orange' : 'tone-green'}`}>{row.overdue ? 'Vencido' : row.slaMet == null ? 'En curso' : row.slaMet ? 'Cumplido' : 'Incumplido'}</span></td><td>{row.progress}%</td></tr>) : <tr><td colSpan={12}><div className="empty-inline">No hay casos para los filtros seleccionados.</div></td></tr>}</tbody></table></div></section>
   </div>;

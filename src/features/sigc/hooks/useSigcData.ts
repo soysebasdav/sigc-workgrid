@@ -27,7 +27,10 @@ import type {
   SigcSaasContext,
   SigcAuthorizationContext,
   PublicOrganizationInvitation,
-  SigcAgendaSnapshot
+  SigcAgendaSnapshot,
+  WorkflowBoardFilters,
+  WorkflowBoardSnapshot,
+  AutomationRuntimeHealth
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
 
@@ -93,6 +96,11 @@ export function useSigcCases(enabled = true): AsyncState<SigcCase[]> {
 export function useSigcCaseSearch(filters: SigcCaseFilters): AsyncState<SigcCasePage> {
   const key = useMemo(() => JSON.stringify(filters), [filters]);
   return useSigcQuery(key, { items: [], total: 0, page: filters.page ?? 1, pageSize: filters.pageSize ?? 10 }, () => sigcService.searchCases(filters));
+}
+
+export function useWorkflowBoard(filters: WorkflowBoardFilters = {}): AsyncState<WorkflowBoardSnapshot | null> {
+  const key = useMemo(() => `workflow-board:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, null, () => sigcService.getWorkflowBoard(filters));
 }
 
 export function useSigcCase(identifier: string | undefined): AsyncState<SigcCase | null> {
@@ -197,6 +205,10 @@ export function useSigcUserManagementSnapshot(): AsyncState<SigcUserManagementSn
 
 export function useSigcAdminSnapshot(): AsyncState<SigcAdminSnapshot | null> {
   return useSigcQuery('admin-snapshot', null, () => sigcService.getAdminSnapshot());
+}
+
+export function useAutomationRuntimeHealth(enabled = true): AsyncState<AutomationRuntimeHealth | null> {
+  return useSigcQuery('automation-runtime-health', null, () => sigcService.getAutomationRuntimeHealth(), true, enabled);
 }
 
 

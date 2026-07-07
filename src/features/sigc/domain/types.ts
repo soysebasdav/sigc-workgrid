@@ -601,6 +601,8 @@ export type AutomationAction =
   | { type: 'create_subtask'; title: string; description?: string; responsibleUserId?: string; priorityId?: string; dueInHours?: number }
   | { type: 'notify_user'; userId: string; title?: string; message?: string }
   | { type: 'notify_role'; roleCode: string; title?: string; message?: string }
+  | { type: 'change_state'; stateId: string; justification?: string }
+  | { type: 'email_requester'; templateCode: string }
   | { type: 'suggest_close' };
 
 export interface AutomationRule {
@@ -616,6 +618,8 @@ export interface AutomationRule {
   isActive: boolean;
   lastRunAt?: string;
   runCount: number;
+  maxAttempts: number;
+  retryDelayMinutes: number;
 }
 
 export interface AutomationExecution {
@@ -630,6 +634,11 @@ export interface AutomationExecution {
   actionsTotal: number;
   actionsSucceeded: number;
   errorMessage?: string;
+  executionLog: Array<Record<string, unknown>>;
+  attemptCount: number;
+  maxAttempts: number;
+  nextRetryAt?: string;
+  retryOfId?: string;
   startedAt: string;
   finishedAt?: string;
 }
@@ -739,6 +748,8 @@ export interface SaveAutomationRuleInput {
   stopOnError: boolean;
   sortOrder: number;
   isActive: boolean;
+  maxAttempts: number;
+  retryDelayMinutes: number;
 }
 
 // SIGC Fases 7 y 8 · analítica, reportes y operación SaaS
@@ -864,6 +875,10 @@ export interface SigcReportResult {
   byType: AnalyticsValue[];
   byState: AnalyticsValue[];
   byPriority: AnalyticsValue[];
+  byRisk: AnalyticsValue[];
+  agingBuckets: AnalyticsValue[];
+  slaByArea: Array<AnalyticsValue & { total: number; compliant: number }>;
+  throughput: DashboardMonthlyPoint[];
   rows: SigcReportRow[];
   isTruncated: boolean;
 }
@@ -1066,3 +1081,100 @@ export interface SigcAgendaSnapshot {
   summary: SigcAgendaSummary;
   items: SigcAgendaItem[];
 }
+
+// SIGC Fase 13 · tablero dinámico por flujo
+export interface WorkflowBoardCard {
+  id: string;
+  radicado: string;
+  subject: string;
+  company: string;
+  requester: string;
+  stateId: string;
+  stateName: string;
+  priorityId?: string;
+  priorityName: string;
+  priorityColor?: string | null;
+  areaId?: string;
+  areaName: string;
+  ownerId?: string;
+  ownerName: string;
+  dueAt?: string | null;
+  progress: number;
+  riskLevel?: string | null;
+  source: string;
+  updatedAt: string;
+  overdue: boolean;
+}
+
+export interface WorkflowBoardColumn {
+  stateId: string;
+  code: string;
+  name: string;
+  color?: string | null;
+  sortOrder: number;
+  isInitial: boolean;
+  isTerminal: boolean;
+  cards: WorkflowBoardCard[];
+}
+
+export interface WorkflowBoardTransition {
+  id: string;
+  fromStateId: string;
+  toStateId: string;
+  requiresJustification: boolean;
+  requiredPermissionCode?: string | null;
+  allowed: boolean;
+}
+
+export interface WorkflowBoardCaseType {
+  id: string;
+  code: string;
+  name: string;
+  caseCount: number;
+}
+
+export interface WorkflowBoardFilters {
+  caseTypeId?: string;
+  query?: string;
+  areaId?: string;
+  ownerId?: string;
+  priorityId?: string;
+}
+
+export interface WorkflowBoardSnapshot {
+  organizationId: string;
+  selectedCaseTypeId: string | null;
+  caseTypes: WorkflowBoardCaseType[];
+  columns: WorkflowBoardColumn[];
+  transitions: WorkflowBoardTransition[];
+  generatedAt?: string;
+}
+
+export interface MoveWorkflowCaseInput {
+  caseId: string;
+  toStateId: string;
+  expectedFromStateId: string;
+  justification?: string;
+}
+
+export interface MoveWorkflowCaseResult {
+  caseId: string;
+  stateId: string;
+  stateName: string;
+  updatedAt?: string;
+}
+
+// SIGC Fase 15 · salud del runtime de automatización
+export interface AutomationRuntimeHealth {
+  organizationId: string;
+  generatedAt: string;
+  activeRules: number;
+  executions24h: number;
+  failedExecutions24h: number;
+  pendingRetries: number;
+  reminders24h: number;
+  queuedEmails: number;
+  failedEmails: number;
+  oldestQueuedEmailAt?: string | null;
+}
+
