@@ -264,13 +264,14 @@ export function useSigcDashboard(enabled = true): AsyncState<SigcDashboardAnalyt
   const organizationId = state.data?.organizationId;
 
   useEffect(() => {
-    if (!enabled || dataMode !== 'supabase' || !supabase || !organizationId) return;
+    const realtimeClient = supabase;
+    if (!enabled || dataMode !== 'supabase' || !realtimeClient || !organizationId) return;
     let timer: number | undefined;
     const scheduleReload = () => {
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => state.reload(), 500);
     };
-    const channel = supabase
+    const channel = realtimeClient
       .channel(`sigc-dashboard:${organizationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cases', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'case_assignments', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
@@ -279,7 +280,7 @@ export function useSigcDashboard(enabled = true): AsyncState<SigcDashboardAnalyt
       .subscribe();
     return () => {
       if (timer) window.clearTimeout(timer);
-      void supabase.removeChannel(channel);
+      void realtimeClient.removeChannel(channel);
     };
   }, [enabled, organizationId, state.reload]);
 

@@ -1,4 +1,5 @@
 import { supabase } from '../../../lib/supabaseClient';
+import type { Json } from '../../../types/supabase';
 import type {
   AddCommentInput,
   AddDocumentVersionInput,
@@ -1486,7 +1487,7 @@ export const supabaseSigcRepository: SigcRepository = {
         nextRetryAt: row.next_retry_at ?? undefined, retryOfId: row.retry_of_id ?? undefined,
         startedAt: row.started_at, finishedAt: row.finished_at ?? undefined
       })),
-      automationDiagnostics: Array.isArray(automationDiagnostics.data) ? automationDiagnostics.data as AutomationDiagnostic[] : []
+      automationDiagnostics: Array.isArray(automationDiagnostics.data) ? automationDiagnostics.data as unknown as AutomationDiagnostic[] : []
     };
   },
 
@@ -1690,9 +1691,9 @@ export const supabaseSigcRepository: SigcRepository = {
       p_name: input.name,
       p_description: input.description || null,
       p_trigger_event: input.triggerEvent,
-      p_conditions: input.conditions,
+      p_conditions: input.conditions as unknown as Json,
       p_condition_mode: input.conditionMode,
-      p_actions: input.actions,
+      p_actions: input.actions as unknown as Json,
       p_stop_on_error: input.stopOnError,
       p_stop_processing: input.stopProcessing,
       p_sort_order: input.sortOrder,
@@ -1724,7 +1725,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const { data, error } = await client.rpc('get_automation_rule_versions_v3', { p_rule_id: id });
     if (error) throw error;
-    return Array.isArray(data) ? data as AutomationRuleVersion[] : [];
+    return Array.isArray(data) ? data as unknown as AutomationRuleVersion[] : [];
   },
 
   async dryRunAutomationRule(ruleId: string, caseId: string): Promise<AutomationDryRunResult> {

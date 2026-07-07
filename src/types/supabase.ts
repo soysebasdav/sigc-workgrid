@@ -192,6 +192,8 @@ export interface Database {
         duration_value: number;
         duration_unit: 'hours' | 'calendar_days' | 'business_days';
         start_event: string;
+        timezone: string;
+        pause_on_pending_information: boolean;
         is_default: boolean;
         is_active: boolean;
       }>;
