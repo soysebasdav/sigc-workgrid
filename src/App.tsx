@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
+import { Navigate, RouterProvider, createBrowserRouter, isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { AppProvider } from './app/AppProvider';
 import { PermissionRoute } from './app/PermissionRoute';
 import { AuthorizationProvider, useAuthorization } from './features/authz/AuthorizationProvider';
@@ -39,6 +39,31 @@ function LazyRoute({ children }: { children: ReactNode }) {
   );
 }
 
+function RouteErrorFallback() {
+  const routeError = useRouteError();
+  const message = isRouteErrorResponse(routeError)
+    ? `${routeError.status} · ${routeError.statusText || 'No fue posible abrir esta vista.'}`
+    : routeError instanceof Error
+      ? routeError.message
+      : 'Ocurrió un error inesperado al abrir este módulo.';
+
+  return (
+    <main className="route-error-page">
+      <section className="card route-error-card">
+        <span className="route-error-icon">!</span>
+        <span className="eyebrow">SIGC · Recuperación de vista</span>
+        <h1>No pudimos abrir este módulo</h1>
+        <p>{message}</p>
+        <div className="route-error-actions">
+          <button className="btn btn-primary" onClick={() => window.location.reload()}>Recargar página</button>
+          <a className="btn btn-white" href="/">Volver al inicio</a>
+        </div>
+        <small>El error quedó aislado para evitar mostrar la pantalla técnica de React Router.</small>
+      </section>
+    </main>
+  );
+}
+
 function HomeRedirect() {
   const { isLoading, can, canAny } = useAuthorization();
   if (isLoading) return <main className="login-workgrid"><section className="login-card card"><strong>Resolviendo acceso...</strong></section></main>;
@@ -66,6 +91,7 @@ const router = createBrowserRouter([
   {
     path: '/',
     element: <SigcShell />,
+    errorElement: <RouteErrorFallback />,
     children: [
       { index: true, element: <HomeRedirect /> },
       {

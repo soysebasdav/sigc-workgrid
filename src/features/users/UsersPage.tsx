@@ -80,41 +80,44 @@ export function UsersPage() {
       {error ? <div className="alert danger">{error}</div> : null}
       {message ? <div className={message.toLowerCase().includes('no fue') || message.toLowerCase().includes('último') ? 'alert danger' : 'alert success'}>{message}</div> : null}
 
-      <Card>
+      <Card className="users-members-card">
         <CardHeader title="Miembros de la organización" description={data ? `${data.members.length} miembro(s) · tu rol actual: ${roleName}` : 'Cargando membresías y roles reales.'} />
 
         {isLoading ? <div className="empty-inline">Validando miembros y permisos...</div> : null}
         {!isLoading && data ? (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>Usuario</th><th>Correo</th><th>Rol organizacional</th><th>Estado</th><th>Acciones</th></tr></thead>
-              <tbody>
-                {data.members.map((member) => {
-                  const isCurrentUser = member.userId === currentUser?.id;
-                  const isSaving = savingMembershipId === member.membershipId;
-                  return (
-                    <tr key={member.membershipId}>
-                      <td><div className="phase56-member-identity"><span className="avatar small-avatar">{initials(member.name)}</span><span><strong>{member.name}</strong><small>{isCurrentUser ? 'Tu usuario actual' : 'Miembro de la organización'}</small></span></div></td>
-                      <td>{member.email}</td>
-                      <td>
-                        <select className="input" value={member.roleId ?? ''} disabled={!canManageUsers || !member.isActive || isCurrentUser || isSaving} onChange={(event) => void changeRole(member.membershipId, event.target.value)} title={isCurrentUser ? 'Tu propio rol no se cambia desde esta pantalla.' : 'Asignar rol'}>
-                          {!member.roleId ? <option value="">Sin rol</option> : null}
-                          {activeRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
-                        </select>
-                        {isCurrentUser ? <small>Tu propia membresía se protege para evitar bloqueos accidentales.</small> : null}
-                      </td>
-                      <td><Badge tone={member.isActive ? 'success' : 'neutral'}>{member.isActive ? 'Activo' : 'Inactivo'}</Badge></td>
-                      <td>
-                        {canManageUsers && !isCurrentUser ? <div className="table-actions">
-                          <button className="btn btn-white small" disabled={isSaving} onClick={() => void toggleStatus(member.membershipId, member.isActive, member.name)}>{member.isActive ? <><Users size={14} /> Desactivar</> : <><UserCheck size={14} /> Reactivar</>}</button>
-                          <button className="btn btn-white icon-only small danger-icon" title="Retirar de la organización" disabled={isSaving} onClick={() => void removeMember(member.membershipId, member.name)}><Trash2 size={14} /></button>
-                        </div> : <span className="muted">Protegido</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="users-member-list">
+            <div className="users-member-grid users-member-grid-head" aria-hidden="true">
+              <span>Usuario</span><span>Correo</span><span>Rol organizacional</span><span>Estado</span><span>Acciones</span>
+            </div>
+            {data.members.map((member) => {
+              const isCurrentUser = member.userId === currentUser?.id;
+              const isSaving = savingMembershipId === member.membershipId;
+              return (
+                <article className="users-member-grid users-member-row" key={member.membershipId}>
+                  <div className="users-member-identity">
+                    <span className="avatar small-avatar">{initials(member.name)}</span>
+                    <span><strong>{member.name}</strong><small>{isCurrentUser ? 'Tu usuario actual' : 'Miembro de la organización'}</small></span>
+                  </div>
+                  <div className="users-member-email"><span className="users-mobile-label">Correo</span><strong>{member.email}</strong></div>
+                  <div className="users-member-role">
+                    <span className="users-mobile-label">Rol organizacional</span>
+                    <select className="input" value={member.roleId ?? ''} disabled={!canManageUsers || !member.isActive || isCurrentUser || isSaving} onChange={(event) => void changeRole(member.membershipId, event.target.value)} title={isCurrentUser ? 'Tu propio rol no se cambia desde esta pantalla.' : 'Asignar rol'}>
+                      {!member.roleId ? <option value="">Sin rol</option> : null}
+                      {activeRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                    </select>
+                    {isCurrentUser ? <small>Tu propia membresía se protege para evitar bloqueos accidentales.</small> : null}
+                  </div>
+                  <div className="users-member-status"><span className="users-mobile-label">Estado</span><Badge tone={member.isActive ? 'success' : 'neutral'}>{member.isActive ? 'Activo' : 'Inactivo'}</Badge></div>
+                  <div className="users-member-actions">
+                    <span className="users-mobile-label">Acciones</span>
+                    {canManageUsers && !isCurrentUser ? <div className="table-actions">
+                      <button className="btn btn-white small" disabled={isSaving} onClick={() => void toggleStatus(member.membershipId, member.isActive, member.name)}>{member.isActive ? <><Users size={14} /> Desactivar</> : <><UserCheck size={14} /> Reactivar</>}</button>
+                      <button className="btn btn-white icon-only small danger-icon" title="Retirar de la organización" disabled={isSaving} onClick={() => void removeMember(member.membershipId, member.name)}><Trash2 size={14} /></button>
+                    </div> : <span className="muted">Protegido</span>}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : null}
       </Card>

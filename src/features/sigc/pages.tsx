@@ -918,11 +918,16 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
           const anyAllowed = !item.anyOf?.length || canAny(item.anyOf);
           const allAllowed = !item.allOf?.length || canAll(item.allOf);
           return anyAllowed && allAllowed;
-        }).map(({ to, label, icon: Icon, externalShell }) => (
-          <NavLink key={to} to={to} target={externalShell ? '_blank' : undefined} rel={externalShell ? 'noreferrer' : undefined} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-            <Icon size={17} /><span>{label}</span>{to === '/notifications' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
-          </NavLink>
-        ))}
+        }).map(({ to, label, icon: Icon, externalShell }) => {
+          const effectiveTo = to === '/radicar' && context?.activeOrganization.slug
+            ? `/radicar/${encodeURIComponent(context.activeOrganization.slug)}`
+            : to;
+          return (
+            <NavLink key={to} to={effectiveTo} target={externalShell ? '_blank' : undefined} rel={externalShell ? 'noreferrer' : undefined} onClick={closeMobile} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <Icon size={17} /><span>{label}</span>{to === '/notifications' && unreadNotifications > 0 ? <em>{unreadNotifications}</em> : null}
+            </NavLink>
+          );
+        })}
       </nav>
       {canViewReports ? <div className="sidebar-compliance card">
         <strong>Cumplimiento del SLA</strong>
@@ -1096,8 +1101,15 @@ function TimerResetIcon() {
   return <CalendarCheck size={17} />;
 }
 
+const fallbackSigcActions: SigcActions = {
+  openDrawer: () => undefined,
+  showToast: (text) => {
+    console.warn('[SIGC toast fallback]', text);
+  }
+};
+
 function useSigcActions(): SigcActions {
-  return useOutletContext<SigcActions>();
+  return useOutletContext<SigcActions | undefined>() ?? fallbackSigcActions;
 }
 
 function initials(name = '') {

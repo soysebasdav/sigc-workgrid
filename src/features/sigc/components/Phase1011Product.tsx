@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { CheckCircle2, Clock3, Download, ExternalLink, FileText, Search, Shield, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Clock3, Download, ExternalLink, FileText, Layers3, Search, Shield, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { Link, Navigate } from 'react-router-dom';
 import { useApp } from '../../../app/AppProvider';
 import { useClientPortal, useDebouncedValue } from '../hooks/useSigcData';
@@ -119,8 +119,23 @@ export function ClientPortalPage() {
     <header className="page-head"><div><span className="eyebrow">Portal de cliente</span><h1>Mis casos</h1><p>Consulta el estado de las solicitudes asociadas a <strong>{data?.email ?? 'tu cuenta'}</strong>.</p></div></header>
     {warning ? <div className="alert danger">{warning}</div> : null}
     {error ? <div className="alert danger">{error}</div> : null}
-    <section className="kpi-row client-portal-kpis">
-      {[['Total', data?.summary.total ?? 0], ['Abiertos', data?.summary.open ?? 0], ['Cerrados', data?.summary.closed ?? 0], ['Vencidos', data?.summary.overdue ?? 0]].map(([label, value]) => <article className="card" key={String(label)}><span>{label}</span><strong>{value}</strong></article>)}
+    <section className="client-portal-kpis" aria-label="Resumen de casos">
+      <article className="client-kpi-card client-kpi-total">
+        <div className="client-kpi-icon"><Layers3 size={22} /></div>
+        <div><span>Total</span><strong>{data?.summary.total ?? 0}</strong><small>Casos registrados</small></div>
+      </article>
+      <article className="client-kpi-card client-kpi-open">
+        <div className="client-kpi-icon"><Clock3 size={22} /></div>
+        <div><span>Abiertos</span><strong>{data?.summary.open ?? 0}</strong><small>En trámite</small></div>
+      </article>
+      <article className="client-kpi-card client-kpi-closed">
+        <div className="client-kpi-icon"><CheckCircle2 size={22} /></div>
+        <div><span>Cerrados</span><strong>{data?.summary.closed ?? 0}</strong><small>Finalizados</small></div>
+      </article>
+      <article className="client-kpi-card client-kpi-overdue">
+        <div className="client-kpi-icon"><TriangleAlert size={22} /></div>
+        <div><span>Vencidos</span><strong>{data?.summary.overdue ?? 0}</strong><small>Requieren atención</small></div>
+      </article>
     </section>
     <section className="card filter-card"><div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Buscar por radicado o asunto" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></div></section>
     <div className="case-list-meta"><span>{isLoading ? 'Consultando tus casos...' : `${data?.organizationName ?? 'Organización'} · acceso restringido a tu cuenta`}</span><strong>{data?.total ?? 0} caso{data?.total === 1 ? '' : 's'}</strong></div>

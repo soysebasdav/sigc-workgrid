@@ -141,7 +141,10 @@ const actionLabels: Record<AutomationAction['type'], string> = {
 };
 
 export function AdminConfigurationPage() {
-  const { showToast } = useOutletContext<SigcActions>();
+  const outletActions = useOutletContext<SigcActions | undefined>();
+  const showToast = outletActions?.showToast ?? ((text: string) => {
+    console.warn('[SIGC toast fallback]', text);
+  });
   const { can } = useAuthorization();
   const { data, isLoading, error, warning, reload } = useSigcAdminSnapshot();
   const canConfigure = can(PERMISSIONS.adminManageConfiguration);

@@ -1,5 +1,5 @@
 import { ShieldX } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useOutletContext } from 'react-router-dom';
 import { useAuthorization } from '../features/authz/AuthorizationProvider';
 import type { PermissionCode } from '../features/authz/permissions';
 
@@ -10,6 +10,7 @@ type PermissionRouteProps = {
 
 export function PermissionRoute({ anyOf = [], allOf = [] }: PermissionRouteProps) {
   const { isLoading, error, canAny, canAll } = useAuthorization();
+  const parentOutletContext = useOutletContext<unknown>();
 
   if (isLoading) {
     return (
@@ -31,5 +32,5 @@ export function PermissionRoute({ anyOf = [], allOf = [] }: PermissionRouteProps
     );
   }
 
-  return <Outlet />;
+  return <Outlet context={parentOutletContext} />;
 }
