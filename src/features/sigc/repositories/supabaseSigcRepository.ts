@@ -4,6 +4,9 @@ import type {
   AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
+  ClassifyCaseInput,
+  UpdateCaseAssignmentInput,
+  DeactivateCaseAssignmentInput,
   CasePriorityName,
   ChangeCaseStateInput,
   CreateSubtaskInput,
@@ -146,6 +149,8 @@ type CaseQueryRow = {
   requester_phone: string | null;
   source: string;
   risk_level: string | null;
+  classification_observations: string | null;
+  classified_at: string | null;
   opened_at: string;
   due_at: string | null;
   progress: number;
@@ -167,7 +172,7 @@ type CaseQueryRow = {
 const CASE_SELECT = `
   id, organization_id, radicado, subject, description,
   requester_name, requester_company, requester_document, requester_email, requester_phone,
-  source, risk_level, opened_at, due_at, progress, updated_at,
+  source, risk_level, classification_observations, classified_at, opened_at, due_at, progress, updated_at,
   case_type_id, priority_id, state_id, sla_policy_id, primary_area_id, primary_owner_id,
   case_type:case_types(name),
   priority:priorities(name),
@@ -278,7 +283,9 @@ function mapCase(row: CaseQueryRow): SigcCase {
     updatedAt: row.updated_at,
     updated: relativeUpdated(row.updated_at),
     risk: isTerminal ? row.state?.name ?? 'Finalizado' : riskLabel(row.risk_level, sem),
-    source: row.source
+    source: row.source,
+    classificationObservations: row.classification_observations ?? undefined,
+    classifiedAt: row.classified_at
   };
 }
 
@@ -348,6 +355,27 @@ function sanitizeFilename(filename: string): string {
   return (cleaned || 'archivo').slice(-180);
 }
 
+const MAX_INTERNAL_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const ALLOWED_INTERNAL_EXTENSIONS = new Set([
+  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yaml', 'yml',
+  'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'log', 'js', 'ts', 'css', 'html'
+]);
+
+function validateInternalFile(file: File): void {
+  if (file.size <= 0) throw new Error(`${file.name}: el archivo está vacío.`);
+  if (file.size > MAX_INTERNAL_FILE_SIZE_BYTES) throw new Error(`${file.name}: supera el máximo de 100 MB.`);
+  const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? '' : '';
+  if (!extension || !ALLOWED_INTERNAL_EXTENSIONS.has(extension)) {
+    throw new Error(`${file.name}: formato de archivo no permitido.`);
+  }
+}
+
+async function removeStoragePathQuietly(path: string): Promise<void> {
+  const client = requireClient();
+  const { error } = await client.storage.from('case-documents').remove([path]);
+  if (error) console.warn(`SIGC: no fue posible limpiar el archivo huérfano ${path}.`, error);
+}
+
 function eventPresentation(eventType: string, metadata: Record<string, unknown>, afterData: Record<string, unknown> | null): { title: string; description: string } {
   const text = (value: unknown) => typeof value === 'string' ? value : '';
   const titleValue = text(metadata.title) || text(afterData?.title);
@@ -360,6 +388,7 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
   switch (eventType) {
     case 'case.created': return { title: 'Caso creado', description: 'Se creó el expediente y quedó disponible para gestión.' };
     case 'case.updated': return { title: 'Caso actualizado', description: 'Se modificaron datos del expediente.' };
+    case 'case.classified': return { title: 'Caso clasificado', description: justification || 'Se definieron clasificación, responsables y SLA del expediente.' };
     case 'case.state_changed': return { title: 'Estado actualizado', description: justification ? `Cambio de estado. Justificación: ${justification}` : 'El caso avanzó a un nuevo estado del flujo.' };
     case 'case.sla_overridden': return { title: 'Fecha límite modificada', description: justification || 'Se registró una modificación excepcional del SLA.' };
     case 'case.review_pending': return { title: 'Revisión solicitada', description: 'La respuesta fue enviada a revisión o aprobación.' };
@@ -370,6 +399,7 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
     case 'automation.executed': return { title: 'Automatización ejecutada', description: text(metadata.ruleName) || 'Una regla automática actuó sobre el expediente.' };
     case 'assignment.created': return { title: 'Nueva asignación', description: 'Se agregó un área o responsable al caso.' };
     case 'assignment.updated': return { title: 'Asignación actualizada', description: 'Se modificó una asignación del caso.' };
+    case 'assignment.deactivated': return { title: 'Asignación retirada', description: justification || 'La asignación se retiró del caso sin borrar su historial.' };
     case 'subtask.created': return { title: 'Subtarea creada', description: titleValue || 'Se creó una nueva actividad de seguimiento.' };
     case 'subtask.updated': return { title: 'Subtarea actualizada', description: titleValue || 'Se actualizó una actividad del caso.' };
     case 'subtask.deleted': return { title: 'Subtarea eliminada lógicamente', description: titleValue || 'La subtarea se ocultó sin borrar su historial.' };
@@ -408,7 +438,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const search = safeSearch(filters.query ?? '');
     let relatedSearchIds: string[] | null = null;
     if (search) {
-      const { data: searchIds, error: searchError } = await (client as any).rpc('search_sigc_case_ids', { p_query: search });
+      const { data: searchIds, error: searchError } = await client.rpc('search_sigc_case_ids', { p_query: search });
       if (searchError) throw searchError;
       relatedSearchIds = Array.isArray(searchIds) ? searchIds.map(String) : [];
       if (!relatedSearchIds.length) return { items: [], total: 0, page, pageSize };
@@ -519,7 +549,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { data, error } = await client
       .from('case_assignments')
-      .select('id,area_id,responsible_user_id,due_at,state,observations,progress,is_primary')
+      .select('id,area_id,responsible_user_id,assigned_at,due_at,state,observations,progress,is_primary,is_active,updated_at,completed_at')
       .eq('case_id', resolvedCaseId)
       .order('is_primary', { ascending: false })
       .order('assigned_at', { ascending: true });
@@ -543,12 +573,17 @@ export const supabaseSigcRepository: SigcRepository = {
       areaName: areaMap.get(item.area_id) ?? 'Área',
       responsibleUserId: item.responsible_user_id ?? undefined,
       responsibleName: item.responsible_user_id ? profileMap.get(item.responsible_user_id) ?? 'Sin responsable' : 'Sin responsable',
+      assignedAt: item.assigned_at,
+      assignedLabel: formatDateTime(item.assigned_at),
       dueAt: item.due_at,
       due: formatDue(item.due_at),
       state: item.state,
       observations: item.observations,
       progress: item.progress,
-      isPrimary: item.is_primary
+      isPrimary: item.is_primary,
+      isActive: item.is_active,
+      updatedAt: item.updated_at,
+      completedAt: item.completed_at
     }));
   },
 
@@ -572,9 +607,11 @@ export const supabaseSigcRepository: SigcRepository = {
       areaId: assignment.areaId,
       responsibleUserId: assignment.responsibleUserId ?? '',
       dueAt: assignment.dueAt ? new Date(assignment.dueAt).toISOString() : '',
-      observations: assignment.observations ?? ''
+      observations: assignment.observations ?? '',
+      isPrimary: assignment.isPrimary ?? false
     }));
-    const { data, error } = await client.rpc('create_internal_case', {
+    const { data, error } = await client.rpc('create_internal_case_v2', {
+      p_idempotency_key: input.idempotencyKey,
       p_case_type_id: input.caseTypeId,
       p_priority_id: input.priorityId,
       p_requester_name: input.requesterName,
@@ -607,6 +644,56 @@ export const supabaseSigcRepository: SigcRepository = {
     if (error) throw error;
   },
 
+  async classifyCase(input: ClassifyCaseInput): Promise<void> {
+    const client = requireClient();
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const assignments = input.assignments.map((assignment, index) => ({
+      areaId: assignment.areaId,
+      responsibleUserId: assignment.responsibleUserId || null,
+      dueAt: assignment.dueAt ? new Date(assignment.dueAt).toISOString() : null,
+      observations: assignment.observations?.trim() || null,
+      isPrimary: assignment.isPrimary ?? index === 0
+    }));
+    const { error } = await client.rpc('classify_case_v2', {
+      p_case_id: resolvedCaseId,
+      p_case_type_id: input.caseTypeId,
+      p_priority_id: input.priorityId,
+      p_risk_level: input.riskLevel,
+      p_observations: input.observations?.trim() || null,
+      p_due_at: input.dueAt ? new Date(input.dueAt).toISOString() : null,
+      p_assignments: assignments
+    });
+    if (error) throw error;
+  },
+
+  async updateCaseAssignment(input: UpdateCaseAssignmentInput): Promise<void> {
+    const client = requireClient();
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { error } = await client.rpc('update_case_assignment_v2', {
+      p_assignment_id: input.assignmentId,
+      p_case_id: resolvedCaseId,
+      p_area_id: input.areaId,
+      p_responsible_user_id: input.responsibleUserId || null,
+      p_due_at: input.dueAt ? new Date(input.dueAt).toISOString() : null,
+      p_state: input.state,
+      p_observations: input.observations?.trim() || null,
+      p_progress: Math.max(0, Math.min(100, input.progress)),
+      p_is_primary: input.isPrimary
+    });
+    if (error) throw error;
+  },
+
+  async deactivateCaseAssignment(input: DeactivateCaseAssignmentInput): Promise<void> {
+    const client = requireClient();
+    const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
+    const { error } = await client.rpc('deactivate_case_assignment_v2', {
+      p_assignment_id: input.assignmentId,
+      p_case_id: resolvedCaseId,
+      p_reason: input.reason.trim()
+    });
+    if (error) throw error;
+  },
+
   async changeCaseState(input: ChangeCaseStateInput): Promise<void> {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
@@ -619,7 +706,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getWorkflowBoard(filters: WorkflowBoardFilters = {}): Promise<WorkflowBoardSnapshot> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_workflow_board', {
       p_case_type_id: filters.caseTypeId || null,
       p_query: filters.query?.trim() || null,
@@ -685,7 +772,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const { data, error } = await client.rpc('move_case_in_workflow', {
       p_case_id: resolvedCaseId,
@@ -707,7 +794,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     let query = client
       .from('case_subtasks')
-      .select('id,case_id,title,description,responsible_user_id,priority_id,due_at,state,progress,created_at,updated_at')
+      .select('id,case_id,assignment_id,area_id,title,description,responsible_user_id,priority_id,due_at,state,progress,created_at,updated_at')
       .is('deleted_at', null)
       .order('updated_at', { ascending: false });
 
@@ -724,21 +811,24 @@ export const supabaseSigcRepository: SigcRepository = {
     const caseIds = [...new Set(rows.map((row) => row.case_id))];
     const userIds = [...new Set(rows.map((row) => row.responsible_user_id).filter((id): id is string => Boolean(id)))];
     const priorityIds = [...new Set(rows.map((row) => row.priority_id).filter((id): id is string => Boolean(id)))];
+    const areaIds = [...new Set(rows.map((row) => row.area_id).filter((id): id is string => Boolean(id)))];
     const subtaskIds = rows.map((row) => row.id);
 
-    const [casesResult, profilesResult, prioritiesResult, commentsResult, documentsResult] = await Promise.all([
+    const [casesResult, profilesResult, prioritiesResult, areasResult, commentsResult, documentsResult] = await Promise.all([
       client.from('cases').select('id,radicado,subject').in('id', caseIds),
       userIds.length ? client.from('profiles').select('id,name').in('id', userIds) : Promise.resolve({ data: [], error: null }),
       priorityIds.length ? client.from('priorities').select('id,name').in('id', priorityIds) : Promise.resolve({ data: [], error: null }),
+      areaIds.length ? client.from('areas').select('id,name').in('id', areaIds) : Promise.resolve({ data: [], error: null }),
       client.from('case_comments').select('id,subtask_id').in('subtask_id', subtaskIds),
       client.from('case_documents').select('id,subtask_id').in('subtask_id', subtaskIds).is('deleted_at', null)
     ]);
-    const relatedError = casesResult.error ?? profilesResult.error ?? prioritiesResult.error ?? commentsResult.error ?? documentsResult.error;
+    const relatedError = casesResult.error ?? profilesResult.error ?? prioritiesResult.error ?? areasResult.error ?? commentsResult.error ?? documentsResult.error;
     if (relatedError) throw relatedError;
 
     const caseMap = new Map<string, { id: string; radicado: string; subject: string }>((casesResult.data ?? []).map((item) => [item.id, item as { id: string; radicado: string; subject: string }]));
     const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
     const priorityMap = new Map((prioritiesResult.data ?? []).map((item) => [item.id, item.name]));
+    const areaMap = new Map((areasResult.data ?? []).map((item) => [item.id, item.name]));
     const commentCounts = new Map<string, number>();
     const attachmentCounts = new Map<string, number>();
     (commentsResult.data ?? []).forEach((item) => { if (item.subtask_id) commentCounts.set(item.subtask_id, (commentCounts.get(item.subtask_id) ?? 0) + 1); });
@@ -749,6 +839,9 @@ export const supabaseSigcRepository: SigcRepository = {
       return {
         id: row.id,
         caseId: row.case_id,
+        assignmentId: row.assignment_id ?? undefined,
+        areaId: row.area_id ?? undefined,
+        areaName: row.area_id ? areaMap.get(row.area_id) ?? 'Área' : 'Sin área',
         caseRadicado: caseItem?.radicado ?? 'Caso',
         caseSubject: caseItem?.subject ?? '',
         title: row.title,
@@ -773,8 +866,10 @@ export const supabaseSigcRepository: SigcRepository = {
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
     const client = requireClient();
     const caseId = await resolveCaseDatabaseId(input.caseId);
-    const { data, error } = await client.rpc('create_case_subtask', {
+    const { data, error } = await client.rpc('create_case_subtask_v2', {
       p_case_id: caseId,
+      p_assignment_id: input.assignmentId || null,
+      p_area_id: input.areaId || null,
       p_title: input.title,
       p_description: input.description,
       p_responsible_user_id: input.responsibleUserId || null,
@@ -789,8 +884,10 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async updateSubtask(input: UpdateSubtaskInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('update_case_subtask', {
+    const { error } = await client.rpc('update_case_subtask_v2', {
       p_subtask_id: input.subtaskId,
+      p_assignment_id: input.assignmentId || null,
+      p_area_id: input.areaId || null,
       p_title: input.title,
       p_description: input.description,
       p_responsible_user_id: input.responsibleUserId || null,
@@ -916,6 +1013,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
+    validateInternalFile(input.file);
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const organizationId = await ensureOrganization();
@@ -938,15 +1036,19 @@ export const supabaseSigcRepository: SigcRepository = {
       p_subtask_id: input.subtaskId || null,
       p_comment_id: input.commentId || null
     });
-    if (registerError) throw registerError;
+    if (registerError) {
+      await removeStoragePathQuietly(path);
+      throw registerError;
+    }
 
     const documents = await this.listDocuments(resolvedCaseId);
     const created = documents.find((document) => document.id === documentId);
-    if (!created) throw new Error('El documento se cargó, pero no fue posible refrescar su ficha.');
+    if (!created) throw new Error('El documento se registró correctamente, pero no fue posible refrescar su ficha. Recarga la vista.');
     return created;
   },
 
   async addDocumentVersion(input: AddDocumentVersionInput): Promise<void> {
+    validateInternalFile(input.file);
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const organizationId = await ensureOrganization();
@@ -964,7 +1066,10 @@ export const supabaseSigcRepository: SigcRepository = {
       p_size_bytes: input.file.size,
       p_change_notes: input.changeNotes ?? null
     });
-    if (error) throw error;
+    if (error) {
+      await removeStoragePathQuietly(path);
+      throw error;
+    }
   },
 
   async deleteDocument(documentId: string): Promise<void> {
@@ -1018,7 +1123,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { data, error } = await client
       .from('case_sla_overrides')
@@ -1045,7 +1150,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async overrideCaseSla(input: OverrideCaseSlaInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const { error } = await client.rpc('override_case_sla', {
       p_case_id: resolvedCaseId,
@@ -1056,7 +1161,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listCaseReviews(caseId: string): Promise<SigcCaseReview[]> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { data, error } = await client
       .from('case_reviews')
@@ -1090,7 +1195,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async submitCaseForReview(input: SubmitCaseReviewInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const { error } = await client.rpc('submit_case_for_review', {
       p_case_id: resolvedCaseId,
@@ -1101,7 +1206,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async decideCaseReview(input: DecideCaseReviewInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('decide_case_review', {
       p_review_id: input.reviewId,
       p_decision: input.decision,
@@ -1111,7 +1216,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listCaseDeliveries(caseId: string): Promise<SigcCaseDelivery[]> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { data, error } = await client
       .from('case_deliveries')
@@ -1139,7 +1244,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const { error } = await client.rpc('register_case_delivery', {
       p_case_id: resolvedCaseId,
@@ -1152,7 +1257,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listCaseReminders(caseId: string): Promise<SigcCaseReminder[]> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { data, error } = await client
       .from('case_reminder_log')
@@ -1187,7 +1292,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async sendManualReminder(input: SendManualReminderInput): Promise<number> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const { data, error } = await client.rpc('send_manual_case_reminder', {
       p_case_id: resolvedCaseId,
@@ -1199,7 +1304,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_user_management_context');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible cargar la gestión de usuarios.');
@@ -1207,7 +1312,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, cases] = await Promise.all([
       client.from('areas').select('*').eq('organization_id', organizationId).order('sort_order'),
@@ -1304,7 +1409,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     const tableMap = { areas: 'areas', priorities: 'priorities', caseTypes: 'case_types', states: 'case_states' } as const;
     const payload: Record<string, unknown> = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), is_active: input.isActive ?? true };
@@ -1318,14 +1423,14 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const tableMap = { areas: 'areas', priorities: 'priorities', caseTypes: 'case_types', states: 'case_states' } as const;
     const { error } = await client.from(tableMap[kind]).update({ is_active: isActive }).eq('id', id);
     if (error) throw error;
   },
 
   async saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     if (input.isDefault && input.caseTypeId) {
       const reset = await client.from('sla_policies').update({ is_default: false }).eq('organization_id', organizationId).eq('case_type_id', input.caseTypeId);
@@ -1337,7 +1442,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async saveHoliday(input: SaveHolidayInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     const payload = { organization_id: organizationId, holiday_date: input.holidayDate, name: input.name.trim(), is_active: input.isActive };
     const result = input.id ? await client.from('organization_holidays').update(payload).eq('id', input.id) : await client.from('organization_holidays').insert(payload);
@@ -1345,13 +1450,13 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async deleteHoliday(id: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.from('organization_holidays').delete().eq('id', id);
     if (error) throw error;
   },
 
   async saveRole(input: SaveRoleInput): Promise<string> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     const payload = { organization_id: organizationId, code: input.code.trim().toLowerCase(), name: input.name.trim(), description: input.description || null, is_active: input.isActive };
     const query = input.id ? client.from('roles').update(payload).eq('id', input.id).select('id').single() : client.from('roles').insert(payload).select('id').single();
@@ -1361,25 +1466,25 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('set_role_permissions', { p_role_id: roleId, p_permission_ids: permissionIds });
     if (error) throw error;
   },
 
   async setMemberRole(membershipId: string, roleId: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('set_organization_member_role', { p_membership_id: membershipId, p_role_id: roleId });
     if (error) throw error;
   },
 
   async saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('set_case_type_workflow', { p_case_type_id: caseTypeId, p_state_ids: stateIds });
     if (error) throw error;
   },
 
   async saveTransition(input: SaveTransitionInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('save_case_state_transition', {
       p_transition_id: input.id || null,
       p_case_type_id: input.caseTypeId,
@@ -1393,13 +1498,13 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async deleteTransition(id: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('delete_case_state_transition', { p_transition_id: id });
     if (error) throw error;
   },
 
   async saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const organizationId = await ensureOrganization();
     const payload = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), event_type: input.eventType || null, subject: input.subject, body_text: input.bodyText, is_active: input.isActive };
     const result = input.id ? await client.from('email_templates').update(payload).eq('id', input.id) : await client.from('email_templates').insert(payload);
@@ -1407,7 +1512,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async saveReminderRule(input: SaveReminderRuleInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('save_reminder_rule', {
       p_rule_id: input.id || null,
       p_code: input.code,
@@ -1421,7 +1526,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('save_automation_rule', {
       p_rule_id: input.id || null,
       p_code: input.code,
@@ -1440,20 +1545,20 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('set_automation_rule_active', { p_rule_id: id, p_is_active: isActive });
     if (error) throw error;
   },
 
   async runAutomationRule(ruleId: string, caseId: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
     const { error } = await client.rpc('run_automation_rule_test', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
     if (error) throw error;
   },
 
   async getAutomationRuntimeHealth(): Promise<AutomationRuntimeHealth> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_automation_runtime_health');
     if (error) throw error;
     const raw = (data ?? {}) as Record<string, any>;
@@ -1472,14 +1577,14 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getDashboardAnalytics(): Promise<SigcDashboardAnalytics> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_sigc_dashboard', {});
     if (error) throw error;
     return data as SigcDashboardAnalytics;
   },
 
   async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_sigc_agenda', { p_from: from, p_to: to });
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('La agenda SIGC no devolvió un resultado válido.');
@@ -1521,7 +1626,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const from = new Date(`${filters.from}T00:00:00`).toISOString();
     const to = new Date(`${filters.to}T00:00:00`);
     to.setDate(to.getDate() + 1);
@@ -1560,14 +1665,14 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async getSaasContext(): Promise<SigcSaasContext> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_saas_context');
     if (error) throw error;
     return data as SigcSaasContext;
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_authorization_context');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible resolver el contexto de autorización.');
@@ -1575,13 +1680,13 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async setActiveOrganization(organizationId: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('set_active_organization', { p_organization_id: organizationId });
     if (error) throw error;
   },
 
   async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('update_organization_profile', {
       p_name: input.name, p_slug: input.slug, p_product_name: input.productName, p_short_name: input.shortName,
       p_logo_url: input.logoUrl ?? null, p_primary_color: input.primaryColor, p_accent_color: input.accentColor,
@@ -1591,7 +1696,7 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('update_public_intake_settings', {
       p_enabled: input.enabled,
       p_form_title: input.formTitle,
@@ -1605,14 +1710,14 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async createSaasOrganization(input: CreateSaasOrganizationInput): Promise<string> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('create_saas_organization', { p_name: input.name, p_slug: input.slug });
     if (error) throw error;
     return String(data);
   },
 
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('create_organization_invitation', { p_email: input.email, p_role_id: input.roleId, p_expires_days: input.expiresDays ?? 7 });
     if (error) throw error;
     const row = data?.[0];
@@ -1621,13 +1726,13 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async revokeOrganizationInvitation(invitationId: string): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('revoke_organization_invitation', { p_invitation_id: invitationId });
     if (error) throw error;
   },
 
   async logClientError(input: ClientErrorInput): Promise<void> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { error } = await client.rpc('log_client_error', {
       p_message: input.message, p_stack: input.stack ?? null, p_route: input.route ?? null,
       p_severity: input.severity ?? 'error', p_metadata: input.metadata ?? {}
@@ -1638,7 +1743,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
 export const supabasePublicSigcRepository: PublicSigcRepository = {
   async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_public_intake_context', {
       p_tenant: locator.tenant?.trim() || null,
       p_hostname: locator.hostname?.trim() || null
@@ -1677,7 +1782,7 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
   },
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('submit_public_case', {
       p_tenant: input.tenant?.trim() || null,
       p_hostname: input.hostname?.trim() || null,
@@ -1718,11 +1823,21 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
           p_mime_type: file.type || null,
           p_size_bytes: file.size
         });
-        if (registerError) { failedAttachments.push(file.name); continue; }
+        if (registerError) {
+          await removeStoragePathQuietly(path);
+          failedAttachments.push(file.name);
+          continue;
+        }
         attachmentCount += 1;
       }
+    }
+
+    let attachmentSessionFinalized = !attachments.length;
+    let attachmentFinalizeError: string | undefined;
+    if (attachments.length && uploadToken) {
       const { error: finalizeError } = await client.rpc('finalize_public_case_upload', { p_upload_token: uploadToken });
-      if (finalizeError) console.warn('SIGC: no fue posible cerrar la sesión de adjuntos públicos.', finalizeError);
+      attachmentSessionFinalized = !finalizeError;
+      attachmentFinalizeError = finalizeError?.message;
     }
 
     return {
@@ -1730,12 +1845,14 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
       radicado: String(created.radicado),
       dueAt: created.due_at ?? null,
       attachmentCount,
-      failedAttachments
+      failedAttachments,
+      attachmentSessionFinalized,
+      attachmentFinalizeError
     };
   },
 
   async getOrganizationInvitation(token: string): Promise<PublicOrganizationInvitation | null> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('get_organization_invitation', { p_token: token });
     if (error) throw error;
     const row = data?.[0];
@@ -1744,7 +1861,7 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
   },
 
   async acceptOrganizationInvitation(token: string): Promise<string> {
-    const client = requireClient() as any;
+    const client = requireClient();
     const { data, error } = await client.rpc('accept_organization_invitation', { p_token: token });
     if (error) throw error;
     return String(data);

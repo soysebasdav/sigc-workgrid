@@ -4,6 +4,9 @@ import type {
   AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
+  ClassifyCaseInput,
+  UpdateCaseAssignmentInput,
+  DeactivateCaseAssignmentInput,
   ChangeCaseStateInput,
   CreateSubtaskInput,
   CreatedCaseResult,
@@ -76,19 +79,9 @@ export function emitSigcDataChanged(): void {
 }
 
 async function withSafeReadFallback<T>(remote: () => Promise<T>, local: () => Promise<T>): Promise<SigcRepositoryResult<T>> {
+  // En modo Supabase nunca se sustituyen datos reales por datos demo. Un fallo remoto debe ser visible.
   if (dataMode !== 'supabase') return { data: await local(), source: 'demo' };
-
-  try {
-    return { data: await remote(), source: 'supabase' };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Error desconocido';
-    console.warn('SIGC: no fue posible leer Supabase. Se usa el repositorio demo.', error);
-    return {
-      data: await local(),
-      source: 'demo',
-      warning: `No fue posible leer el dominio SIGC en Supabase. Fallback demo activo: ${message}`
-    };
-  }
+  return { data: await remote(), source: 'supabase' };
 }
 
 async function withStrictRead<T>(remote: () => Promise<T>, local: () => Promise<T>): Promise<SigcRepositoryResult<T>> {
@@ -155,6 +148,21 @@ export const sigcService = {
     emitSigcDataChanged();
   },
 
+  async classifyCase(input: ClassifyCaseInput): Promise<void> {
+    await mutationRepository().classifyCase(input);
+    emitSigcDataChanged();
+  },
+
+  async updateCaseAssignment(input: UpdateCaseAssignmentInput): Promise<void> {
+    await mutationRepository().updateCaseAssignment(input);
+    emitSigcDataChanged();
+  },
+
+  async deactivateCaseAssignment(input: DeactivateCaseAssignmentInput): Promise<void> {
+    await mutationRepository().deactivateCaseAssignment(input);
+    emitSigcDataChanged();
+  },
+
   async changeCaseState(input: ChangeCaseStateInput): Promise<void> {
     await mutationRepository().changeCaseState(input);
     emitSigcDataChanged();
@@ -177,32 +185,31 @@ export const sigcService = {
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
     const repository = mutationRepository();
     const result = await repository.createSubtask(input);
-    for (const file of input.files ?? []) {
-      await repository.uploadDocument({
-        caseId: input.caseId,
-        name: file.name,
-        category: 'Adjunto de subtarea',
-        file,
-        subtaskId: result.subtaskId
-      });
-    }
+    const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
+      caseId: input.caseId,
+      name: file.name,
+      category: 'Adjunto de subtarea',
+      file,
+      subtaskId: result.subtaskId
+    })));
+    const failedAttachments = (input.files ?? []).filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
     emitSigcDataChanged();
-    return result;
+    return { ...result, failedAttachments };
   },
 
-  async updateSubtask(input: UpdateSubtaskInput): Promise<void> {
+  async updateSubtask(input: UpdateSubtaskInput): Promise<string[]> {
     const repository = mutationRepository();
     await repository.updateSubtask(input);
-    for (const file of input.files ?? []) {
-      await repository.uploadDocument({
-        caseId: input.caseId,
-        name: file.name,
-        category: 'Adjunto de subtarea',
-        file,
-        subtaskId: input.subtaskId
-      });
-    }
+    const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
+      caseId: input.caseId,
+      name: file.name,
+      category: 'Adjunto de subtarea',
+      file,
+      subtaskId: input.subtaskId
+    })));
+    const failedAttachments = (input.files ?? []).filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
     emitSigcDataChanged();
+    return failedAttachments;
   },
 
   async deleteSubtask(subtaskId: string): Promise<void> {
@@ -217,18 +224,17 @@ export const sigcService = {
   async addComment(input: AddCommentInput): Promise<CreatedCommentResult> {
     const repository = mutationRepository();
     const result = await repository.addComment(input);
-    for (const file of input.files ?? []) {
-      await repository.uploadDocument({
-        caseId: input.caseId,
-        name: file.name,
-        category: 'Adjunto de comentario',
-        file,
-        commentId: result.commentId,
-        subtaskId: input.subtaskId
-      });
-    }
+    const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
+      caseId: input.caseId,
+      name: file.name,
+      category: 'Adjunto de comentario',
+      file,
+      commentId: result.commentId,
+      subtaskId: input.subtaskId
+    })));
+    const failedAttachments = (input.files ?? []).filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
     emitSigcDataChanged();
-    return result;
+    return { ...result, failedAttachments };
   },
 
   getDocuments(caseId?: string): Promise<SigcRepositoryResult<SigcDocument[]>> {

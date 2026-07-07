@@ -2,7 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { AppProvider } from './app/AppProvider';
 import { PermissionRoute } from './app/PermissionRoute';
-import { AuthorizationProvider } from './features/authz/AuthorizationProvider';
+import { AuthorizationProvider, useAuthorization } from './features/authz/AuthorizationProvider';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from './features/authz/permissions';
 import { AgendaPage } from './features/agenda/AgendaPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
@@ -36,6 +36,18 @@ function LazyRoute({ children }: { children: ReactNode }) {
   );
 }
 
+function HomeRedirect() {
+  const { isLoading, can, canAny } = useAuthorization();
+  if (isLoading) return <main className="login-workgrid"><section className="login-card card"><strong>Resolviendo acceso...</strong></section></main>;
+  if (can(PERMISSIONS.reportsView)) return <Navigate to="/dashboard" replace />;
+  if (canAny(CASE_READ_PERMISSIONS)) return <Navigate to="/cases" replace />;
+  if (can(PERMISSIONS.caseCreate)) return <Navigate to="/manual-case" replace />;
+  if (can(PERMISSIONS.saasManageWorkspace)) return <Navigate to="/workspace" replace />;
+  if (can(PERMISSIONS.adminManageUsers)) return <Navigate to="/users" replace />;
+  if (can(PERMISSIONS.adminManageConfiguration)) return <Navigate to="/settings" replace />;
+  return <Navigate to="/profile" replace />;
+}
+
 const router = createBrowserRouter([
   { path: '/login', element: <SigcLoginPage /> },
   { path: '/radicar', element: <PublicFormPage /> },
@@ -48,7 +60,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <SigcShell />,
     children: [
-      { index: true, element: <Navigate to="/dashboard" replace /> },
+      { index: true, element: <HomeRedirect /> },
       {
         element: <PermissionRoute anyOf={[PERMISSIONS.reportsView]} />,
         children: [{ path: 'dashboard', element: <LazyRoute><AnalyticsDashboardPage /></LazyRoute> }]
@@ -92,7 +104,7 @@ const router = createBrowserRouter([
       }
     ]
   },
-  { path: '*', element: <Navigate to="/dashboard" replace /> }
+  { path: '*', element: <Navigate to="/" replace /> }
 ]);
 
 export default function App() {

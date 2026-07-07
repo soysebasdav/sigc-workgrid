@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { Check, LoaderCircle, Paperclip, Plus, Trash2, Upload, X } from 'lucide-react';
-import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext } from '../domain/types';
+import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext, SigcAssignment, SigcCase } from '../domain/types';
 import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
 
@@ -49,6 +49,8 @@ export function PublicCaseForm({
     dueAt: string | null;
     attachmentCount: number;
     failedAttachments: string[];
+    attachmentSessionFinalized: boolean;
+    attachmentFinalizeError?: string;
   } | null>(null);
 
   function setField(field: keyof typeof values, value: string) {
@@ -97,7 +99,9 @@ export function PublicCaseForm({
         radicado: result.radicado,
         dueAt: result.dueAt,
         attachmentCount: result.attachmentCount,
-        failedAttachments: result.failedAttachments
+        failedAttachments: result.failedAttachments,
+        attachmentSessionFinalized: result.attachmentSessionFinalized,
+        attachmentFinalizeError: result.attachmentFinalizeError
       });
       setValues({
         requesterName: '', requesterCompany: '', requesterDocument: '', requesterEmail: '', requesterPhone: '',
@@ -167,20 +171,22 @@ export function PublicCaseForm({
           <p>Fecha límite calculada: <b>{formatDateTime(created.dueAt)}</b>.</p>
           {created.attachmentCount > 0 ? <p>Adjuntos registrados: <b>{created.attachmentCount}</b>.</p> : null}
           {created.failedAttachments.length ? <p className="public-upload-warning">No se pudieron registrar: {created.failedAttachments.join(', ')}. El caso sí quedó radicado.</p> : null}
+          {!created.attachmentSessionFinalized ? <p className="public-upload-warning">El caso quedó radicado, pero no fue posible cerrar la sesión de adjuntos. No vuelvas a radicarlo; informa el radicado al soporte para completar la revisión técnica.</p> : null}
         </div>
       ) : null}
     </form>
   );
 }
 
-export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) => void }) {
+export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, failedAttachments: string[]) => void }) {
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const { data: catalogs, isLoading: catalogsLoading, warning: catalogsWarning } = useSigcCatalogs();
   const { data: members, isLoading: membersLoading } = useSigcMembers();
   const [values, setValues] = useState({
     requesterName: '', requesterCompany: '', requesterDocument: '', requesterEmail: '', requesterPhone: '',
     caseTypeId: '', priorityId: '', riskLevel: 'Medio', subject: '', description: ''
   });
-  const [assignments, setAssignments] = useState<ManualCaseAssignmentInput[]>([{ areaId: '', responsibleUserId: '', dueAt: '', observations: '' }]);
+  const [assignments, setAssignments] = useState<ManualCaseAssignmentInput[]>([{ areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: true }]);
   const [isSubmitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [createdDueAt, setCreatedDueAt] = useState<string | null>(null);
@@ -198,11 +204,11 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
   }
 
   function addAssignment() {
-    setAssignments((current) => [...current, { areaId: '', responsibleUserId: '', dueAt: '', observations: '' }]);
+    setAssignments((current) => [...current, { areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: false }]);
   }
 
   function removeAssignment(index: number) {
-    setAssignments((current) => current.length === 1 ? [{ areaId: '', responsibleUserId: '', dueAt: '', observations: '' }] : current.filter((_, itemIndex) => itemIndex !== index));
+    setAssignments((current) => current.length === 1 ? [{ areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: true }] : current.filter((_, itemIndex) => itemIndex !== index));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -210,12 +216,13 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
     setSubmitError('');
     setSubmitting(true);
     try {
-      const result = await sigcService.createManualCase({ ...values, assignments: validAssignments });
-      for (const file of initialFiles) {
-        await sigcService.uploadDocument({ caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual' });
-      }
+      const result = await sigcService.createManualCase({ idempotencyKey, ...values, assignments: validAssignments });
       setCreatedDueAt(result.dueAt);
-      onCreated(result.radicado);
+      const uploads = await Promise.allSettled(initialFiles.map((file) => sigcService.uploadDocument({
+        caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual'
+      })));
+      const failedAttachments = initialFiles.filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
+      onCreated(result.radicado, failedAttachments);
     } catch (error) {
       setSubmitError(errorMessage(error));
     } finally {
@@ -266,6 +273,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
               </select>
               <input className="field" type="datetime-local" value={assignment.dueAt ?? ''} onChange={(event) => updateAssignment(index, { dueAt: event.target.value })} />
               <input className="field" placeholder="Observaciones" value={assignment.observations ?? ''} onChange={(event) => updateAssignment(index, { observations: event.target.value })} />
+              <label className="check-row compact-check"><input type="radio" name="manual-primary-assignment" checked={Boolean(assignment.isPrimary)} onChange={() => setAssignments((current) => current.map((item, itemIndex) => ({ ...item, isPrimary: itemIndex === index })))} /> Principal</label>
               <button className="btn btn-white icon-only" type="button" onClick={() => removeAssignment(index)} aria-label="Eliminar asignación"><Trash2 size={16} /></button>
             </div>
           ))}
@@ -297,14 +305,151 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string) =>
   );
 }
 
-export function AssignCaseModal({ caseId, onClose, onSaved }: { caseId: string; onClose: () => void; onSaved: () => void }) {
+function toDateTimeLocal(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
+export function ClassificationModal({
+  caseItem,
+  currentAssignments,
+  onClose,
+  onSaved
+}: {
+  caseItem: SigcCase;
+  currentAssignments: SigcAssignment[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { data: catalogs, isLoading: catalogsLoading } = useSigcCatalogs();
+  const { data: members, isLoading: membersLoading } = useSigcMembers();
+  const activeAssignments = currentAssignments.filter((assignment) => assignment.isActive);
+  const [values, setValues] = useState({
+    caseTypeId: caseItem.typeId ?? '',
+    priorityId: caseItem.priorityId ?? '',
+    riskLevel: caseItem.risk || 'Medio',
+    dueAt: caseItem.classifiedAt ? toDateTimeLocal(caseItem.dueAt) : '',
+    observations: caseItem.classificationObservations ?? ''
+  });
+  const [assignments, setAssignments] = useState<ManualCaseAssignmentInput[]>(() => activeAssignments.length
+    ? activeAssignments.map((assignment) => ({
+        areaId: assignment.areaId,
+        responsibleUserId: assignment.responsibleUserId ?? '',
+        dueAt: toDateTimeLocal(assignment.dueAt),
+        observations: assignment.observations ?? '',
+        isPrimary: assignment.isPrimary
+      }))
+    : [{ areaId: caseItem.areaId ?? '', responsibleUserId: caseItem.ownerId ?? '', dueAt: caseItem.classifiedAt ? toDateTimeLocal(caseItem.dueAt) : '', observations: '', isPrimary: true }]
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function updateAssignment(index: number, patch: Partial<ManualCaseAssignmentInput>) {
+    setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  }
+
+  function addAssignment() {
+    setAssignments((current) => [...current, { areaId: '', responsibleUserId: '', dueAt: values.dueAt, observations: '', isPrimary: false }]);
+  }
+
+  function removeAssignment(index: number) {
+    setAssignments((current) => {
+      if (current.length === 1) return current;
+      const next = current.filter((_, itemIndex) => itemIndex !== index);
+      if (!next.some((item) => item.isPrimary)) next[0] = { ...next[0], isPrimary: true };
+      return next;
+    });
+  }
+
+  async function save() {
+    const validAssignments = assignments.filter((assignment) => assignment.areaId);
+    if (!values.caseTypeId || !values.priorityId) {
+      setError('Selecciona tipo de caso y prioridad.');
+      return;
+    }
+    if (!validAssignments.length) {
+      setError('La clasificación requiere al menos un área responsable.');
+      return;
+    }
+    if (!validAssignments.some((assignment) => assignment.isPrimary)) validAssignments[0] = { ...validAssignments[0], isPrimary: true };
+    setSaving(true);
+    setError('');
+    try {
+      await sigcService.classifyCase({
+        caseId: caseItem.databaseId ?? caseItem.id,
+        caseTypeId: values.caseTypeId,
+        priorityId: values.priorityId,
+        riskLevel: values.riskLevel,
+        dueAt: values.dueAt,
+        observations: values.observations,
+        assignments: validAssignments.map((assignment) => ({ ...assignment, caseId: caseItem.databaseId ?? caseItem.id }))
+      });
+      onSaved();
+    } catch (saveError) {
+      setError(errorMessage(saveError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="sigc-overlay open" onClick={onClose} />
+      <section className="modal open classification-modal">
+        <header><div><h3>{caseItem.classifiedAt ? 'Editar clasificación' : 'Clasificar caso'}</h3><small>{caseItem.radicado} · operación atómica y auditable</small></div><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
+        <div className="modal-body form-stack">
+          <div className="phase3-form-grid">
+            <select className="field" value={values.caseTypeId} onChange={(event) => setValues((current) => ({ ...current, caseTypeId: event.target.value }))} disabled={catalogsLoading}>
+              <option value="">Tipo de caso *</option>{catalogs?.caseTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <select className="field" value={values.priorityId} onChange={(event) => setValues((current) => ({ ...current, priorityId: event.target.value }))} disabled={catalogsLoading}>
+              <option value="">Prioridad *</option>{catalogs?.priorities.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+            <select className="field" value={values.riskLevel} onChange={(event) => setValues((current) => ({ ...current, riskLevel: event.target.value }))}>
+              <option>Bajo</option><option>Medio</option><option>Alto</option><option>Crítico</option>
+            </select>
+            <label className="field-label">Fecha límite opcional (vacío = SLA automático)<input className="field" type="datetime-local" value={values.dueAt} onChange={(event) => setValues((current) => ({ ...current, dueAt: event.target.value }))} /></label>
+          </div>
+          <textarea className="field textarea compact" placeholder="Observaciones de clasificación" value={values.observations} onChange={(event) => setValues((current) => ({ ...current, observations: event.target.value }))} />
+
+          <div className="section-title-row"><div><h4>Áreas y responsables</h4><p className="muted">La clasificación reemplaza las asignaciones activas por este conjunto, conservando el historial anterior.</p></div><button className="btn btn-soft small" type="button" onClick={addAssignment}><Plus size={15} /> Área</button></div>
+          <div className="assignment-form-list">
+            {assignments.map((assignment, index) => (
+              <div className="assignment-form-row classification-assignment-row" key={index}>
+                <select className="field" value={assignment.areaId} onChange={(event) => updateAssignment(index, { areaId: event.target.value })}>
+                  <option value="">Área *</option>{catalogs?.areas.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                <select className="field" value={assignment.responsibleUserId ?? ''} onChange={(event) => updateAssignment(index, { responsibleUserId: event.target.value })} disabled={membersLoading}>
+                  <option value="">Sin responsable específico</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.name} · {member.roleName}</option>)}
+                </select>
+                <input className="field" type="datetime-local" value={assignment.dueAt ?? ''} onChange={(event) => updateAssignment(index, { dueAt: event.target.value })} />
+                <input className="field" placeholder="Observaciones" value={assignment.observations ?? ''} onChange={(event) => updateAssignment(index, { observations: event.target.value })} />
+                <label className="check-row compact-check"><input type="radio" name="classification-primary" checked={Boolean(assignment.isPrimary)} onChange={() => setAssignments((current) => current.map((item, itemIndex) => ({ ...item, isPrimary: itemIndex === index })))} /> Principal</label>
+                <button className="btn btn-white icon-only" type="button" onClick={() => removeAssignment(index)} disabled={assignments.length === 1} aria-label="Quitar área"><Trash2 size={16} /></button>
+              </div>
+            ))}
+          </div>
+          {error ? <div className="alert danger">{error}</div> : null}
+          <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={saving || catalogsLoading}>{saving ? 'Clasificando...' : 'Confirmar clasificación'}</button></div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+export function AssignCaseModal({ caseId, assignment, onClose, onSaved }: { caseId: string; assignment?: SigcAssignment | null; onClose: () => void; onSaved: () => void }) {
   const { data: catalogs } = useSigcCatalogs();
   const { data: members, isLoading } = useSigcMembers();
-  const [areaId, setAreaId] = useState('');
-  const [responsibleUserId, setResponsibleUserId] = useState('');
-  const [dueAt, setDueAt] = useState('');
-  const [observations, setObservations] = useState('');
-  const [isPrimary, setIsPrimary] = useState(false);
+  const [areaId, setAreaId] = useState(assignment?.areaId ?? '');
+  const [responsibleUserId, setResponsibleUserId] = useState(assignment?.responsibleUserId ?? '');
+  const [dueAt, setDueAt] = useState(toDateTimeLocal(assignment?.dueAt));
+  const [observations, setObservations] = useState(assignment?.observations ?? '');
+  const [isPrimary, setIsPrimary] = useState(assignment?.isPrimary ?? false);
+  const [state, setState] = useState(assignment?.state ?? 'assigned');
+  const [progress, setProgress] = useState(assignment?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -316,10 +461,14 @@ export function AssignCaseModal({ caseId, onClose, onSaved }: { caseId: string; 
     setSaving(true);
     setError('');
     try {
-      await sigcService.assignCase({ caseId, areaId, responsibleUserId, dueAt, observations, isPrimary });
+      if (assignment) {
+        await sigcService.updateCaseAssignment({ assignmentId: assignment.id, caseId, areaId, responsibleUserId, dueAt, observations, isPrimary, state, progress });
+      } else {
+        await sigcService.assignCase({ caseId, areaId, responsibleUserId, dueAt, observations, isPrimary });
+      }
       onSaved();
-    } catch (error) {
-      setError(errorMessage(error));
+    } catch (saveError) {
+      setError(errorMessage(saveError));
     } finally {
       setSaving(false);
     }
@@ -329,25 +478,45 @@ export function AssignCaseModal({ caseId, onClose, onSaved }: { caseId: string; 
     <>
       <div className="sigc-overlay open" onClick={onClose} />
       <section className="modal open">
-        <header><h3>Asignar área y responsable</h3><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
+        <header><div><h3>{assignment ? 'Editar asignación' : 'Asignar área y responsable'}</h3>{assignment ? <small>Asignada {assignment.assignedLabel}</small> : null}</div><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <div className="modal-body form-stack">
           <select className="field" value={areaId} onChange={(event) => setAreaId(event.target.value)}>
-            <option value="">Área *</option>
-            {catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+            <option value="">Área *</option>{catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select>
           <select className="field" value={responsibleUserId} onChange={(event) => setResponsibleUserId(event.target.value)} disabled={isLoading}>
-            <option value="">Sin responsable específico</option>
-            {members.map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
+            <option value="">Sin responsable específico</option>{members.map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
           </select>
           <input className="field" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+          {assignment ? (
+            <div className="phase3-form-grid">
+              <select className="field" value={state} onChange={(event) => setState(event.target.value)}>
+                <option value="assigned">Asignado</option><option value="in_progress">En gestión</option><option value="pending_information">Pendiente de información</option><option value="completed">Completado</option><option value="cancelled">Cancelado</option>
+              </select>
+              <label className="field-label">Avance: {progress}%<input className="field" type="range" min="0" max="100" step="5" value={progress} onChange={(event) => setProgress(Number(event.target.value))} /></label>
+            </div>
+          ) : null}
           <textarea className="field textarea" placeholder="Observaciones de asignación" value={observations} onChange={(event) => setObservations(event.target.value)} />
           <label className="check-row"><input type="checkbox" checked={isPrimary} onChange={(event) => setIsPrimary(event.target.checked)} /> Convertir en asignación principal</label>
           {error ? <div className="alert danger">{error}</div> : null}
-          <div className="modal-actions"><button className="btn btn-white" onClick={onClose}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Guardando...' : 'Asignar'}</button></div>
+          <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={saving}>{saving ? 'Guardando...' : assignment ? 'Guardar cambios' : 'Asignar'}</button></div>
         </div>
       </section>
     </>
   );
+}
+
+export function DeactivateAssignmentModal({ caseId, assignment, onClose, onSaved }: { caseId: string; assignment: SigcAssignment; onClose: () => void; onSaved: () => void }) {
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  async function save() {
+    if (reason.trim().length < 3) { setError('Indica el motivo del retiro.'); return; }
+    setSaving(true); setError('');
+    try { await sigcService.deactivateCaseAssignment({ assignmentId: assignment.id, caseId, reason }); onSaved(); }
+    catch (saveError) { setError(errorMessage(saveError)); }
+    finally { setSaving(false); }
+  }
+  return <><div className="sigc-overlay open" onClick={onClose} /><section className="modal open"><header><h3>Retirar asignación</h3><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header><div className="modal-body form-stack"><div className="phase3-context"><span>{assignment.areaName}</span><strong>{assignment.responsibleName}</strong></div><textarea className="field textarea" placeholder="Motivo obligatorio" value={reason} onChange={(event) => setReason(event.target.value)} />{error ? <div className="alert danger">{error}</div> : null}<div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={saving}>{saving ? 'Retirando...' : 'Retirar asignación'}</button></div></div></section></>;
 }
 
 export function ChangeCaseStateModal({ caseId, onClose, onSaved }: { caseId: string; onClose: () => void; onSaved: () => void }) {

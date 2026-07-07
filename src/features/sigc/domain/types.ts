@@ -51,6 +51,8 @@ export interface SigcCase {
   updated: string;
   risk: string;
   source: string;
+  classificationObservations?: string;
+  classifiedAt?: string | null;
 }
 
 export interface SigcCaseFilters {
@@ -129,6 +131,8 @@ export interface PublicCaseCreateInput extends PublicIntakeLocator {
 export interface PublicCaseSubmissionResult extends CreatedCaseResult {
   attachmentCount: number;
   failedAttachments: string[];
+  attachmentSessionFinalized: boolean;
+  attachmentFinalizeError?: string;
 }
 
 export interface ManualCaseAssignmentInput {
@@ -136,9 +140,11 @@ export interface ManualCaseAssignmentInput {
   responsibleUserId?: string;
   dueAt?: string;
   observations?: string;
+  isPrimary?: boolean;
 }
 
 export interface ManualCaseCreateInput {
+  idempotencyKey: string;
   caseTypeId: string;
   priorityId: string;
   requesterName: string;
@@ -171,12 +177,17 @@ export interface SigcAssignment {
   areaName: string;
   responsibleUserId?: string;
   responsibleName: string;
+  assignedAt: string;
+  assignedLabel: string;
   dueAt?: string | null;
   due: string;
   state: string;
   observations?: string | null;
   progress: number;
   isPrimary: boolean;
+  isActive: boolean;
+  updatedAt?: string;
+  completedAt?: string | null;
 }
 
 export interface AllowedCaseState {
@@ -194,6 +205,34 @@ export interface CaseAssignmentInput {
   dueAt?: string;
   observations?: string;
   isPrimary?: boolean;
+}
+
+export interface ClassifyCaseInput {
+  caseId: string;
+  caseTypeId: string;
+  priorityId: string;
+  riskLevel: string;
+  observations?: string;
+  dueAt?: string;
+  assignments: Array<CaseAssignmentInput & { caseId?: string }>;
+}
+
+export interface UpdateCaseAssignmentInput {
+  assignmentId: string;
+  caseId: string;
+  areaId: string;
+  responsibleUserId?: string;
+  dueAt?: string;
+  state: string;
+  observations?: string;
+  progress: number;
+  isPrimary: boolean;
+}
+
+export interface DeactivateCaseAssignmentInput {
+  assignmentId: string;
+  caseId: string;
+  reason: string;
 }
 
 export interface ChangeCaseStateInput {
@@ -255,6 +294,9 @@ export type SubtaskState = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 export interface SigcSubtask {
   id: string;
   caseId: string;
+  assignmentId?: string;
+  areaId?: string;
+  areaName: string;
   caseRadicado: string;
   caseSubject: string;
   title: string;
@@ -283,6 +325,8 @@ export interface SigcSubtaskFilters {
 
 export interface CreateSubtaskInput {
   caseId: string;
+  assignmentId?: string;
+  areaId?: string;
   title: string;
   description: string;
   responsibleUserId?: string;
@@ -294,6 +338,8 @@ export interface CreateSubtaskInput {
 export interface UpdateSubtaskInput {
   subtaskId: string;
   caseId: string;
+  assignmentId?: string;
+  areaId?: string;
   title: string;
   description: string;
   responsibleUserId?: string;
@@ -306,6 +352,7 @@ export interface UpdateSubtaskInput {
 
 export interface CreatedSubtaskResult {
   subtaskId: string;
+  failedAttachments?: string[];
 }
 
 export interface SigcComment {
@@ -329,6 +376,7 @@ export interface AddCommentInput {
 
 export interface CreatedCommentResult {
   commentId: string;
+  failedAttachments?: string[];
 }
 
 export interface SigcDocument {

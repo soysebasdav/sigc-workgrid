@@ -4,6 +4,9 @@ import type {
   AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
+  ClassifyCaseInput,
+  UpdateCaseAssignmentInput,
+  DeactivateCaseAssignmentInput,
   ChangeCaseStateInput,
   CreateSubtaskInput,
   CreatedCaseResult,
@@ -159,7 +162,7 @@ function seedSubtasks(): SigcSubtask[] {
     const priority = catalogs.priorities.find((item) => item.name === task.priority);
     const stateMap: Record<string, SigcSubtask['state']> = { Completada: 'completed', 'En progreso': 'in_progress', Pendiente: 'pending' };
     return {
-      id: `demo-subtask-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? task.caseId, caseSubject: caseItem?.subject ?? '',
+      id: `demo-subtask-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', areaId: caseItem?.areaId, areaName: caseItem?.area ?? 'Sin área', caseRadicado: caseItem?.radicado ?? task.caseId, caseSubject: caseItem?.subject ?? '',
       title: task.title, description: task.title, responsibleUserId: owner?.userId, responsibleName: task.owner, priorityId: priority?.id, priority: task.priority,
       dueAt: new Date(Date.now() + (index + 1) * 86400000).toISOString(), due: task.due, state: stateMap[task.state] ?? 'pending', stateLabel: task.state, progress: task.progress,
       comments: task.comments, attachments: task.attachments, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
@@ -335,7 +338,7 @@ export const demoSigcRepository: SigcRepository = {
       if (!matchesFilters(item, { ...filters, query: undefined })) return false;
       if (!query) return true;
       const directMatch = [item.radicado, item.subject, item.description, item.requester, item.company, item.requesterDocument ?? '', item.requesterEmail ?? '', item.requesterPhone ?? '']
-        .some((value) => value.toLowerCase().includes(query));
+        .some((value) => String(value ?? '').toLowerCase().includes(query));
       return directMatch || relatedCaseIds.has(item.databaseId ?? item.id) || relatedCaseIds.has(item.id);
     });
     const start = (page - 1) * pageSize;
@@ -359,7 +362,12 @@ export const demoSigcRepository: SigcRepository = {
     const item = await this.getCaseByIdentifier(caseId);
     if (!item) return [];
     const stored = readAssignments()[item.databaseId ?? item.id] ?? [];
-    if (stored.length) return stored;
+    if (stored.length) return stored.map((assignment) => ({
+      ...assignment,
+      assignedAt: assignment.assignedAt ?? item.openedAt ?? new Date().toISOString(),
+      assignedLabel: assignment.assignedLabel ?? new Date(assignment.assignedAt ?? item.openedAt ?? Date.now()).toLocaleString('es-CO'),
+      isActive: assignment.isActive ?? true
+    }));
     if (!item.areaId) return [];
     return [{
       id: 'demo-assignment-primary',
@@ -367,11 +375,14 @@ export const demoSigcRepository: SigcRepository = {
       areaName: item.area,
       responsibleUserId: item.ownerId,
       responsibleName: item.owner,
+      assignedAt: item.openedAt ?? new Date().toISOString(),
+      assignedLabel: new Date(item.openedAt ?? Date.now()).toLocaleString('es-CO'),
       dueAt: item.dueAt,
       due: item.due,
       state: 'assigned',
       progress: item.progress,
-      isPrimary: true
+      isPrimary: true,
+      isActive: true
     }];
   },
 
@@ -404,12 +415,15 @@ export const demoSigcRepository: SigcRepository = {
           areaName: area.name,
           responsibleUserId: owner?.userId,
           responsibleName: owner?.name ?? 'Sin responsable',
+          assignedAt: new Date().toISOString(),
+          assignedLabel: 'Ahora',
           dueAt: assignment.dueAt || result.dueAt,
           due: assignment.dueAt ? new Date(assignment.dueAt).toLocaleString('es-CO') : new Date(result.dueAt ?? '').toLocaleString('es-CO'),
           state: 'assigned',
           observations: assignment.observations,
           progress: 0,
-          isPrimary: index === 0
+          isPrimary: assignment.isPrimary ?? index === 0,
+          isActive: true
         };
       });
       writeAssignments(all);
@@ -434,12 +448,15 @@ export const demoSigcRepository: SigcRepository = {
       areaName: area.name,
       responsibleUserId: owner?.userId,
       responsibleName: owner?.name ?? 'Sin responsable',
+      assignedAt: new Date().toISOString(),
+      assignedLabel: 'Ahora',
       dueAt: input.dueAt ?? item.dueAt,
       due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : item.due,
       state: 'assigned',
       observations: input.observations,
       progress: 0,
-      isPrimary: Boolean(isPrimary)
+      isPrimary: Boolean(isPrimary),
+      isActive: true
     });
     all[key] = existing;
     writeAssignments(all);
@@ -456,6 +473,89 @@ export const demoSigcRepository: SigcRepository = {
       updated: 'Ahora',
       updatedAt: new Date().toISOString()
     } : current));
+  },
+
+  async classifyCase(input: ClassifyCaseInput): Promise<void> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const type = catalogs.caseTypes.find((entry) => entry.id === input.caseTypeId);
+    const priority = catalogs.priorities.find((entry) => entry.id === input.priorityId);
+    const classifiedState = catalogs.states.find((entry) => entry.name === 'Clasificado');
+    if (!type || !priority || !classifiedState) throw new Error('La clasificación contiene catálogos no válidos.');
+    if (!input.assignments.length) throw new Error('La clasificación requiere al menos una asignación.');
+
+    const caseKey = item.databaseId ?? item.id;
+    const normalizedAssignments: SigcAssignment[] = input.assignments.map((assignment, index) => {
+      const area = catalogs.areas.find((entry) => entry.id === assignment.areaId);
+      if (!area) throw new Error('Área no válida.');
+      const owner = assignment.responsibleUserId ? members.find((entry) => entry.userId === assignment.responsibleUserId) : undefined;
+      return {
+        id: `demo-assignment-${crypto.randomUUID()}`, areaId: area.id, areaName: area.name,
+        responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable',
+        assignedAt: new Date().toISOString(), assignedLabel: 'Ahora', dueAt: assignment.dueAt || input.dueAt || item.dueAt,
+        due: assignment.dueAt ? new Date(assignment.dueAt).toLocaleString('es-CO') : item.due, state: 'assigned',
+        observations: assignment.observations, progress: 0, isPrimary: assignment.isPrimary ?? index === 0, isActive: true
+      };
+    });
+    if (!normalizedAssignments.some((assignment) => assignment.isPrimary)) normalizedAssignments[0].isPrimary = true;
+    let primarySeen = false;
+    normalizedAssignments.forEach((assignment) => { if (assignment.isPrimary && !primarySeen) primarySeen = true; else if (assignment.isPrimary) assignment.isPrimary = false; });
+    const primary = normalizedAssignments.find((assignment) => assignment.isPrimary)!;
+    const allAssignments = readAssignments();
+    allAssignments[caseKey] = normalizedAssignments;
+    writeAssignments(allAssignments);
+
+    writeCases(readCases().map((current) => current.id === item.id ? {
+      ...current, typeId: type.id, type: type.name, priorityId: priority.id, priority: priority.name as SigcCase['priority'],
+      risk: input.riskLevel, areaId: primary.areaId, area: primary.areaName, ownerId: primary.responsibleUserId, owner: primary.responsibleName,
+      stateId: classifiedState.id, state: classifiedState.name, dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : current.dueAt,
+      due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : current.due, classificationObservations: input.observations,
+      classifiedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), updated: 'Ahora'
+    } : current));
+    pushTimeline(caseKey, 'case.classified', 'Caso clasificado', input.observations || 'Clasificación y asignaciones actualizadas.');
+  },
+
+  async updateCaseAssignment(input: UpdateCaseAssignmentInput): Promise<void> {
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const area = catalogs.areas.find((entry) => entry.id === input.areaId);
+    if (!area) throw new Error('Área no válida.');
+    const owner = input.responsibleUserId ? members.find((entry) => entry.userId === input.responsibleUserId) : undefined;
+    const key = item.databaseId ?? item.id;
+    const all = readAssignments();
+    const current = all[key] ?? [];
+    if (!current.some((assignment) => assignment.id === input.assignmentId)) throw new Error('Asignación no encontrada.');
+    if (input.isPrimary) current.forEach((assignment) => { assignment.isPrimary = false; });
+    const now = new Date().toISOString();
+    const updated = current.map((assignment) => assignment.id === input.assignmentId ? {
+      ...assignment, areaId: area.id, areaName: area.name, responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable',
+      dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha',
+      state: input.state, observations: input.observations, progress: Math.max(0, Math.min(100, input.progress)), isPrimary: input.isPrimary,
+      isActive: true, updatedAt: now, completedAt: input.progress >= 100 || input.state === 'completed' ? now : null
+    } : assignment);
+    all[key] = updated; writeAssignments(all);
+    const primary = updated.find((assignment) => assignment.isPrimary && assignment.isActive);
+    if (primary) writeCases(readCases().map((currentCase) => currentCase.id === item.id ? { ...currentCase, areaId: primary.areaId, area: primary.areaName, ownerId: primary.responsibleUserId, owner: primary.responsibleName, updatedAt: now, updated: 'Ahora' } : currentCase));
+    pushTimeline(key, 'assignment.updated', 'Asignación actualizada', `${area.name} · ${owner?.name ?? 'Sin responsable'}`);
+  },
+
+  async deactivateCaseAssignment(input: DeactivateCaseAssignmentInput): Promise<void> {
+    if (input.reason.trim().length < 3) throw new Error('Indica el motivo de retiro de la asignación.');
+    const item = await this.getCaseByIdentifier(input.caseId);
+    if (!item) throw new Error('Caso no encontrado.');
+    const key = item.databaseId ?? item.id;
+    const all = readAssignments();
+    const current = all[key] ?? [];
+    const target = current.find((assignment) => assignment.id === input.assignmentId);
+    if (!target) throw new Error('Asignación no encontrada.');
+    const now = new Date().toISOString();
+    target.isActive = false; target.isPrimary = false; target.state = 'cancelled'; target.updatedAt = now; target.completedAt = now; target.observations = [target.observations, `Retirada: ${input.reason.trim()}`].filter(Boolean).join(' · ');
+    const nextPrimary = current.find((assignment) => assignment.isActive);
+    if (nextPrimary && !current.some((assignment) => assignment.isActive && assignment.isPrimary)) nextPrimary.isPrimary = true;
+    all[key] = current; writeAssignments(all);
+    const primary = current.find((assignment) => assignment.isActive && assignment.isPrimary);
+    writeCases(readCases().map((currentCase) => currentCase.id === item.id ? { ...currentCase, areaId: primary?.areaId, area: primary?.areaName ?? 'Sin área', ownerId: primary?.responsibleUserId, owner: primary?.responsibleName ?? 'Sin responsable', updatedAt: now, updated: 'Ahora' } : currentCase));
+    pushTimeline(key, 'assignment.deactivated', 'Asignación retirada', input.reason.trim());
   },
 
   async changeCaseState(input: ChangeCaseStateInput): Promise<void> {
@@ -556,7 +656,7 @@ export const demoSigcRepository: SigcRepository = {
     const priority = catalogs.priorities.find((entry) => entry.id === input.priorityId);
     const subtaskId = `demo-subtask-${crypto.randomUUID()}`;
     const task: SigcSubtask = {
-      id: subtaskId, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, title: input.title, description: input.description,
+      id: subtaskId, caseId: item.databaseId ?? item.id, assignmentId: input.assignmentId, areaId: input.areaId, areaName: catalogs.areas.find((area) => area.id === input.areaId)?.name ?? 'Sin área', caseRadicado: item.radicado, caseSubject: item.subject, title: input.title, description: input.description,
       responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable', priorityId: priority?.id, priority: (priority?.name ?? 'Media') as SigcCase['priority'],
       dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha', state: 'pending', stateLabel: 'Pendiente', progress: 0, comments: 0, attachments: input.files?.length ?? 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -569,7 +669,7 @@ export const demoSigcRepository: SigcRepository = {
     const rows = readSubtasks();
     const owner = members.find((member) => member.userId === input.responsibleUserId);
     const priority = catalogs.priorities.find((entry) => entry.id === input.priorityId);
-    writeJson(SUBTASKS_KEY, rows.map((task) => task.id === input.subtaskId ? { ...task, title: input.title, description: input.description, responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable', priorityId: priority?.id, priority: (priority?.name ?? 'Media') as SigcCase['priority'], dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha', state: input.state, stateLabel: { pending: 'Pendiente', in_progress: 'En progreso', completed: 'Completada', cancelled: 'Cancelada' }[input.state], progress: input.state === 'completed' ? 100 : input.progress, attachments: task.attachments + (input.files?.length ?? 0), updatedAt: new Date().toISOString() } : task));
+    writeJson(SUBTASKS_KEY, rows.map((task) => task.id === input.subtaskId ? { ...task, assignmentId: input.assignmentId, areaId: input.areaId, areaName: catalogs.areas.find((area) => area.id === input.areaId)?.name ?? 'Sin área', title: input.title, description: input.description, responsibleUserId: owner?.userId, responsibleName: owner?.name ?? 'Sin responsable', priorityId: priority?.id, priority: (priority?.name ?? 'Media') as SigcCase['priority'], dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null, due: input.dueAt ? new Date(input.dueAt).toLocaleString('es-CO') : 'Sin fecha', state: input.state, stateLabel: { pending: 'Pendiente', in_progress: 'En progreso', completed: 'Completada', cancelled: 'Cancelada' }[input.state], progress: input.state === 'completed' ? 100 : input.progress, attachments: task.attachments + (input.files?.length ?? 0), updatedAt: new Date().toISOString() } : task));
     const task = rows.find((entry) => entry.id === input.subtaskId);
     if (task) pushTimeline(task.caseId, 'subtask.updated', 'Subtarea actualizada', input.title);
   },
@@ -912,7 +1012,7 @@ export const demoPublicSigcRepository: PublicSigcRepository = {
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const result = createCaseBase(input, 'Formulario público', 'Pendiente de Clasificación');
-    return { ...result, attachmentCount: input.attachments?.length ?? 0, failedAttachments: [] };
+    return { ...result, attachmentCount: input.attachments?.length ?? 0, failedAttachments: [], attachmentSessionFinalized: true };
   },
   async getOrganizationInvitation(_token: string): Promise<PublicOrganizationInvitation | null> { return null; },
   async acceptOrganizationInvitation(_token: string): Promise<string> { return 'demo-org'; }

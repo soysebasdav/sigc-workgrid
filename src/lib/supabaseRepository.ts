@@ -114,7 +114,7 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
       .limit(250),
-    (client as any).rpc('get_runtime_settings')
+    client.rpc('get_runtime_settings')
   ]);
 
   if (profileResponse.error) throw profileResponse.error;

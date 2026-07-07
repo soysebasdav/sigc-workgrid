@@ -36,6 +36,10 @@ type CaseRow = {
   description: string;
   source: string;
   risk_level: string | null;
+  classification_observations: string | null;
+  classified_at: string | null;
+  classified_by: string | null;
+  idempotency_key: string | null;
   progress: number;
   opened_at: string;
   due_at: string | null;
@@ -234,7 +238,11 @@ export interface Database {
         observations: string | null;
         progress: number;
         is_primary: boolean;
+        is_active: boolean;
         completed_at: string | null;
+        ended_at: string | null;
+        ended_by: string | null;
+        updated_by: string | null;
       }>;
 
       case_state_history: TableDef<{
@@ -264,6 +272,8 @@ export interface Database {
         id: string;
         organization_id: string;
         case_id: string;
+        assignment_id: string | null;
+        area_id: string | null;
         title: string;
         description: string;
         responsible_user_id: string | null;
@@ -335,6 +345,121 @@ export interface Database {
         finalized_at: string | null;
         created_at: string;
         updated_at: string;
+      }>;
+
+      organization_holidays: TableDef<{
+        id: string;
+        organization_id: string;
+        holiday_date: string;
+        name: string;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      email_templates: TableDef<{
+        id: string;
+        organization_id: string;
+        code: string;
+        name: string;
+        event_type: string | null;
+        subject: string;
+        body_text: string;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      reminder_rules: TableDef<{
+        id: string;
+        organization_id: string;
+        code: string;
+        name: string;
+        trigger_kind: string;
+        offset_minutes: number;
+        include_managers: boolean;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      automation_rules: TableDef<{
+        id: string;
+        organization_id: string;
+        code: string;
+        name: string;
+        description: string | null;
+        trigger_event: string;
+        conditions: Json;
+        actions: Json;
+        stop_on_error: boolean;
+        sort_order: number;
+        is_active: boolean;
+        last_run_at: string | null;
+        run_count: number;
+        max_attempts: number;
+        retry_delay_minutes: number;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      automation_executions: TableDef<{
+        id: string;
+        organization_id: string;
+        rule_id: string;
+        case_id: string | null;
+        trigger_event: string;
+        status: string;
+        matched: boolean;
+        actions_total: number;
+        actions_succeeded: number;
+        error_message: string | null;
+        execution_log: Json;
+        attempt_count: number;
+        max_attempts: number;
+        next_retry_at: string | null;
+        retry_of_id: string | null;
+        started_at: string;
+        finished_at: string | null;
+      }>;
+
+      case_reviews: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        review_round: number;
+        status: 'pending' | 'approved' | 'returned' | 'cancelled';
+        requested_by: string | null;
+        reviewer_user_id: string | null;
+        request_note: string | null;
+        requested_at: string;
+        decided_by: string | null;
+        decision_comments: string | null;
+        decided_at: string | null;
+      }>;
+
+      case_deliveries: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        channel: string;
+        recipient: string;
+        reference: string | null;
+        notes: string | null;
+        delivered_by: string | null;
+        delivered_at: string;
+      }>;
+
+      case_reminder_log: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        rule_id: string | null;
+        recipient_user_id: string | null;
+        reminder_type: 'automatic' | 'manual';
+        message: string;
+        sent_by: string | null;
+        delivered_at: string;
       }>;
 
       audit_events: TableDef<{
@@ -421,6 +546,53 @@ export interface Database {
         };
         Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
       };
+      create_internal_case_v2: {
+        Args: {
+          p_idempotency_key: string;
+          p_case_type_id: string;
+          p_priority_id: string;
+          p_requester_name: string;
+          p_requester_company: string;
+          p_requester_document: string;
+          p_requester_email: string;
+          p_requester_phone: string;
+          p_subject: string;
+          p_description: string;
+          p_risk_level?: string | null;
+          p_assignments?: Json;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
+      };
+      classify_case_v2: {
+        Args: {
+          p_case_id: string;
+          p_case_type_id: string;
+          p_priority_id: string;
+          p_risk_level: string;
+          p_observations?: string | null;
+          p_due_at?: string | null;
+          p_assignments?: Json;
+        };
+        Returns: Array<{ case_id: string; state_id: string; state_name: string; due_at: string | null }>;
+      };
+      update_case_assignment_v2: {
+        Args: {
+          p_assignment_id: string;
+          p_case_id: string;
+          p_area_id: string;
+          p_responsible_user_id?: string | null;
+          p_due_at?: string | null;
+          p_state: string;
+          p_observations?: string | null;
+          p_progress: number;
+          p_is_primary: boolean;
+        };
+        Returns: undefined;
+      };
+      deactivate_case_assignment_v2: {
+        Args: { p_assignment_id: string; p_case_id: string; p_reason: string };
+        Returns: undefined;
+      };
       get_case_allowed_states: {
         Args: { p_case_id: string };
         Returns: Array<{ id: string; name: string; code: string; color: string | null; requires_justification: boolean }>;
@@ -441,6 +613,34 @@ export interface Database {
         Returns: Array<{ assignment_id: string; is_primary: boolean }>;
       };
 
+      create_case_subtask_v2: {
+        Args: {
+          p_case_id: string;
+          p_assignment_id?: string | null;
+          p_area_id?: string | null;
+          p_title: string;
+          p_description?: string;
+          p_responsible_user_id?: string | null;
+          p_due_at?: string | null;
+          p_priority_id?: string | null;
+        };
+        Returns: Array<{ subtask_id: string }>;
+      };
+      update_case_subtask_v2: {
+        Args: {
+          p_subtask_id: string;
+          p_assignment_id?: string | null;
+          p_area_id?: string | null;
+          p_title: string;
+          p_description: string;
+          p_responsible_user_id: string | null;
+          p_due_at: string | null;
+          p_priority_id: string | null;
+          p_state: string;
+          p_progress: number;
+        };
+        Returns: Array<{ subtask_id: string }>;
+      };
       create_case_subtask: {
         Args: {
           p_case_id: string;
@@ -514,6 +714,41 @@ export interface Database {
         Args: { p_case_id: string; p_permission_code: string };
         Returns: boolean;
       };
+
+      search_sigc_case_ids: { Args: { p_query: string }; Returns: string[] };
+      get_workflow_board: { Args: { p_case_type_id?: string | null; p_query?: string | null; p_area_id?: string | null; p_owner_id?: string | null; p_priority_id?: string | null }; Returns: Json };
+      move_case_in_workflow: { Args: { p_case_id: string; p_to_state_id: string; p_expected_from_state_id: string; p_justification?: string | null }; Returns: Json };
+      override_case_sla: { Args: { p_case_id: string; p_new_due_at: string; p_justification: string }; Returns: undefined };
+      submit_case_for_review: { Args: { p_case_id: string; p_reviewer_user_id?: string | null; p_note?: string | null }; Returns: undefined };
+      decide_case_review: { Args: { p_review_id: string; p_decision: string; p_comments?: string | null }; Returns: undefined };
+      register_case_delivery: { Args: { p_case_id: string; p_channel: string; p_recipient: string; p_reference?: string | null; p_notes?: string | null }; Returns: undefined };
+      send_manual_case_reminder: { Args: { p_case_id: string; p_message: string; p_recipient_user_ids?: string[] | null }; Returns: number };
+      get_user_management_context: { Args: Record<PropertyKey, never>; Returns: Json };
+      set_role_permissions: { Args: { p_role_id: string; p_permission_ids: string[] }; Returns: undefined };
+      set_organization_member_role: { Args: { p_membership_id: string; p_role_id: string }; Returns: undefined };
+      set_case_type_workflow: { Args: { p_case_type_id: string; p_state_ids: string[] }; Returns: undefined };
+      save_case_state_transition: { Args: { p_transition_id?: string | null; p_case_type_id: string; p_from_state_id: string; p_to_state_id: string; p_required_permission_code?: string | null; p_requires_justification: boolean; p_is_active: boolean }; Returns: undefined };
+      delete_case_state_transition: { Args: { p_transition_id: string }; Returns: undefined };
+      save_reminder_rule: { Args: { p_rule_id?: string | null; p_code: string; p_name: string; p_trigger_kind: string; p_offset_minutes: number; p_include_managers: boolean; p_is_active: boolean }; Returns: undefined };
+      save_automation_rule: { Args: { p_rule_id?: string | null; p_code: string; p_name: string; p_description?: string | null; p_trigger_event: string; p_conditions: Json; p_actions: Json; p_stop_on_error: boolean; p_sort_order: number; p_is_active: boolean; p_max_attempts: number; p_retry_delay_minutes: number }; Returns: undefined };
+      set_automation_rule_active: { Args: { p_rule_id: string; p_is_active: boolean }; Returns: undefined };
+      run_automation_rule_test: { Args: { p_rule_id: string; p_case_id: string }; Returns: undefined };
+      get_automation_runtime_health: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_sigc_dashboard: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_sigc_agenda: { Args: { p_from: string; p_to: string }; Returns: Json };
+      get_sigc_report_v2: { Args: { p_from: string; p_to: string; p_filters: Json }; Returns: Json };
+      get_saas_context: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_authorization_context: { Args: Record<PropertyKey, never>; Returns: Json };
+      set_active_organization: { Args: { p_organization_id: string }; Returns: undefined };
+      update_organization_profile: { Args: { p_name: string; p_slug: string; p_product_name: string; p_short_name: string; p_logo_url?: string | null; p_primary_color: string; p_accent_color: string; p_sidebar_color: string; p_support_email?: string | null; p_custom_domain?: string | null }; Returns: undefined };
+      create_saas_organization: { Args: { p_name: string; p_slug: string }; Returns: string };
+      create_organization_invitation: { Args: { p_email: string; p_role_id: string; p_expires_days: number }; Returns: Array<{ invitation_id: string; token: string; expires_at: string }> };
+      revoke_organization_invitation: { Args: { p_invitation_id: string }; Returns: undefined };
+      log_client_error: { Args: { p_message: string; p_stack?: string | null; p_route?: string | null; p_severity: string; p_metadata: Json }; Returns: undefined };
+      get_organization_invitation: { Args: { p_token: string }; Returns: Array<{ organization_name: string; organization_slug: string; email: string; role_name: string; status: string; expires_at: string }> };
+      accept_organization_invitation: { Args: { p_token: string }; Returns: string };
+      get_runtime_settings: { Args: Record<PropertyKey, never>; Returns: Json };
+      update_runtime_settings: { Args: { p_inactivity_timeout_minutes: number }; Returns: undefined };
 
       calculate_sla_due_at: {
         Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };

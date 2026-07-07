@@ -162,6 +162,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     commit((previous) => ({ ...previous, currentUserId: null }));
   }
 
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const timeoutMinutes = Math.max(1, Number(state.settings.inactivityTimeoutMinutes) || 10);
+    const timeoutMs = timeoutMinutes * 60_000;
+    let timerId = window.setTimeout(() => { void logout(); }, timeoutMs);
+    let lastResetAt = Date.now();
+
+    const resetTimer = () => {
+      const now = Date.now();
+      if (now - lastResetAt < 1_000) return;
+      lastResetAt = now;
+      window.clearTimeout(timerId);
+      timerId = window.setTimeout(() => { void logout(); }, timeoutMs);
+    };
+
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
+    events.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
+
+    return () => {
+      window.clearTimeout(timerId);
+      events.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+    };
+  }, [currentUser?.id, state.settings.inactivityTimeoutMinutes, runtimeMode]);
+
   async function markNotificationRead(notificationId: string): Promise<void> {
     if (runtimeMode === 'supabase') {
       const { error } = await supabase!
@@ -246,7 +271,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sanitized = Math.max(1, Number(values.inactivityTimeoutMinutes) || 10);
 
     if (runtimeMode === 'supabase') {
-      const { error } = await (supabase as any)!.rpc('update_runtime_settings', {
+      const { error } = await supabase!.rpc('update_runtime_settings', {
         p_inactivity_timeout_minutes: sanitized
       });
       if (error) throw error;

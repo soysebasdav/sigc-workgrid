@@ -37,8 +37,8 @@ import {
 import { useApp } from '../../app/AppProvider';
 import { useAuthorization } from '../authz/AuthorizationProvider';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from '../authz/permissions';
-import type { SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview, WorkflowBoardCard, WorkflowBoardSnapshot } from './domain/types';
-import { AssignCaseModal, ChangeCaseStateModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
+import type { SigcAssignment, SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview, WorkflowBoardCard, WorkflowBoardSnapshot } from './domain/types';
+import { AssignCaseModal, ChangeCaseStateModal, ClassificationModal, DeactivateAssignmentModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
 import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
@@ -159,12 +159,12 @@ export function SigcLoginPage() {
   const { currentUser, login, isLoading, dataMode } = useApp();
   const navigate = useNavigate();
   const [loginParams] = useSearchParams();
-  const [email, setEmail] = useState('admin@test.com');
-  const [password, setPassword] = useState('Admin123*');
+  const [email, setEmail] = useState(dataMode === 'local' ? 'admin@test.com' : '');
+  const [password, setPassword] = useState(dataMode === 'local' ? 'Admin123*' : '');
   const [error, setError] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
 
-  if (currentUser) return <Navigate to={loginParams.get('redirect') || '/dashboard'} replace />;
+  if (currentUser) return <Navigate to={loginParams.get('redirect') || '/'} replace />;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -176,7 +176,7 @@ export function SigcLoginPage() {
         setError(dataMode === 'supabase' ? 'Correo o contraseña inválidos en Supabase Auth.' : 'Correo o contraseña inválidos. Usa las credenciales demo.');
         return;
       }
-      navigate(loginParams.get('redirect') || '/dashboard');
+      navigate(loginParams.get('redirect') || '/');
     } finally {
       setSubmitting(false);
     }
@@ -213,11 +213,13 @@ export function SigcLoginPage() {
           {error ? <div className="alert danger">{error}</div> : null}
           <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading}>{isSubmitting || isLoading ? 'Validando...' : 'Entrar al SIGC'}</button>
         </form>
-        <div className="demo-credentials">
-          <strong>{dataMode === 'supabase' ? 'Credenciales Supabase' : 'Credenciales demo'}</strong>
-          <span>admin@test.com / Admin123*</span>
-          <span>user@test.com / User123*</span>
-        </div>
+        {dataMode === 'local' ? (
+          <div className="demo-credentials">
+            <strong>Credenciales demo</strong>
+            <span>admin@test.com / Admin123*</span>
+            <span>user@test.com / User123*</span>
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -307,7 +309,9 @@ export function CaseDetailPage() {
   const { data: reminders } = useCaseReminders(resolvedCaseId);
   const { data: allCases } = useSigcCases();
   const { data: members } = useSigcMembers();
-  const [detailModal, setDetailModal] = useState<'assign' | 'state' | 'comment' | 'subtask' | 'document' | 'sla' | 'reminder' | 'review' | 'delivery' | null>(null);
+  const [detailModal, setDetailModal] = useState<'classify' | 'assign' | 'state' | 'comment' | 'subtask' | 'document' | 'sla' | 'reminder' | 'review' | 'delivery' | null>(null);
+  const [editingAssignment, setEditingAssignment] = useState<SigcAssignment | null>(null);
+  const [deactivatingAssignment, setDeactivatingAssignment] = useState<SigcAssignment | null>(null);
   const [traceTab, setTraceTab] = useState<'timeline' | 'comments'>('timeline');
   const [versionDocument, setVersionDocument] = useState<SigcDocument | null>(null);
   const [reviewDecision, setReviewDecision] = useState<{ review: SigcCaseReview; decision: 'approved' | 'returned' } | null>(null);
@@ -337,6 +341,7 @@ export function CaseDetailPage() {
         description="Expediente colaborativo con subtareas, comentarios inmutables, documentos versionados y trazabilidad auditable."
         actions={(
           <>
+            {can(PERMISSIONS.caseAssign) ? <button className="btn btn-white" onClick={() => setDetailModal('classify')}><SlidersHorizontal size={17} /> {item.classifiedAt ? 'Editar clasificación' : 'Clasificar caso'}</button> : null}
             {can(PERMISSIONS.caseAssign) ? <button className="btn btn-white" onClick={() => setDetailModal('assign')}><UserPlus size={17} /> Asignar</button> : null}
             {can(PERMISSIONS.caseChangeState) ? <button className="btn btn-white" onClick={() => setDetailModal('state')}><RefreshCw size={17} /> Cambiar estado</button> : null}
             {can(PERMISSIONS.caseComment) ? <button className="btn btn-primary" onClick={() => setDetailModal('comment')}><MessageSquarePlus size={17} /> Agregar comentario</button> : null}
@@ -346,7 +351,7 @@ export function CaseDetailPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       <section className="card case-hero">
         <div>
-          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
+          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state] ?? 'tone-slate'}>{item.state}</Badge><Badge tone={priorityTones[item.priority] ?? 'tone-slate'}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
           <h2>{item.subject}</h2>
           <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo: {item.requesterEmail}</> : null}</p>
         </div>
@@ -386,11 +391,20 @@ export function CaseDetailPage() {
               </div>
             )}
           </CardBlock>
-          <CardBlock title="Asignaciones del caso" description="Un mismo caso puede pertenecer simultáneamente a varias áreas y responsables." icon={<UserCog />}>
+          <CardBlock title="Asignaciones del caso" description="Ciclo completo por área: responsable, estado, avance, vencimiento y trazabilidad de reasignaciones." icon={<UserCog />}>
             {assignments.length ? assignments.map((assignment) => (
-              <div className="assignment-summary" key={assignment.id}>
-                <div><strong>{assignment.areaName}</strong><small>{assignment.responsibleName} · límite {assignment.due}</small></div>
-                <div className="chip-row">{assignment.isPrimary ? <Badge tone="tone-dark">Principal</Badge> : null}<Badge tone="tone-slate">{assignment.state}</Badge></div>
+              <div className={`assignment-summary ${assignment.isActive ? '' : 'is-inactive'}`} key={assignment.id}>
+                <div>
+                  <strong>{assignment.areaName}</strong>
+                  <small>{assignment.responsibleName} · asignada {assignment.assignedLabel} · límite {assignment.due}</small>
+                  <div className="bar-caption"><span>Avance</span><strong>{assignment.progress}%</strong></div>
+                  <Progress value={assignment.progress} />
+                  {assignment.observations ? <small>{assignment.observations}</small> : null}
+                </div>
+                <div className="assignment-actions">
+                  <div className="chip-row">{assignment.isPrimary ? <Badge tone="tone-dark">Principal</Badge> : null}<Badge tone={assignment.isActive ? 'tone-slate' : 'tone-red'}>{assignment.isActive ? assignment.state : 'Retirada'}</Badge></div>
+                  {assignment.isActive && can(PERMISSIONS.caseAssign) ? <div className="chip-row"><button className="btn btn-white small" type="button" onClick={() => setEditingAssignment(assignment)}><Edit3 size={14} /> Editar</button><button className="btn btn-white small" type="button" onClick={() => setDeactivatingAssignment(assignment)}><Trash2 size={14} /> Retirar</button></div> : null}
+                </div>
               </div>
             )) : <div className="empty-inline">Este caso aún no tiene asignaciones.</div>}
           </CardBlock>
@@ -437,14 +451,18 @@ export function CaseDetailPage() {
           <CardBlock title="Datos de clasificación" icon={<FileText />}>
             <dl className="definition-list">
               {[
-                ['Tipo de caso', item.type], ['Área principal', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', item.risk], ['Origen', item.source], ['Documento', item.requesterDocument ?? 'No registrado'], ['Teléfono', item.requesterPhone ?? 'No registrado']
+                ['Tipo de caso', item.type], ['Área principal', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', item.risk], ['Origen', item.source], ['Clasificado', item.classifiedAt ? new Date(item.classifiedAt).toLocaleString('es-CO') : 'Pendiente'], ['Documento', item.requesterDocument ?? 'No registrado'], ['Teléfono', item.requesterPhone ?? 'No registrado']
               ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+              {item.classificationObservations ? <div><dt>Observaciones de clasificación</dt><dd>{item.classificationObservations}</dd></div> : null}
             </dl>
           </CardBlock>
           <CardBlock title="Descripción" icon={<MessageCircle />}><p className="case-description">{item.description || 'Sin descripción registrada.'}</p></CardBlock>
         </aside>
       </section>
+      {detailModal === 'classify' && can(PERMISSIONS.caseAssign) ? <ClassificationModal caseItem={item} currentAssignments={assignments} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Clasificación guardada y auditada correctamente.'); }} /> : null}
       {detailModal === 'assign' && can(PERMISSIONS.caseAssign) ? <AssignCaseModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Asignación registrada correctamente.'); }} /> : null}
+      {editingAssignment && can(PERMISSIONS.caseAssign) ? <AssignCaseModal caseId={resolvedCaseId!} assignment={editingAssignment} onClose={() => setEditingAssignment(null)} onSaved={() => { setEditingAssignment(null); showToast('Asignación actualizada correctamente.'); }} /> : null}
+      {deactivatingAssignment && can(PERMISSIONS.caseAssign) ? <DeactivateAssignmentModal caseId={resolvedCaseId!} assignment={deactivatingAssignment} onClose={() => setDeactivatingAssignment(null)} onSaved={() => { setDeactivatingAssignment(null); showToast('Asignación retirada y trazabilidad registrada.'); }} /> : null}
       {detailModal === 'state' && can(PERMISSIONS.caseChangeState) ? <ChangeCaseStateModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
       {detailModal === 'comment' && can(PERMISSIONS.caseComment) ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'subtask' && can(PERMISSIONS.caseManageSubtasks) ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
@@ -530,7 +548,7 @@ export function ManualCasePage() {
         title="Creación manual de caso"
         description="Registra un caso interno, calcula su SLA y crea múltiples asignaciones en una sola operación."
       />
-      <ManualCaseForm onCreated={(radicado) => { showToast(`Caso ${radicado} creado correctamente.`); navigate(`/cases/${encodeURIComponent(radicado)}`); }} />
+      <ManualCaseForm onCreated={(radicado, failedAttachments) => { showToast(failedAttachments.length ? `Caso ${radicado} creado. Adjuntos pendientes: ${failedAttachments.join(', ')}.` : `Caso ${radicado} creado correctamente.`); navigate(`/cases/${encodeURIComponent(radicado)}`); }} />
     </Page>
   );
 }
@@ -567,20 +585,17 @@ export function BoardPage() {
   }
 
   function optimisticMove(snapshot: WorkflowBoardSnapshot, cardId: string, fromStateId: string, toStateId: string): WorkflowBoardSnapshot {
-    let moved: WorkflowBoardCard | null = null;
-    const columns = snapshot.columns.map((column) => {
-      if (column.stateId !== fromStateId) return column;
-      const card = column.cards.find((item) => item.id === cardId) ?? null;
-      moved = card;
-      return { ...column, cards: column.cards.filter((item) => item.id !== cardId) };
-    });
+    const sourceColumn = snapshot.columns.find((column) => column.stateId === fromStateId);
+    const moved = sourceColumn?.cards.find((card) => card.id === cardId) ?? null;
     if (!moved) return snapshot;
-    const targetName = columns.find((column) => column.stateId === toStateId)?.name ?? moved.stateName;
+    const targetName = snapshot.columns.find((column) => column.stateId === toStateId)?.name ?? moved.stateName;
     return {
       ...snapshot,
-      columns: columns.map((column) => column.stateId === toStateId
-        ? { ...column, cards: [{ ...moved!, stateId: toStateId, stateName: targetName, updatedAt: new Date().toISOString() }, ...column.cards] }
-        : column)
+      columns: snapshot.columns.map((column) => {
+        if (column.stateId === fromStateId) return { ...column, cards: column.cards.filter((card) => card.id !== cardId) };
+        if (column.stateId === toStateId) return { ...column, cards: [{ ...moved, stateId: toStateId, stateName: targetName, updatedAt: new Date().toISOString() }, ...column.cards] };
+        return column;
+      })
     };
   }
 
@@ -990,7 +1005,7 @@ function CaseDrawer({ item, onClose }: { item: SigcCase; onClose: () => void }) 
     <aside className="drawer open">
       <header><div><Badge tone="tone-dark">{item.radicado}</Badge><h2>{item.subject}</h2><p>{item.company} · {item.requester}</p></div><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
       <div className="drawer-body">
-        <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={stateTones[item.state]}>{item.state}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {item.risk}</Badge></div>
+        <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={stateTones[item.state] ?? 'tone-slate'}>{item.state}</Badge><Badge tone={priorityTones[item.priority] ?? 'tone-slate'}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {item.risk}</Badge></div>
         <section className="card drawer-progress"><div className="bar-caption"><strong>Avance</strong><span>{item.progress}%</span></div><Progress value={item.progress} /></section>
         <dl className="definition-list drawer-defs">{[['Responsable', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Última actualización', item.updated], ['Tipo', item.type]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <Link className="btn btn-primary full" onClick={onClose} to={`/cases/${encodeURIComponent(item.id)}`}>Abrir expediente completo</Link>

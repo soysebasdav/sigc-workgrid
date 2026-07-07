@@ -3,6 +3,9 @@ import type {
   AddDocumentVersionInput,
   AllowedCaseState,
   CaseAssignmentInput,
+  ClassifyCaseInput,
+  UpdateCaseAssignmentInput,
+  DeactivateCaseAssignmentInput,
   ChangeCaseStateInput,
   CreateSubtaskInput,
   CreatedCaseResult,
@@ -74,6 +77,9 @@ export interface SigcRepository {
   listAllowedStates(caseId: string): Promise<AllowedCaseState[]>;
   createManualCase(input: ManualCaseCreateInput): Promise<CreatedCaseResult>;
   assignCase(input: CaseAssignmentInput): Promise<void>;
+  classifyCase(input: ClassifyCaseInput): Promise<void>;
+  updateCaseAssignment(input: UpdateCaseAssignmentInput): Promise<void>;
+  deactivateCaseAssignment(input: DeactivateCaseAssignmentInput): Promise<void>;
   changeCaseState(input: ChangeCaseStateInput): Promise<void>;
   getWorkflowBoard(filters?: WorkflowBoardFilters): Promise<WorkflowBoardSnapshot>;
   moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult>;
