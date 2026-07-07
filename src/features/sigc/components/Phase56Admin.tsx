@@ -10,6 +10,8 @@ import {
   Clock3,
   Edit3,
   Eye,
+  History,
+  Archive,
   Flag,
   GitBranch,
   Mail,
@@ -39,6 +41,8 @@ import type {
   AutomationAction,
   AutomationCondition,
   AutomationRule,
+  AutomationRuleVersion,
+  AutomationDryRunResult,
   SaveAdminCatalogInput,
   SaveAutomationRuleInput,
   SaveEmailTemplateInput,
@@ -49,7 +53,7 @@ import type {
   SaveTransitionInput,
   SigcAdminSnapshot
 } from '../domain/types';
-import { useAutomationRuntimeHealth, useSigcAdminSnapshot, useSigcCases } from '../hooks/useSigcData';
+import { useAutomationRuntimeHealth, useDebouncedValue, useSigcAdminSnapshot, useSigcCaseSearch } from '../hooks/useSigcData';
 import { useAuthorization } from '../../authz/AuthorizationProvider';
 import { PERMISSIONS } from '../../authz/permissions';
 import { sigcService } from '../services/sigcService';
@@ -89,7 +93,11 @@ const triggerOptions = [
   ['case.review_approved', 'Revisión aprobada'],
   ['case.review_returned', 'Revisión devuelta'],
   ['case.sent', 'Respuesta enviada'],
-  ['case.reminder_sent', 'Recordatorio enviado']
+  ['case.reminder_sent', 'Recordatorio enviado'],
+  ['case.due_soon', 'Caso próximo a vencer'],
+  ['case.overdue', 'Caso vencido'],
+  ['schedule.hourly', 'Programación cada hora'],
+  ['schedule.daily', 'Programación diaria']
 ] as const;
 
 const emailEventOptions = [
@@ -134,14 +142,22 @@ const actionLabels: Record<AutomationAction['type'], string> = {
 
 export function AdminConfigurationPage() {
   const { showToast } = useOutletContext<SigcActions>();
+  const { can } = useAuthorization();
   const { data, isLoading, error, warning, reload } = useSigcAdminSnapshot();
-  const [tab, setTab] = useState<AdminTab>('catalogs');
+  const canConfigure = can(PERMISSIONS.adminManageConfiguration);
+  const canViewAutomations = can(PERMISSIONS.automationView) || can(PERMISSIONS.automationManage);
+  const availableTabs = useMemo(() => tabItems.filter((item) => item.id === 'automations' ? canViewAutomations : canConfigure), [canConfigure, canViewAutomations]);
+  const [tab, setTab] = useState<AdminTab>(() => canConfigure ? 'catalogs' : 'automations');
+
+  useEffect(() => {
+    if (!availableTabs.some((item) => item.id === tab)) setTab(availableTabs[0]?.id ?? 'automations');
+  }, [availableTabs, tab]);
 
   return (
     <div className="page phase56-admin-page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Configuración operativa · Fases 13 y 15</span>
+          <span className="eyebrow">Configuración operativa</span>
           <h1>Administración y automatizaciones</h1>
           <p>Parametriza catálogos y flujos dinámicos, y opera reglas CUANDO → SI → ENTONCES con trazabilidad y reintentos.</p>
         </div>
@@ -162,7 +178,7 @@ export function AdminConfigurationPage() {
 
       <section className="card phase56-admin-shell">
         <nav className="phase56-admin-tabs">
-          {tabItems.map(({ id, label, icon: Icon }) => (
+          {availableTabs.map(({ id, label, icon: Icon }) => (
             <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
               <Icon size={17} /><span>{label}</span>
             </button>
@@ -369,18 +385,60 @@ function TemplateModal({ item, onClose, showToast }: { item: AdminEmailTemplate 
 }
 
 function AutomationsPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast: (text: string) => void }) {
-  const { data: cases } = useSigcCases();
+  const { can } = useAuthorization();
+  const canManage = can(PERMISSIONS.automationManage);
   const { data: runtime, reload: reloadRuntime } = useAutomationRuntimeHealth();
   const [editing, setEditing] = useState<AutomationRule | null | 'new'>(null);
   const [testRule, setTestRule] = useState<AutomationRule | null>(null);
-  async function toggle(rule: AutomationRule) { try { await sigcService.toggleAutomationRule(rule.id, !rule.isActive); showToast(`${rule.name}: ${rule.isActive ? 'pausada' : 'activada'}.`); } catch (error) { showToast(errorMessage(error)); } }
-  return <div className="phase56-stack-sections"><section><SectionHead title="Salud del runtime" description="Ejecuciones, reintentos, recordatorios y cola de correo de las últimas 24 horas." action={<button className="btn btn-white" onClick={reloadRuntime}><RefreshCw size={15} /> Actualizar</button>} /><div className="document-kpis"><article className="card"><span>Reglas activas</span><strong>{runtime?.activeRules ?? 0}</strong></article><article className="card"><span>Ejecuciones 24 h</span><strong>{runtime?.executions24h ?? 0}</strong></article><article className="card"><span>Fallidas</span><strong>{runtime?.failedExecutions24h ?? 0}</strong></article><article className="card"><span>Reintentos</span><strong>{runtime?.pendingRetries ?? 0}</strong></article><article className="card"><span>Recordatorios</span><strong>{runtime?.reminders24h ?? 0}</strong></article><article className="card"><span>Correos en cola</span><strong>{runtime?.queuedEmails ?? 0}</strong></article><article className="card"><span>Correos fallidos</span><strong>{runtime?.failedEmails ?? 0}</strong></article><article className="card"><span>Cola más antigua</span><strong className="runtime-date-value">{runtime?.oldestQueuedEmailAt ? formatDate(runtime.oldestQueuedEmailAt) : '—'}</strong></article></div></section><section><SectionHead title="Motor CUANDO → SI → ENTONCES" description="Las reglas reaccionan a eventos reales de auditoría y ejecutan acciones parametrizadas." action={<button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Nueva automatización</button>} /><div className="automation-live-list">{data.automationRules.map((rule) => <article key={rule.id} className="automation-live-card"><div className="automation-live-icon"><Sparkles size={19} /></div><div className="automation-live-main"><header><div><strong>{rule.name}</strong><span>{triggerLabel(rule.triggerEvent)} · {rule.conditions.length} condición(es) · {rule.actions.length} acción(es)</span></div><StatusPill active={rule.isActive} /></header><p>{rule.description || 'Sin descripción'}</p><div className="automation-flow-preview"><em>CUANDO</em><b>{triggerLabel(rule.triggerEvent)}</b><span>→</span><em>SI</em><b>{rule.conditions.length ? `${rule.conditions.length} condición(es)` : 'Siempre'}</b><span>→</span><em>ENTONCES</em><b>{rule.actions.map((action) => actionLabels[action.type]).join(', ') || 'Sin acciones'}</b></div><footer><small>{rule.runCount} ejecuciones{rule.lastRunAt ? ` · última ${formatDate(rule.lastRunAt)}` : ''}</small><div><button className="btn btn-white" onClick={() => setTestRule(rule)}><Play size={15} /> Probar</button><button className="btn btn-white" onClick={() => setEditing(rule)}><Edit3 size={15} /> Editar</button><button className="btn btn-soft" onClick={() => void toggle(rule)}>{rule.isActive ? 'Pausar' : 'Activar'}</button></div></footer></div></article>)}</div></section><section><SectionHead title="Historial de ejecuciones" description="Resultado, coincidencia de condiciones y cantidad de acciones completadas." /><div className="phase56-table-wrap"><table className="phase56-table"><thead><tr><th>Regla</th><th>Caso</th><th>Disparador</th><th>Resultado</th><th>Acciones</th><th>Intento</th><th>Fecha</th></tr></thead><tbody>{data.automationExecutions.map((execution) => <tr key={execution.id} title={execution.errorMessage ?? undefined}><td><strong>{execution.ruleName}</strong></td><td>{execution.caseRadicado ?? '—'}</td><td><code>{execution.triggerEvent}</code></td><td><ExecutionPill status={execution.status} /></td><td>{execution.actionsSucceeded}/{execution.actionsTotal}</td><td>{execution.attemptCount}/{execution.maxAttempts}{execution.nextRetryAt ? ' · reintento programado' : ''}</td><td>{formatDate(execution.startedAt)}</td></tr>)}</tbody></table></div></section>{editing ? <AutomationModal data={data} item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} showToast={showToast} /> : null}{testRule ? <AutomationTestModal rule={testRule} cases={cases} onClose={() => setTestRule(null)} showToast={showToast} /> : null}</div>;
+  const [historyRule, setHistoryRule] = useState<AutomationRule | null>(null);
+
+  async function toggle(rule: AutomationRule) {
+    if (!canManage) return;
+    try {
+      await sigcService.toggleAutomationRule(rule.id, !rule.isActive);
+      showToast(`${rule.name}: ${rule.isActive ? 'pausada' : 'activada'}.`);
+    } catch (error) { showToast(errorMessage(error)); }
+  }
+
+  async function publish(rule: AutomationRule) {
+    if (!canManage) return;
+    if (!window.confirm(`¿Publicar la versión ${rule.currentVersion} de "${rule.name}"? Desde ese momento podrá ejecutarse sobre casos reales.`)) return;
+    try { await sigcService.publishAutomationRule(rule.id); showToast('Versión publicada y habilitada para el runtime.'); }
+    catch (error) { showToast(errorMessage(error)); }
+  }
+
+  async function archiveRule(rule: AutomationRule) {
+    if (!canManage) return;
+    if (!window.confirm(`¿Archivar "${rule.name}"? La regla dejará de ejecutarse, pero conservará versiones e historial.`)) return;
+    try { await sigcService.archiveAutomationRule(rule.id); showToast('Automatización archivada sin borrar su historial.'); }
+    catch (error) { showToast(errorMessage(error)); }
+  }
+
+  return <div className="phase56-stack-sections">
+    <section>
+      <SectionHead title="Salud del runtime" description="Ejecuciones, reintentos, recordatorios y cola de correo de las últimas 24 horas." action={<button className="btn btn-white" onClick={reloadRuntime}><RefreshCw size={15} /> Actualizar</button>} />
+      <div className="document-kpis"><article className="card"><span>Reglas activas</span><strong>{runtime?.activeRules ?? 0}</strong></article><article className="card"><span>Ejecuciones 24 h</span><strong>{runtime?.executions24h ?? 0}</strong></article><article className="card"><span>Fallidas</span><strong>{runtime?.failedExecutions24h ?? 0}</strong></article><article className="card"><span>Reintentos</span><strong>{runtime?.pendingRetries ?? 0}</strong></article><article className="card"><span>Recordatorios</span><strong>{runtime?.reminders24h ?? 0}</strong></article><article className="card"><span>Correos en cola</span><strong>{runtime?.queuedEmails ?? 0}</strong></article><article className="card"><span>Correos fallidos</span><strong>{runtime?.failedEmails ?? 0}</strong></article><article className="card"><span>Cola más antigua</span><strong className="runtime-date-value">{runtime?.oldestQueuedEmailAt ? formatDate(runtime.oldestQueuedEmailAt) : '—'}</strong></article></div>
+    </section>
+
+    {data.automationDiagnostics.length ? <section className="automation-diagnostics"><SectionHead title="Diagnóstico preventivo" description="Ciclos, reglas que compiten por el mismo dato y otras configuraciones de riesgo." /><div className="stack">{data.automationDiagnostics.map((diagnostic) => <article key={diagnostic.id} className={`alert automation-diagnostic diagnostic-${diagnostic.severity}`}><strong>{diagnostic.kind === 'cycle' ? 'Ciclo potencial' : diagnostic.kind === 'conflict' ? 'Conflicto potencial' : 'Advertencia'}</strong><span>{diagnostic.message}</span></article>)}</div></section> : null}
+
+    <section>
+      <SectionHead title="Motor CUANDO → SI → ENTONCES" description="Guarda borradores, simula sin modificar datos y publica versiones auditables." action={canManage ? <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={16} /> Nueva automatización</button> : <span className="chip tone-slate">Solo consulta</span>} />
+      <div className="automation-live-list">{data.automationRules.map((rule) => <article key={rule.id} className={`automation-live-card automation-${rule.lifecycleStatus}`}><div className="automation-live-icon"><Sparkles size={19} /></div><div className="automation-live-main"><header><div><strong>{rule.name}</strong><span>{triggerLabel(rule.triggerEvent)} · {rule.conditions.length} condición(es) · {rule.actions.length} acción(es)</span></div><div className="automation-status-stack"><LifecyclePill status={rule.lifecycleStatus} /><StatusPill active={rule.isActive} /></div></header><p>{rule.description || 'Sin descripción'}</p><div className="automation-flow-preview"><em>CUANDO</em><b>{triggerLabel(rule.triggerEvent)}</b><span>→</span><em>SI</em><b>{rule.conditions.length ? `${rule.conditionMode === 'all' ? 'TODAS' : 'CUALQUIERA'} · ${rule.conditions.length}` : 'Siempre'}</b><span>→</span><em>ENTONCES</em><b>{rule.actions.map((action) => actionLabels[action.type]).join(', ') || 'Sin acciones'}</b></div><footer><small>v{rule.currentVersion}{rule.publishedVersion ? ` · publicada v${rule.publishedVersion}` : ' · sin publicar'} · {rule.runCount} ejecuciones{rule.lastRunAt ? ` · última ${formatDate(rule.lastRunAt)}` : ''}</small><div><button className="btn btn-white" onClick={() => setTestRule(rule)}><Eye size={15} /> Simular</button><button className="btn btn-white" onClick={() => setHistoryRule(rule)}><History size={15} /> Versiones</button>{canManage && rule.lifecycleStatus !== 'archived' ? <button className="btn btn-white" onClick={() => setEditing(rule)}><Edit3 size={15} /> Editar</button> : null}{canManage && rule.lifecycleStatus === 'draft' ? <button className="btn btn-primary" onClick={() => void publish(rule)}><CheckCircle2 size={15} /> Publicar</button> : null}{canManage && rule.lifecycleStatus === 'published' ? <button className="btn btn-soft" onClick={() => void toggle(rule)}>{rule.isActive ? 'Pausar' : 'Activar'}</button> : null}{canManage && rule.lifecycleStatus !== 'archived' ? <button className="btn btn-ghost danger-icon" title="Archivar" onClick={() => void archiveRule(rule)}><Archive size={15} /></button> : null}</div></footer></div></article>)}</div>
+    </section>
+
+    <section><SectionHead title="Historial de ejecuciones" description="Resultado, coincidencia de condiciones y cantidad de acciones completadas." /><div className="phase56-table-wrap"><table className="phase56-table"><thead><tr><th>Regla</th><th>Caso</th><th>Disparador</th><th>Resultado</th><th>Acciones</th><th>Intento</th><th>Fecha</th></tr></thead><tbody>{data.automationExecutions.map((execution) => <tr key={execution.id} title={execution.errorMessage ?? undefined}><td><strong>{execution.ruleName}</strong></td><td>{execution.caseRadicado ?? '—'}</td><td><code>{execution.triggerEvent}</code></td><td><ExecutionPill status={execution.status} /></td><td>{execution.actionsSucceeded}/{execution.actionsTotal}</td><td>{execution.attemptCount}/{execution.maxAttempts}{execution.nextRetryAt ? ' · reintento programado' : ''}</td><td>{formatDate(execution.startedAt)}</td></tr>)}</tbody></table></div></section>
+
+    {editing && canManage ? <AutomationModal data={data} item={editing === 'new' ? null : editing} onClose={() => setEditing(null)} showToast={showToast} /> : null}
+    {testRule ? <AutomationTestModal rule={testRule} canExecute={canManage} onClose={() => setTestRule(null)} showToast={showToast} /> : null}
+    {historyRule ? <AutomationHistoryModal rule={historyRule} canManage={canManage} onClose={() => setHistoryRule(null)} showToast={showToast} /> : null}
+  </div>;
 }
 
 function AutomationModal({ data, item, onClose, showToast }: { data: SigcAdminSnapshot; item: AutomationRule | null; onClose: () => void; showToast: (text: string) => void }) {
-  const [form, setForm] = useState<SaveAutomationRuleInput>({ id: item?.id, code: item?.code ?? '', name: item?.name ?? '', description: item?.description ?? '', triggerEvent: item?.triggerEvent ?? 'case.created', conditions: item?.conditions ?? [], actions: item?.actions ?? [], stopOnError: item?.stopOnError ?? true, sortOrder: item?.sortOrder ?? 0, isActive: item?.isActive ?? true, maxAttempts: item?.maxAttempts ?? 3, retryDelayMinutes: item?.retryDelayMinutes ?? 10 });
-  async function submit(event: FormEvent) { event.preventDefault(); if (!form.actions.length) { showToast('Agrega al menos una acción.'); return; } try { await sigcService.saveAutomationRule(form); showToast('Automatización guardada.'); onClose(); } catch (error) { showToast(errorMessage(error)); } }
-  return <ConfigModal title={item ? 'Editar automatización' : 'Nueva automatización'} description="Construye la regla sin código." onClose={onClose}><form className="stack automation-builder" onSubmit={submit}><div className="form-grid two"><label className="field-label">Código<input className="input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required /></label><label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div><label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><BuilderBlock label="CUANDO" tone="when"><select className="input" value={form.triggerEvent} onChange={(e) => setForm({ ...form, triggerEvent: e.target.value })}>{triggerOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></BuilderBlock><BuilderBlock label="SI" tone="if" action={<button type="button" className="btn btn-white" onClick={() => setForm({ ...form, conditions: [...form.conditions, { field: 'case_type_id', operator: 'equals', value: data.caseTypes[0]?.id ?? '' }] })}><Plus size={14} /> Condición</button>}><div className="builder-list">{form.conditions.length ? form.conditions.map((condition, index) => <ConditionRow key={index} data={data} condition={condition} onChange={(next) => setForm({ ...form, conditions: form.conditions.map((item, itemIndex) => itemIndex === index ? next : item) })} onRemove={() => setForm({ ...form, conditions: form.conditions.filter((_, itemIndex) => itemIndex !== index) })} />) : <div className="empty-inline">Sin condiciones: la regla se ejecutará siempre que ocurra el evento.</div>}</div></BuilderBlock><BuilderBlock label="ENTONCES" tone="then" action={<button type="button" className="btn btn-white" onClick={() => setForm({ ...form, actions: [...form.actions, { type: 'assign_area', areaId: data.areas[0]?.id ?? '' }] })}><Plus size={14} /> Acción</button>}><div className="builder-list">{form.actions.map((action, index) => <ActionRow key={index} data={data} action={action} onChange={(next) => setForm({ ...form, actions: form.actions.map((item, itemIndex) => itemIndex === index ? next : item) })} onRemove={() => setForm({ ...form, actions: form.actions.filter((_, itemIndex) => itemIndex !== index) })} />)}</div></BuilderBlock><div className="phase56-check-grid"><CheckField label="Detener si una acción falla" checked={form.stopOnError} onChange={(checked) => setForm({ ...form, stopOnError: checked })} /><CheckField label="Regla activa" checked={form.isActive} onChange={(checked) => setForm({ ...form, isActive: checked })} /></div><div className="form-grid three"><label className="field-label">Orden de ejecución<input className="input" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /></label><label className="field-label">Intentos máximos<input className="input" type="number" min="1" max="10" value={form.maxAttempts} onChange={(e) => setForm({ ...form, maxAttempts: Number(e.target.value) })} /></label><label className="field-label">Reintentar en minutos<input className="input" type="number" min="1" max="1440" value={form.retryDelayMinutes} onChange={(e) => setForm({ ...form, retryDelayMinutes: Number(e.target.value) })} /></label></div><button className="btn btn-primary full"><Save size={16} /> Guardar automatización</button></form></ConfigModal>;
+  const [form, setForm] = useState<SaveAutomationRuleInput>({ id: item?.id, code: item?.code ?? '', name: item?.name ?? '', description: item?.description ?? '', triggerEvent: item?.triggerEvent ?? 'case.created', conditions: item?.conditions ?? [], conditionMode: item?.conditionMode ?? 'all', actions: item?.actions ?? [], stopOnError: item?.stopOnError ?? true, stopProcessing: item?.stopProcessing ?? false, sortOrder: item?.sortOrder ?? 0, isActive: false, maxAttempts: item?.maxAttempts ?? 3, retryDelayMinutes: item?.retryDelayMinutes ?? 10 });
+  async function submit(event: FormEvent) { event.preventDefault(); if (!form.actions.length) { showToast('Agrega al menos una acción.'); return; } try { await sigcService.saveAutomationRule(form); showToast('Borrador guardado como una nueva versión. Publícalo cuando esté validado.'); onClose(); } catch (error) { showToast(errorMessage(error)); } }
+  return <ConfigModal title={item ? 'Editar automatización' : 'Nueva automatización'} description="Los cambios se guardan como borrador y no afectan casos hasta ser publicados." onClose={onClose}><form className="stack automation-builder" onSubmit={submit}><div className="form-grid two"><label className="field-label">Código<input className="input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required disabled={Boolean(item)} /></label><label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div><label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><BuilderBlock label="CUANDO" tone="when"><select className="input" value={form.triggerEvent} onChange={(e) => setForm({ ...form, triggerEvent: e.target.value })}>{triggerOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></BuilderBlock><BuilderBlock label="SI" tone="if" action={<button type="button" className="btn btn-white" onClick={() => setForm({ ...form, conditions: [...form.conditions, { field: 'case_type_id', operator: 'equals', value: data.caseTypes[0]?.id ?? '' }] })}><Plus size={14} /> Condición</button>}><label className="field-label compact-condition-mode">Combinar condiciones<select className="input" value={form.conditionMode} onChange={(e) => setForm({ ...form, conditionMode: e.target.value as SaveAutomationRuleInput['conditionMode'] })}><option value="all">Deben cumplirse TODAS (AND)</option><option value="any">Puede cumplirse CUALQUIERA (OR)</option></select></label><div className="builder-list">{form.conditions.length ? form.conditions.map((condition, index) => <ConditionRow key={index} data={data} condition={condition} onChange={(next) => setForm({ ...form, conditions: form.conditions.map((entry, itemIndex) => itemIndex === index ? next : entry) })} onRemove={() => setForm({ ...form, conditions: form.conditions.filter((_, itemIndex) => itemIndex !== index) })} />) : <div className="empty-inline">Sin condiciones: la regla se evaluará siempre que ocurra el evento.</div>}</div></BuilderBlock><BuilderBlock label="ENTONCES" tone="then" action={<button type="button" className="btn btn-white" onClick={() => setForm({ ...form, actions: [...form.actions, { type: 'assign_area', areaId: data.areas[0]?.id ?? '' }] })}><Plus size={14} /> Acción</button>}><div className="builder-list">{form.actions.map((action, index) => <ActionRow key={index} data={data} action={action} onChange={(next) => setForm({ ...form, actions: form.actions.map((entry, itemIndex) => itemIndex === index ? next : entry) })} onRemove={() => setForm({ ...form, actions: form.actions.filter((_, itemIndex) => itemIndex !== index) })} />)}</div></BuilderBlock><div className="phase56-check-grid"><CheckField label="Detener si una acción falla" checked={form.stopOnError} onChange={(checked) => setForm({ ...form, stopOnError: checked })} /><CheckField label="Si coincide, detener reglas de menor prioridad" checked={form.stopProcessing} onChange={(checked) => setForm({ ...form, stopProcessing: checked })} /></div><div className="form-grid three"><label className="field-label">Prioridad de ejecución<input className="input" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /></label><label className="field-label">Intentos máximos<input className="input" type="number" min="1" max="10" value={form.maxAttempts} onChange={(e) => setForm({ ...form, maxAttempts: Number(e.target.value) })} /></label><label className="field-label">Reintentar en minutos<input className="input" type="number" min="1" max="1440" value={form.retryDelayMinutes} onChange={(e) => setForm({ ...form, retryDelayMinutes: Number(e.target.value) })} /></label></div><button className="btn btn-primary full"><Save size={16} /> Guardar borrador</button></form></ConfigModal>;
 }
 
 function BuilderBlock({ label, tone, action, children }: { label: string; tone: 'when' | 'if' | 'then'; action?: ReactNode; children: ReactNode }) {
@@ -418,11 +476,49 @@ function NotificationFields({ action, onChange }: { action: Extract<AutomationAc
   return <div className="form-grid two"><label className="field-label">Título<input className="input" value={action.title ?? ''} onChange={(e) => onChange({ ...action, title: e.target.value })} /></label><label className="field-label">Mensaje<input className="input" value={action.message ?? ''} onChange={(e) => onChange({ ...action, message: e.target.value })} /></label></div>;
 }
 
-function AutomationTestModal({ rule, cases, onClose, showToast }: { rule: AutomationRule; cases: Array<{ databaseId?: string; id: string; radicado: string; subject: string }>; onClose: () => void; showToast: (text: string) => void }) {
-  const [caseId, setCaseId] = useState(cases[0]?.databaseId ?? cases[0]?.id ?? '');
+function AutomationTestModal({ rule, canExecute, onClose, showToast }: { rule: AutomationRule; canExecute: boolean; onClose: () => void; showToast: (text: string) => void }) {
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 350);
+  const { data: searchResult, isLoading } = useSigcCaseSearch({ query: debouncedQuery, page: 1, pageSize: 25 });
+  const [caseId, setCaseId] = useState('');
   const [running, setRunning] = useState(false);
-  async function run() { setRunning(true); try { await sigcService.runAutomationRule(rule.id, caseId); showToast('Prueba ejecutada. Revisa el historial de ejecuciones.'); onClose(); } catch (error) { showToast(errorMessage(error)); } finally { setRunning(false); } }
-  return <ConfigModal title={`Probar · ${rule.name}`} description="La prueba ejecuta acciones reales sobre el caso seleccionado. Las condiciones deben cumplirse." onClose={onClose}><div className="stack"><div className="alert danger">Esta prueba puede asignar responsables, cambiar prioridad, crear subtareas o enviar notificaciones.</div><label className="field-label">Caso<select className="input" value={caseId} onChange={(e) => setCaseId(e.target.value)}>{cases.map((item) => <option key={item.id} value={item.databaseId ?? item.id}>{item.radicado} · {item.subject}</option>)}</select></label><button className="btn btn-primary full" disabled={!caseId || running} onClick={() => void run()}><Play size={16} /> {running ? 'Ejecutando...' : 'Ejecutar prueba real'}</button></div></ConfigModal>;
+  const [result, setResult] = useState<AutomationDryRunResult | null>(null);
+
+  useEffect(() => {
+    if (!caseId && searchResult.items[0]) setCaseId(searchResult.items[0].databaseId ?? searchResult.items[0].id);
+  }, [caseId, searchResult.items]);
+
+  async function simulate() {
+    if (!caseId) return;
+    setRunning(true);
+    try { setResult(await sigcService.dryRunAutomationRule(rule.id, caseId)); }
+    catch (error) { showToast(errorMessage(error)); }
+    finally { setRunning(false); }
+  }
+
+  async function executeReal() {
+    if (!canExecute || !caseId || rule.lifecycleStatus !== 'published') return;
+    if (!window.confirm('Esta acción SÍ modificará el caso real. ¿Continuar con la ejecución manual?')) return;
+    setRunning(true);
+    try { await sigcService.runAutomationRule(rule.id, caseId); showToast('Ejecución real enviada al motor con clave de idempotencia.'); onClose(); }
+    catch (error) { showToast(errorMessage(error)); }
+    finally { setRunning(false); }
+  }
+
+  return <ConfigModal title={`Simular · ${rule.name}`} description="El dry-run evalúa condiciones y acciones sin modificar ningún dato." onClose={onClose}><div className="stack"><div className="alert success">Simular es seguro: no cambia estado, prioridad, responsables, tareas, documentos ni notificaciones.</div><label className="field-label">Buscar caso<input className="input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Radicado, solicitante, asunto o palabra clave" /></label><label className="field-label">Caso<select className="input" value={caseId} onChange={(event) => { setCaseId(event.target.value); setResult(null); }} disabled={isLoading}><option value="">Selecciona un caso</option>{searchResult.items.map((item) => <option key={item.id} value={item.databaseId ?? item.id}>{item.radicado} · {item.subject}</option>)}</select></label><button className="btn btn-primary full" disabled={!caseId || running} onClick={() => void simulate()}><Eye size={16} /> {running ? 'Evaluando...' : 'Ejecutar simulación segura'}</button>{result ? <section className="automation-dry-run"><header><strong>{result.matched ? 'La regla coincidiría' : 'La regla NO coincidiría'}</strong><span>{result.caseRadicado} · v{result.ruleVersion} · modo {result.conditionMode === 'all' ? 'TODAS' : 'CUALQUIERA'}</span></header><div className="automation-dry-grid"><div><h4>Condiciones</h4>{result.conditionResults.length ? result.conditionResults.map((item) => <div className={`dry-row ${item.matched ? 'matched' : 'unmatched'}`} key={item.index}><span>{item.matched ? '✓' : '×'} {item.field}</span><small>{String(item.actual ?? '—')} → {String(item.expected ?? '—')}</small></div>) : <div className="empty-inline">Sin condiciones: coincide siempre.</div>}</div><div><h4>Acciones</h4>{result.actions.map((item) => <div className={`dry-row action-${item.status}`} key={item.index}><span>{item.status === 'would_execute' ? '→' : '—'} {item.description}</span>{item.reason ? <small>{item.reason}</small> : null}</div>)}</div></div>{result.diagnostics.length ? <div className="stack">{result.diagnostics.map((item) => <div className="alert danger" key={item.id}>{item.message}</div>)}</div> : null}</section> : null}{canExecute && rule.lifecycleStatus === 'published' ? <button className="btn btn-white full danger-outline" disabled={!caseId || running} onClick={() => void executeReal()}><Play size={16} /> Ejecutar realmente sobre este caso</button> : null}</div></ConfigModal>;
+}
+
+function AutomationHistoryModal({ rule, canManage, onClose, showToast }: { rule: AutomationRule; canManage: boolean; onClose: () => void; showToast: (text: string) => void }) {
+  const [versions, setVersions] = useState<AutomationRuleVersion[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { let active = true; void sigcService.listAutomationRuleVersions(rule.id).then((items) => { if (active) setVersions(items); }).catch((error) => showToast(errorMessage(error))).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [rule.id, showToast]);
+  async function restore(version: AutomationRuleVersion) {
+    if (!canManage) return;
+    if (!window.confirm(`¿Restaurar la versión ${version.versionNumber} como un nuevo borrador? La versión publicada actual no cambiará hasta que publiques el borrador.`)) return;
+    try { await sigcService.restoreAutomationRuleVersion(rule.id, version.versionNumber); showToast(`Versión ${version.versionNumber} restaurada como borrador.`); onClose(); }
+    catch (error) { showToast(errorMessage(error)); }
+  }
+  return <ConfigModal title={`Versiones · ${rule.name}`} description="Historial inmutable de cada revisión y publicación de la regla." onClose={onClose}><div className="stack automation-version-list">{loading ? <div className="empty-inline">Cargando versiones...</div> : versions.map((version) => <article className="card" key={version.id}><header><div><strong>Versión {version.versionNumber}</strong><span>{version.lifecycleStatus === 'published' ? 'Publicada' : version.lifecycleStatus === 'archived' ? 'Archivada' : 'Borrador'}</span></div><small>{formatDate(version.createdAt)}</small></header><p>{version.name} · {triggerLabel(version.triggerEvent)} · {version.conditions.length} condiciones · {version.actions.length} acciones</p><footer><span>{version.createdByName}</span>{canManage ? <button className="btn btn-white" onClick={() => void restore(version)}>Restaurar como borrador</button> : null}</footer></article>)}</div></ConfigModal>;
 }
 
 function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
@@ -430,6 +526,7 @@ function CheckField({ label, checked, onChange }: { label: string; checked: bool
 }
 
 function StatusPill({ active }: { active: boolean }) { return <span className={`phase56-status ${active ? 'active' : 'inactive'}`}>{active ? 'Activo' : 'Inactivo'}</span>; }
+function LifecyclePill({ status }: { status: AutomationRule['lifecycleStatus'] }) { return <span className={`phase56-status lifecycle-${status}`}>{status === 'published' ? 'Publicada' : status === 'archived' ? 'Archivada' : 'Borrador'}</span>; }
 function ExecutionPill({ status }: { status: string }) { return <span className={`phase56-execution execution-${status}`}>{status === 'success' ? 'Correcta' : status === 'partial' ? 'Parcial' : status === 'failed' ? 'Fallida' : status === 'skipped' ? 'Omitida' : 'Ejecutando'}</span>; }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'No fue posible completar la operación.'; }
 function unitLabel(unit: AdminSlaPolicy['durationUnit']) { return unit === 'hours' ? 'horas' : unit === 'business_days' ? 'días hábiles' : 'días calendario'; }

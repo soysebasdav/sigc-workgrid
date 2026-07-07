@@ -113,7 +113,7 @@ export async function loadSupabaseState(currentUserId: string | null): Promise<A
       .eq('recipient_user_id', currentUserId)
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false })
-      .limit(250),
+      .limit(50),
     client.rpc('get_runtime_settings')
   ]);
 
@@ -153,3 +153,30 @@ export async function updateAuthUser(values: { email?: string; password?: string
   const { error } = await client.auth.updateUser(payload);
   if (error) throw error;
 }
+
+export async function getUnreadNotificationCount(currentUserId: string): Promise<number> {
+  const client = requireSupabase();
+  const organizationId = await ensureSigcOrganization();
+  const { count, error } = await client
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('recipient_user_id', currentUserId)
+    .eq('organization_id', organizationId)
+    .eq('is_read', false);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
+  if (error) throw error;
+}
+
+export async function completePasswordRecovery(password: string): Promise<void> {
+  const client = requireSupabase();
+  if (password.length < 8) throw new Error('La contraseña debe tener mínimo 8 caracteres.');
+  const { error } = await client.auth.updateUser({ password });
+  if (error) throw error;
+}
+

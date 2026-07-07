@@ -22,7 +22,8 @@ export const PERMISSIONS = {
   auditExport: 'audit.export',
   reportsView: 'reports.view',
   reportsExport: 'reports.export',
-  saasManageWorkspace: 'saas.manage_workspace'
+  saasManageWorkspace: 'saas.manage_workspace',
+  clientPortal: 'client.portal'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

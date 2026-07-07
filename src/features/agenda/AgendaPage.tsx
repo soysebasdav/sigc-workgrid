@@ -107,7 +107,7 @@ export function AgendaPage() {
     <div className="page agenda-page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Fase 10 · operación centrada en casos</span>
+          <span className="eyebrow">Operación centrada en casos</span>
           <h1>Agenda SIGC</h1>
           <p>Fechas límite de casos, asignaciones, subtareas, revisiones pendientes y recordatorios en un único calendario operativo.</p>
         </div>

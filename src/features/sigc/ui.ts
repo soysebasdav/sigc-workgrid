@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarDays,
   Cloud,
+  UserCog,
   FilePlus2,
   Flag,
   FolderKanban,
@@ -35,6 +36,7 @@ export type SigcNavItem = {
 
 export const navItems: SigcNavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, allOf: [PERMISSIONS.reportsView] },
+  { to: '/portal', label: 'Mis casos', icon: UserCog, allOf: [PERMISSIONS.clientPortal] },
   { to: '/cases', label: 'Bandeja de casos', icon: Inbox, anyOf: CASE_READ_PERMISSIONS },
   { to: '/manual-case', label: 'Creación manual', icon: FilePlus2, allOf: [PERMISSIONS.caseCreate] },
   { to: '/radicar', label: 'Formulario público', icon: Globe2, externalShell: true },

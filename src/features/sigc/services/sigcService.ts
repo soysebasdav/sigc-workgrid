@@ -36,6 +36,9 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
+  SigcSubtaskPage,
+  SigcDocumentFilters,
+  SigcDocumentPage,
   SigcTimelineEvent,
   UpdateSubtaskInput,
   UploadCaseDocumentInput,
@@ -51,6 +54,10 @@ import type {
   SendManualReminderInput,
   SigcAdminSnapshot,
   SigcUserManagementSnapshot,
+  SigcNotificationPage,
+  SigcSidebarSummary,
+  SigcSecurityHealth,
+  ClientPortalSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -59,9 +66,14 @@ import type {
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
   SaveAutomationRuleInput,
+  AutomationRuleVersion,
+  AutomationDryRunResult,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
+  SigcReportExportFormat,
+  SigcReportExportJob,
+  SigcReportExportPage,
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
@@ -107,9 +119,6 @@ function publicMutationRepository() {
 }
 
 export const sigcService = {
-  listCases(): Promise<SigcRepositoryResult<SigcCase[]>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.listCases(), () => demoSigcRepository.listCases());
-  },
 
   searchCases(filters: SigcCaseFilters): Promise<SigcRepositoryResult<SigcCasePage>> {
     return withStrictRead(() => supabaseSigcRepository.searchCases(filters), () => demoSigcRepository.searchCases(filters));
@@ -191,6 +200,10 @@ export const sigcService = {
     return withSafeReadFallback(() => supabaseSigcRepository.listSubtasks(filters), () => demoSigcRepository.listSubtasks(filters));
   },
 
+  searchSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcRepositoryResult<SigcSubtaskPage>> {
+    return withStrictRead(() => supabaseSigcRepository.searchSubtasks(filters), () => demoSigcRepository.searchSubtasks(filters));
+  },
+
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
     const repository = mutationRepository();
     const result = await repository.createSubtask(input);
@@ -250,12 +263,21 @@ export const sigcService = {
     return withSafeReadFallback(() => supabaseSigcRepository.listDocuments(caseId), () => demoSigcRepository.listDocuments(caseId));
   },
 
+  searchDocuments(filters: SigcDocumentFilters = {}): Promise<SigcRepositoryResult<SigcDocumentPage>> {
+    return withStrictRead(() => supabaseSigcRepository.searchDocuments(filters), () => demoSigcRepository.searchDocuments(filters));
+  },
+
   getDocumentVersions(documentId: string): Promise<SigcRepositoryResult<SigcDocumentVersion[]>> {
     return withSafeReadFallback(() => supabaseSigcRepository.listDocumentVersions(documentId), () => demoSigcRepository.listDocumentVersions(documentId));
   },
 
   async updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void> {
     await mutationRepository().updateDocumentRetention(input);
+    emitSigcDataChanged();
+  },
+
+  async setDocumentClientVisibility(documentId: string, isVisible: boolean): Promise<void> {
+    await mutationRepository().setDocumentClientVisibility(documentId, isVisible);
     emitSigcDataChanged();
   },
 
@@ -347,6 +369,8 @@ export const sigcService = {
   async saveRole(input: SaveRoleInput): Promise<string> { const id = await mutationRepository().saveRole(input); emitSigcDataChanged(); return id; },
   async setRolePermissions(roleId: string, permissionIds: string[]): Promise<void> { await mutationRepository().setRolePermissions(roleId, permissionIds); emitSigcDataChanged(); },
   async setMemberRole(membershipId: string, roleId: string): Promise<void> { await mutationRepository().setMemberRole(membershipId, roleId); emitSigcDataChanged(); },
+  async setMemberActive(membershipId: string, isActive: boolean): Promise<void> { await mutationRepository().setMemberActive(membershipId, isActive); emitSigcDataChanged(); },
+  async removeMember(membershipId: string): Promise<void> { await mutationRepository().removeMember(membershipId); emitSigcDataChanged(); },
   async saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void> { await mutationRepository().saveWorkflowStates(caseTypeId, stateIds); emitSigcDataChanged(); },
   async saveTransition(input: SaveTransitionInput): Promise<void> { await mutationRepository().saveTransition(input); emitSigcDataChanged(); },
   async deleteTransition(id: string): Promise<void> { await mutationRepository().deleteTransition(id); emitSigcDataChanged(); },
@@ -356,6 +380,11 @@ export const sigcService = {
   async sendTestEmail(input: SendTestEmailInput): Promise<void> { await mutationRepository().sendTestEmail(input); emitSigcDataChanged(); },
   async runRuntimeNow(): Promise<RuntimeExecutionResult> { const result = await mutationRepository().runRuntimeNow(); emitSigcDataChanged(); return result; },
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> { await mutationRepository().saveAutomationRule(input); emitSigcDataChanged(); },
+  async publishAutomationRule(id: string): Promise<void> { await mutationRepository().publishAutomationRule(id); emitSigcDataChanged(); },
+  async archiveAutomationRule(id: string): Promise<void> { await mutationRepository().archiveAutomationRule(id); emitSigcDataChanged(); },
+  async restoreAutomationRuleVersion(id: string, versionNumber: number): Promise<void> { await mutationRepository().restoreAutomationRuleVersion(id, versionNumber); emitSigcDataChanged(); },
+  listAutomationRuleVersions(id: string): Promise<AutomationRuleVersion[]> { return mutationRepository().listAutomationRuleVersions(id); },
+  dryRunAutomationRule(ruleId: string, caseId: string): Promise<AutomationDryRunResult> { return mutationRepository().dryRunAutomationRule(ruleId, caseId); },
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> { await mutationRepository().toggleAutomationRule(id, isActive); emitSigcDataChanged(); },
   async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); },
 
@@ -366,16 +395,33 @@ export const sigcService = {
   getDashboardAnalytics(): Promise<SigcRepositoryResult<SigcDashboardAnalytics>> {
     return withStrictRead(() => supabaseSigcRepository.getDashboardAnalytics(), () => demoSigcRepository.getDashboardAnalytics());
   },
+
+  getSidebarSummary(): Promise<SigcRepositoryResult<SigcSidebarSummary>> {
+    return withStrictRead(() => supabaseSigcRepository.getSidebarSummary(), () => demoSigcRepository.getSidebarSummary());
+  },
+
+  getNotificationPage(page = 1, pageSize = 25): Promise<SigcRepositoryResult<SigcNotificationPage>> {
+    return withStrictRead(() => supabaseSigcRepository.getNotificationPage(page, pageSize), () => demoSigcRepository.getNotificationPage(page, pageSize));
+  },
   async getAgenda(from: string, to: string): Promise<SigcRepositoryResult<SigcAgendaSnapshot>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAgenda(from, to), source: 'demo' };
     return { data: await supabaseSigcRepository.getAgenda(from, to), source: 'supabase' };
   },
   getReport(filters: SigcReportFilters): Promise<SigcRepositoryResult<SigcReportResult>> {
-    return withStrictRead(() => supabaseSigcRepository.getReport(filters), () => demoSigcRepository.getReport(filters));
+    return withStrictRead(() => supabaseSigcRepository.getReport(filters, filters.page, filters.pageSize), () => demoSigcRepository.getReport(filters, filters.page, filters.pageSize));
   },
+  createReportExportJob(format: SigcReportExportFormat, filters: SigcReportFilters): Promise<SigcReportExportJob> { return mutationRepository().createReportExportJob(format, filters); },
+  getReportExportPage(jobId: string, page: number, pageSize: number): Promise<SigcReportExportPage> { return mutationRepository().getReportExportPage(jobId, page, pageSize); },
+  async completeReportExportJob(jobId: string, status: 'completed' | 'failed' | 'cancelled', errorMessage?: string): Promise<void> { await mutationRepository().completeReportExportJob(jobId, status, errorMessage); emitSigcDataChanged(); },
   async getSaasContext(): Promise<SigcRepositoryResult<SigcSaasContext>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getSaasContext(), source: 'demo' };
     return { data: await supabaseSigcRepository.getSaasContext(), source: 'supabase' };
+  },
+  getSecurityHealth(): Promise<SigcRepositoryResult<SigcSecurityHealth>> {
+    return withStrictRead(() => supabaseSigcRepository.getSecurityHealth(), () => demoSigcRepository.getSecurityHealth());
+  },
+  getClientPortal(page = 1, pageSize = 10, query = ''): Promise<SigcRepositoryResult<ClientPortalSnapshot>> {
+    return withStrictRead(() => supabaseSigcRepository.getClientPortal(page, pageSize, query), () => demoSigcRepository.getClientPortal(page, pageSize, query));
   },
   async getAuthorizationContext(): Promise<SigcRepositoryResult<SigcAuthorizationContext>> {
     if (dataMode !== 'supabase') return { data: await demoSigcRepository.getAuthorizationContext(), source: 'demo' };

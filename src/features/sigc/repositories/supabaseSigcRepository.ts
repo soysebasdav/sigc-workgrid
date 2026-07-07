@@ -39,6 +39,9 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
+  SigcSubtaskPage,
+  SigcDocumentFilters,
+  SigcDocumentPage,
   SigcTimelineEvent,
   UpdateSubtaskInput,
   UploadCaseDocumentInput,
@@ -53,6 +56,10 @@ import type {
   SendManualReminderInput,
   SigcAdminSnapshot,
   SigcUserManagementSnapshot,
+  SigcNotificationPage,
+  SigcSidebarSummary,
+  SigcSecurityHealth,
+  ClientPortalSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -61,12 +68,18 @@ import type {
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
   SaveAutomationRuleInput,
+  AutomationRuleVersion,
+  AutomationDryRunResult,
+  AutomationDiagnostic,
   AutomationCondition,
   AutomationAction,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
   SigcReportRow,
+  SigcReportExportFormat,
+  SigcReportExportJob,
+  SigcReportExportPage,
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
@@ -325,7 +338,7 @@ async function resolveCaseDatabaseId(identifier: string): Promise<string> {
   return row.databaseId;
 }
 
-async function fetchCases(identifier?: string): Promise<SigcCase[]> {
+async function fetchCases(identifier: string): Promise<SigcCase[]> {
   const client = requireClient();
   const organizationId = await ensureOrganization();
 
@@ -336,12 +349,8 @@ async function fetchCases(identifier?: string): Promise<SigcCase[]> {
     .is('deleted_at', null)
     .order('updated_at', { ascending: false });
 
-  if (identifier) {
-    const decoded = decodeURIComponent(identifier);
-    query = /^[0-9a-f-]{36}$/i.test(decoded) ? query.eq('id', decoded) : query.eq('radicado', decoded);
-  } else {
-    query = query.range(0, 199);
-  }
+  const decoded = decodeURIComponent(identifier);
+  query = /^[0-9a-f-]{36}$/i.test(decoded) ? query.eq('id', decoded) : query.eq('radicado', decoded);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -441,66 +450,33 @@ function eventPresentation(eventType: string, metadata: Record<string, unknown>,
 }
 
 export const supabaseSigcRepository: SigcRepository = {
-  async listCases(): Promise<SigcCase[]> {
-    return fetchCases();
-  },
 
   async searchCases(filters: SigcCaseFilters): Promise<SigcCasePage> {
     const client = requireClient();
-    const organizationId = await ensureOrganization();
-    const page = Math.max(1, filters.page ?? 1);
-    const pageSize = Math.min(100, Math.max(5, filters.pageSize ?? 10));
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    let terminalStateIds: string[] = [];
-    if (filters.overdueOnly || filters.upcomingOnly) {
-      const { data: terminalStates, error: terminalError } = await client
-        .from('case_states')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('is_terminal', true);
-      if (terminalError) throw terminalError;
-      terminalStateIds = (terminalStates ?? []).map((item) => item.id);
-    }
-
-    const search = safeSearch(filters.query ?? '');
-    let relatedSearchIds: string[] | null = null;
-    if (search) {
-      const { data: searchIds, error: searchError } = await client.rpc('search_sigc_case_ids', { p_query: search });
-      if (searchError) throw searchError;
-      relatedSearchIds = Array.isArray(searchIds) ? searchIds.map(String) : [];
-      if (!relatedSearchIds.length) return { items: [], total: 0, page, pageSize };
-    }
-
-    let query = client
-      .from('cases')
-      .select(CASE_SELECT, { count: 'exact' })
-      .eq('organization_id', organizationId)
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false });
-
-    if (relatedSearchIds) query = query.in('id', relatedSearchIds);
-    if (filters.stateId) query = query.eq('state_id', filters.stateId);
-    if (filters.areaId) query = query.eq('primary_area_id', filters.areaId);
-    if (filters.ownerId) query = query.eq('primary_owner_id', filters.ownerId);
-    if (filters.caseTypeId) query = query.eq('case_type_id', filters.caseTypeId);
-    if (filters.priorityId) query = query.eq('priority_id', filters.priorityId);
-    if (terminalStateIds.length) query = query.not('state_id', 'in', `(${terminalStateIds.join(',')})`);
-    if (filters.overdueOnly) query = query.lt('due_at', new Date().toISOString());
-    if (filters.upcomingOnly) {
-      const now = new Date();
-      const upcoming = new Date(now.getTime() + 72 * 60 * 60 * 1000);
-      query = query.gte('due_at', now.toISOString()).lte('due_at', upcoming.toISOString());
-    }
-
-    const { data, error, count } = await query.range(from, to);
+    const { data, error } = await client.rpc('search_sigc_cases_v3', {
+      p_filters: {
+        query: filters.query ?? '',
+        stateId: filters.stateId ?? '',
+        areaId: filters.areaId ?? '',
+        ownerId: filters.ownerId ?? '',
+        caseTypeId: filters.caseTypeId ?? '',
+        priorityId: filters.priorityId ?? '',
+        fromDate: filters.fromDate ?? '',
+        toDate: filters.toDate ?? '',
+        overdueOnly: Boolean(filters.overdueOnly),
+        upcomingOnly: Boolean(filters.upcomingOnly),
+        page: Math.max(1, filters.page ?? 1),
+        pageSize: Math.min(100, Math.max(5, filters.pageSize ?? 10))
+      }
+    });
     if (error) throw error;
-
+    if (!data || typeof data !== 'object') throw new Error('La búsqueda de casos no devolvió un resultado válido.');
+    const raw = data as Record<string, unknown>;
     return {
-      items: ((data ?? []) as unknown as CaseQueryRow[]).map(mapCase),
-      total: count ?? 0,
-      page,
-      pageSize
+      items: Array.isArray(raw.items) ? raw.items as SigcCase[] : [],
+      total: Number(raw.total ?? 0),
+      page: Number(raw.page ?? filters.page ?? 1),
+      pageSize: Number(raw.pageSize ?? filters.pageSize ?? 10)
     };
   },
 
@@ -829,76 +805,21 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcSubtask[]> {
+    const page = await this.searchSubtasks({ ...filters, page: 1, pageSize: Math.min(100, Math.max(5, filters.pageSize ?? 100)) });
+    return page.items;
+  },
+
+  async searchSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcSubtaskPage> {
     const client = requireClient();
-    let query = client
-      .from('case_subtasks')
-      .select('id,case_id,assignment_id,area_id,title,description,responsible_user_id,priority_id,due_at,state,progress,created_at,updated_at')
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false });
-
-    if (filters.caseId) query = query.eq('case_id', await resolveCaseDatabaseId(filters.caseId));
-    if (filters.state) query = query.eq('state', filters.state);
-    if (filters.responsibleUserId) query = query.eq('responsible_user_id', filters.responsibleUserId);
-    if (filters.query?.trim()) query = query.ilike('title', `%${safeSearch(filters.query)}%`);
-
-    const { data, error } = await query.range(0, 499);
-    if (error) throw error;
-    const rows = data ?? [];
-    if (!rows.length) return [];
-
-    const caseIds = [...new Set(rows.map((row) => row.case_id))];
-    const userIds = [...new Set(rows.map((row) => row.responsible_user_id).filter((id): id is string => Boolean(id)))];
-    const priorityIds = [...new Set(rows.map((row) => row.priority_id).filter((id): id is string => Boolean(id)))];
-    const areaIds = [...new Set(rows.map((row) => row.area_id).filter((id): id is string => Boolean(id)))];
-    const subtaskIds = rows.map((row) => row.id);
-
-    const [casesResult, profilesResult, prioritiesResult, areasResult, commentsResult, documentsResult] = await Promise.all([
-      client.from('cases').select('id,radicado,subject').in('id', caseIds),
-      userIds.length ? client.from('profiles').select('id,name').in('id', userIds) : Promise.resolve({ data: [], error: null }),
-      priorityIds.length ? client.from('priorities').select('id,name').in('id', priorityIds) : Promise.resolve({ data: [], error: null }),
-      areaIds.length ? client.from('areas').select('id,name').in('id', areaIds) : Promise.resolve({ data: [], error: null }),
-      client.from('case_comments').select('id,subtask_id').in('subtask_id', subtaskIds),
-      client.from('case_documents').select('id,subtask_id').in('subtask_id', subtaskIds).is('deleted_at', null)
-    ]);
-    const relatedError = casesResult.error ?? profilesResult.error ?? prioritiesResult.error ?? areasResult.error ?? commentsResult.error ?? documentsResult.error;
-    if (relatedError) throw relatedError;
-
-    const caseMap = new Map<string, { id: string; radicado: string; subject: string }>((casesResult.data ?? []).map((item) => [item.id, item as { id: string; radicado: string; subject: string }]));
-    const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
-    const priorityMap = new Map((prioritiesResult.data ?? []).map((item) => [item.id, item.name]));
-    const areaMap = new Map((areasResult.data ?? []).map((item) => [item.id, item.name]));
-    const commentCounts = new Map<string, number>();
-    const attachmentCounts = new Map<string, number>();
-    (commentsResult.data ?? []).forEach((item) => { if (item.subtask_id) commentCounts.set(item.subtask_id, (commentCounts.get(item.subtask_id) ?? 0) + 1); });
-    (documentsResult.data ?? []).forEach((item) => { if (item.subtask_id) attachmentCounts.set(item.subtask_id, (attachmentCounts.get(item.subtask_id) ?? 0) + 1); });
-
-    return rows.map((row) => {
-      const caseItem = caseMap.get(row.case_id);
-      return {
-        id: row.id,
-        caseId: row.case_id,
-        assignmentId: row.assignment_id ?? undefined,
-        areaId: row.area_id ?? undefined,
-        areaName: row.area_id ? areaMap.get(row.area_id) ?? 'Área' : 'Sin área',
-        caseRadicado: caseItem?.radicado ?? 'Caso',
-        caseSubject: caseItem?.subject ?? '',
-        title: row.title,
-        description: row.description,
-        responsibleUserId: row.responsible_user_id ?? undefined,
-        responsibleName: row.responsible_user_id ? profileMap.get(row.responsible_user_id) ?? 'Sin responsable' : 'Sin responsable',
-        priorityId: row.priority_id ?? undefined,
-        priority: (row.priority_id ? priorityMap.get(row.priority_id) ?? 'Media' : 'Media') as CasePriorityName,
-        dueAt: row.due_at,
-        due: formatDue(row.due_at),
-        state: row.state,
-        stateLabel: SUBTASK_STATE_LABELS[row.state] ?? row.state,
-        progress: row.progress,
-        comments: commentCounts.get(row.id) ?? 0,
-        attachments: attachmentCounts.get(row.id) ?? 0,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-      };
+    const { data, error } = await client.rpc('search_sigc_subtasks_v4', {
+      p_filters: {
+        caseId: filters.caseId ?? '', query: filters.query ?? '', state: filters.state ?? '', responsibleUserId: filters.responsibleUserId ?? '',
+        page: Math.max(1, filters.page ?? 1), pageSize: Math.min(100, Math.max(5, filters.pageSize ?? 25))
+      }
     });
+    if (error) throw error;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return { items: Array.isArray(raw.items) ? raw.items as SigcSubtask[] : [], total: Number(raw.total ?? 0), page: Number(raw.page ?? 1), pageSize: Number(raw.pageSize ?? 25) };
   },
 
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
@@ -995,61 +916,21 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async listDocuments(caseId?: string): Promise<SigcDocument[]> {
+    const page = await this.searchDocuments({ caseId, page: 1, pageSize: 100 });
+    return page.items;
+  },
+
+  async searchDocuments(filters: SigcDocumentFilters = {}): Promise<SigcDocumentPage> {
     const client = requireClient();
-    let query = client
-      .from('case_documents')
-      .select('id,case_id,subtask_id,comment_id,name,category,state,current_version,created_by,created_at,updated_at,retention_until,legal_hold')
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false });
-    if (caseId) query = query.eq('case_id', await resolveCaseDatabaseId(caseId));
-    const { data, error } = await query.range(0, 499);
-    if (error) throw error;
-    const rows = data ?? [];
-    if (!rows.length) return [];
-
-    const caseIds = [...new Set(rows.map((row) => row.case_id))];
-    const ownerIds = [...new Set(rows.map((row) => row.created_by).filter((id): id is string => Boolean(id)))];
-    const documentIds = rows.map((row) => row.id);
-    const [casesResult, profilesResult, versionsResult] = await Promise.all([
-      client.from('cases').select('id,radicado,subject').in('id', caseIds),
-      ownerIds.length ? client.from('profiles').select('id,name').in('id', ownerIds) : Promise.resolve({ data: [], error: null }),
-      client.from('document_versions').select('document_id,version_number,original_filename,storage_path,mime_type,size_bytes').in('document_id', documentIds).order('version_number', { ascending: false })
-    ]);
-    const relatedError = casesResult.error ?? profilesResult.error ?? versionsResult.error;
-    if (relatedError) throw relatedError;
-    const caseMap = new Map<string, { id: string; radicado: string; subject: string }>((casesResult.data ?? []).map((item) => [item.id, item as { id: string; radicado: string; subject: string }]));
-    const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
-    type VersionSummary = { document_id: string; version_number: number; original_filename: string; storage_path: string; mime_type: string | null; size_bytes: number };
-    const versionMap = new Map<string, VersionSummary>();
-    (versionsResult.data ?? []).forEach((version) => { if (!versionMap.has(version.document_id)) versionMap.set(version.document_id, version); });
-
-    return rows.map((row) => {
-      const caseItem = caseMap.get(row.case_id);
-      const version = versionMap.get(row.id);
-      return {
-        id: row.id,
-        caseId: row.case_id,
-        caseRadicado: caseItem?.radicado ?? 'Caso',
-        caseSubject: caseItem?.subject ?? '',
-        subtaskId: row.subtask_id ?? undefined,
-        commentId: row.comment_id ?? undefined,
-        name: row.name,
-        category: row.category,
-        state: row.state,
-        currentVersion: row.current_version,
-        ownerId: row.created_by ?? undefined,
-        ownerName: row.created_by ? profileMap.get(row.created_by) ?? 'Usuario' : 'Usuario',
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        date: formatDateTime(row.updated_at),
-        currentFilename: version?.original_filename ?? row.name,
-        currentStoragePath: version?.storage_path ?? '',
-        currentMimeType: version?.mime_type ?? undefined,
-        currentSizeBytes: version?.size_bytes ?? 0,
-        retentionUntil: row.retention_until ?? null,
-        legalHold: Boolean(row.legal_hold)
-      };
+    const { data, error } = await client.rpc('search_sigc_documents_v4', {
+      p_filters: {
+        caseId: filters.caseId ?? '', query: filters.query ?? '', category: filters.category ?? '', state: filters.state ?? '', clientVisibleOnly: Boolean(filters.clientVisibleOnly),
+        page: Math.max(1, filters.page ?? 1), pageSize: Math.min(100, Math.max(5, filters.pageSize ?? 25))
+      }
     });
+    if (error) throw error;
+    const raw = (data ?? {}) as Record<string, unknown>;
+    return { items: Array.isArray(raw.items) ? raw.items as SigcDocument[] : [], total: Number(raw.total ?? 0), page: Number(raw.page ?? 1), pageSize: Number(raw.pageSize ?? 25) };
   },
 
   async listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]> {
@@ -1089,6 +970,12 @@ export const supabaseSigcRepository: SigcRepository = {
       p_retention_until: input.retentionUntil || null,
       p_legal_hold: input.legalHold
     });
+    if (error) throw error;
+  },
+
+  async setDocumentClientVisibility(documentId: string, isVisible: boolean): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('set_document_client_visibility_v4', { p_document_id: documentId, p_is_visible: isVisible });
     if (error) throw error;
   },
 
@@ -1439,7 +1326,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_user_management_context');
+    const { data, error } = await client.rpc('get_user_management_context_v4');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible cargar la gestión de usuarios.');
     return data as SigcUserManagementSnapshot;
@@ -1448,7 +1335,7 @@ export const supabaseSigcRepository: SigcRepository = {
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
     const client = requireClient();
     const organizationId = await ensureOrganization();
-    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, cases] = await Promise.all([
+    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics] = await Promise.all([
       client.from('areas').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('priorities').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('case_types').select('*').eq('organization_id', organizationId).order('name'),
@@ -1466,9 +1353,9 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('reminder_rules').select('*').eq('organization_id', organizationId).order('offset_minutes', { ascending: false }),
       client.from('automation_rules').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('automation_executions').select('*').eq('organization_id', organizationId).order('started_at', { ascending: false }).limit(100),
-      client.from('cases').select('id,radicado').eq('organization_id', organizationId).is('deleted_at', null)
+      client.rpc('analyze_automation_rules_v3')
     ]);
-    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, cases];
+    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics];
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
 
@@ -1492,7 +1379,12 @@ export const supabaseSigcRepository: SigcRepository = {
     const caseTypeMap = new Map((caseTypes.data ?? []).map((row: any) => [row.id, row.name]));
     const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row]));
     const ruleMap = new Map((automationRules.data ?? []).map((row: any) => [row.id, row.name]));
-    const caseMap = new Map((cases.data ?? []).map((row: any) => [row.id, row.radicado]));
+    const executionCaseIds = [...new Set((automationExecutions.data ?? []).map((row: any) => row.case_id).filter(Boolean))] as string[];
+    const executionCases = executionCaseIds.length
+      ? await client.from('cases').select('id,radicado').eq('organization_id', organizationId).in('id', executionCaseIds)
+      : { data: [], error: null };
+    if (executionCases.error) throw executionCases.error;
+    const caseMap = new Map((executionCases.data ?? []).map((row: any) => [row.id, row.radicado]));
 
     const workflows = (caseTypes.data ?? []).map((caseType: any) => {
       const workflowStates = (caseTypeStates.data ?? [])
@@ -1570,8 +1462,13 @@ export const supabaseSigcRepository: SigcRepository = {
       automationRules: (automationRules.data ?? []).map((row: any) => ({
         id: row.id, code: row.code, name: row.name, description: row.description ?? undefined,
         triggerEvent: row.trigger_event, conditions: (row.conditions ?? []) as AutomationCondition[],
+        conditionMode: row.condition_mode === 'any' ? 'any' : 'all',
         actions: (row.actions ?? []) as AutomationAction[], stopOnError: Boolean(row.stop_on_error),
+        stopProcessing: Boolean(row.stop_processing),
         sortOrder: Number(row.sort_order ?? 0), isActive: Boolean(row.is_active),
+        lifecycleStatus: row.lifecycle_status === 'archived' ? 'archived' : row.lifecycle_status === 'draft' ? 'draft' : 'published',
+        currentVersion: Number(row.current_version ?? 1), publishedVersion: row.published_version == null ? null : Number(row.published_version),
+        publishedAt: row.published_at ?? null, archivedAt: row.archived_at ?? null,
         lastRunAt: row.last_run_at ?? undefined, runCount: Number(row.run_count ?? 0),
         maxAttempts: Number(row.max_attempts ?? 3), retryDelayMinutes: Number(row.retry_delay_minutes ?? 10)
       })),
@@ -1585,7 +1482,8 @@ export const supabaseSigcRepository: SigcRepository = {
         attemptCount: Number(row.attempt_count ?? 1), maxAttempts: Number(row.max_attempts ?? 3),
         nextRetryAt: row.next_retry_at ?? undefined, retryOfId: row.retry_of_id ?? undefined,
         startedAt: row.started_at, finishedAt: row.finished_at ?? undefined
-      }))
+      })),
+      automationDiagnostics: Array.isArray(automationDiagnostics.data) ? automationDiagnostics.data as AutomationDiagnostic[] : []
     };
   },
 
@@ -1658,6 +1556,18 @@ export const supabaseSigcRepository: SigcRepository = {
   async setMemberRole(membershipId: string, roleId: string): Promise<void> {
     const client = requireClient();
     const { error } = await client.rpc('set_organization_member_role', { p_membership_id: membershipId, p_role_id: roleId });
+    if (error) throw error;
+  },
+
+  async setMemberActive(membershipId: string, isActive: boolean): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('set_organization_member_status_v4', { p_membership_id: membershipId, p_action: isActive ? 'activate' : 'deactivate' });
+    if (error) throw error;
+  },
+
+  async removeMember(membershipId: string): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('set_organization_member_status_v4', { p_membership_id: membershipId, p_action: 'remove' });
     if (error) throw error;
   },
 
@@ -1771,33 +1681,68 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('save_automation_rule', {
+    const { error } = await client.rpc('save_automation_rule_v3', {
       p_rule_id: input.id || null,
       p_code: input.code,
       p_name: input.name,
       p_description: input.description || null,
       p_trigger_event: input.triggerEvent,
       p_conditions: input.conditions,
+      p_condition_mode: input.conditionMode,
       p_actions: input.actions,
       p_stop_on_error: input.stopOnError,
+      p_stop_processing: input.stopProcessing,
       p_sort_order: input.sortOrder,
-      p_is_active: input.isActive,
       p_max_attempts: input.maxAttempts,
       p_retry_delay_minutes: input.retryDelayMinutes
     });
     if (error) throw error;
   },
 
+  async publishAutomationRule(id: string): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('publish_automation_rule_v3', { p_rule_id: id });
+    if (error) throw error;
+  },
+
+  async archiveAutomationRule(id: string): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('archive_automation_rule_v3', { p_rule_id: id });
+    if (error) throw error;
+  },
+
+  async restoreAutomationRuleVersion(id: string, versionNumber: number): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('restore_automation_rule_version_v3', { p_rule_id: id, p_version_number: versionNumber });
+    if (error) throw error;
+  },
+
+  async listAutomationRuleVersions(id: string): Promise<AutomationRuleVersion[]> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_automation_rule_versions_v3', { p_rule_id: id });
+    if (error) throw error;
+    return Array.isArray(data) ? data as AutomationRuleVersion[] : [];
+  },
+
+  async dryRunAutomationRule(ruleId: string, caseId: string): Promise<AutomationDryRunResult> {
+    const client = requireClient();
+    const resolvedCaseId = await resolveCaseDatabaseId(caseId);
+    const { data, error } = await client.rpc('preview_automation_rule_v3', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
+    if (error) throw error;
+    if (!data || typeof data !== 'object') throw new Error('La simulación no devolvió un resultado válido.');
+    return data as AutomationDryRunResult;
+  },
+
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('set_automation_rule_active', { p_rule_id: id, p_is_active: isActive });
+    const { error } = await client.rpc('set_automation_rule_active_v3', { p_rule_id: id, p_is_active: isActive });
     if (error) throw error;
   },
 
   async runAutomationRule(ruleId: string, caseId: string): Promise<void> {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
-    const { error } = await client.rpc('run_automation_rule_test', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
+    const { error } = await client.rpc('execute_automation_rule_manual_v3', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
     if (error) throw error;
   },
 
@@ -1822,9 +1767,23 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async getDashboardAnalytics(): Promise<SigcDashboardAnalytics> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_sigc_dashboard', {});
+    const { data, error } = await client.rpc('get_sigc_dashboard_v3');
     if (error) throw error;
     return data as SigcDashboardAnalytics;
+  },
+
+  async getSidebarSummary(): Promise<SigcSidebarSummary> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_sigc_sidebar_summary_v4');
+    if (error) throw error;
+    return data as SigcSidebarSummary;
+  },
+
+  async getNotificationPage(page = 1, pageSize = 25): Promise<SigcNotificationPage> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_notification_page_v4', { p_page: Math.max(1, page), p_page_size: Math.min(100, Math.max(5, pageSize)) });
+    if (error) throw error;
+    return data as SigcNotificationPage;
   },
 
   async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
@@ -1869,43 +1828,62 @@ export const supabaseSigcRepository: SigcRepository = {
     };
   },
 
-  async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {
+  async getReport(filters: SigcReportFilters, page = filters.page ?? 1, pageSize = filters.pageSize ?? 100): Promise<SigcReportResult> {
     const client = requireClient();
     const from = new Date(`${filters.from}T00:00:00`).toISOString();
     const to = new Date(`${filters.to}T00:00:00`);
     to.setDate(to.getDate() + 1);
     const payload = {
-      stateId: filters.stateId ?? '',
-      areaId: filters.areaId ?? '',
-      ownerId: filters.ownerId ?? '',
-      caseTypeId: filters.caseTypeId ?? '',
-      priorityId: filters.priorityId ?? '',
-      overdueOnly: Boolean(filters.overdueOnly)
+      stateId: filters.stateId ?? '', areaId: filters.areaId ?? '', ownerId: filters.ownerId ?? '',
+      caseTypeId: filters.caseTypeId ?? '', priorityId: filters.priorityId ?? '', overdueOnly: Boolean(filters.overdueOnly)
     };
-    const { data, error } = await client.rpc('get_sigc_report_v2', { p_from: from, p_to: to.toISOString(), p_filters: payload });
+    const { data, error } = await client.rpc('get_sigc_report_v3', {
+      p_from: from, p_to: to.toISOString(), p_filters: payload,
+      p_page: Math.max(1, page), p_page_size: Math.min(500, Math.max(10, pageSize))
+    });
     if (error) throw error;
-    const result = (data ?? {}) as any;
-    const rows: SigcReportRow[] = (result.rows ?? []).map((row: any) => ({
-      id: row.id, radicado: row.radicado, subject: row.subject, requesterName: row.requester_name ?? '',
-      requesterCompany: row.requester_company ?? '', source: row.source ?? '', riskLevel: row.risk_level ?? undefined,
-      openedAt: row.opened_at, dueAt: row.due_at ?? null, closedAt: row.closed_at ?? null, progress: Number(row.progress ?? 0),
-      updatedAt: row.updated_at, caseType: row.case_type ?? 'Sin clasificar', state: row.state ?? 'Sin estado',
-      priority: row.priority ?? 'Sin prioridad', area: row.area ?? 'Sin área', owner: row.owner ?? 'Sin responsable',
-      overdue: Boolean(row.overdue), slaMet: row.sla_met ?? null, resolutionHours: row.resolution_hours == null ? null : Number(row.resolution_hours)
+    const result = (data ?? {}) as Record<string, any>;
+    const rows: SigcReportRow[] = (Array.isArray(result.rows) ? result.rows : []).map((row: any) => ({
+      id: row.id, radicado: row.radicado, subject: row.subject, requesterName: row.requesterName ?? row.requester_name ?? '',
+      requesterCompany: row.requesterCompany ?? row.requester_company ?? '', source: row.source ?? '', riskLevel: row.riskLevel ?? row.risk_level ?? undefined,
+      openedAt: row.openedAt ?? row.opened_at, dueAt: row.dueAt ?? row.due_at ?? null, closedAt: row.closedAt ?? row.closed_at ?? null,
+      progress: Number(row.progress ?? 0), updatedAt: row.updatedAt ?? row.updated_at,
+      caseType: row.caseType ?? row.case_type ?? 'Sin clasificar', state: row.state ?? 'Sin estado', priority: row.priority ?? 'Sin prioridad',
+      area: row.area ?? 'Sin área', owner: row.owner ?? 'Sin responsable', overdue: Boolean(row.overdue),
+      slaMet: row.slaMet ?? row.sla_met ?? null, resolutionHours: (row.resolutionHours ?? row.resolution_hours) == null ? null : Number(row.resolutionHours ?? row.resolution_hours)
     }));
     return {
-      ...result,
-      byArea: result.byArea ?? [],
-      byOwner: result.byOwner ?? [],
-      byType: result.byType ?? [],
-      byState: result.byState ?? [],
-      byPriority: result.byPriority ?? [],
-      byRisk: result.byRisk ?? [],
-      agingBuckets: result.agingBuckets ?? [],
-      slaByArea: result.slaByArea ?? [],
-      throughput: result.throughput ?? [],
-      rows
-    } as SigcReportResult;
+      organizationId: String(result.organizationId ?? ''), generatedAt: String(result.generatedAt ?? new Date().toISOString()),
+      from: String(result.from ?? filters.from), to: String(result.to ?? filters.to), summary: result.summary,
+      byArea: result.byArea ?? [], byOwner: result.byOwner ?? [], byType: result.byType ?? [], byState: result.byState ?? [],
+      byPriority: result.byPriority ?? [], byRisk: result.byRisk ?? [], agingBuckets: result.agingBuckets ?? [],
+      slaByArea: result.slaByArea ?? [], throughput: result.throughput ?? [], rows,
+      totalRows: Number(result.totalRows ?? rows.length), page: Number(result.page ?? page), pageSize: Number(result.pageSize ?? pageSize),
+      hasMore: Boolean(result.hasMore), isTruncated: false
+    };
+  },
+
+  async createReportExportJob(format: SigcReportExportFormat, filters: SigcReportFilters): Promise<SigcReportExportJob> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('create_report_export_job_v3', {
+      p_format: format, p_from: filters.from, p_to: filters.to,
+      p_filters: { stateId: filters.stateId ?? '', areaId: filters.areaId ?? '', ownerId: filters.ownerId ?? '', caseTypeId: filters.caseTypeId ?? '', priorityId: filters.priorityId ?? '', overdueOnly: Boolean(filters.overdueOnly) }
+    });
+    if (error) throw error;
+    return data as SigcReportExportJob;
+  },
+
+  async getReportExportPage(jobId: string, page: number, pageSize: number): Promise<SigcReportExportPage> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_report_export_page_v3', { p_job_id: jobId, p_page: page, p_page_size: pageSize });
+    if (error) throw error;
+    return data as SigcReportExportPage;
+  },
+
+  async completeReportExportJob(jobId: string, status: 'completed' | 'failed' | 'cancelled', errorMessage?: string): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('complete_report_export_job_v3', { p_job_id: jobId, p_status: status, p_error_message: errorMessage ?? null });
+    if (error) throw error;
   },
 
   async getSaasContext(): Promise<SigcSaasContext> {
@@ -1913,6 +1891,20 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_saas_context');
     if (error) throw error;
     return data as SigcSaasContext;
+  },
+
+  async getSecurityHealth(): Promise<SigcSecurityHealth> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_security_health_v4');
+    if (error) throw error;
+    return data as SigcSecurityHealth;
+  },
+
+  async getClientPortal(page = 1, pageSize = 10, query = ''): Promise<ClientPortalSnapshot> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_client_portal_v4', { p_page: Math.max(1, page), p_page_size: Math.min(50, Math.max(5, pageSize)), p_query: query.trim() });
+    if (error) throw error;
+    return data as ClientPortalSnapshot;
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
@@ -1941,14 +1933,20 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('update_public_intake_settings', {
+    const { error } = await client.rpc('update_public_intake_settings_v4', {
       p_enabled: input.enabled,
       p_form_title: input.formTitle,
       p_form_description: input.formDescription,
       p_confirmation_message: input.confirmationMessage,
       p_allow_attachments: input.allowAttachments,
       p_max_files: input.maxFiles,
-      p_max_file_size_bytes: input.maxFileSizeBytes
+      p_max_file_size_bytes: input.maxFileSizeBytes,
+      p_rate_limit_per_hour: input.rateLimitPerHour ?? 20,
+      p_challenge_mode: input.challengeMode ?? 'adaptive',
+      p_challenge_threshold: input.challengeThreshold ?? 5,
+      p_require_privacy_consent: input.requirePrivacyConsent ?? true,
+      p_privacy_notice_text: input.privacyNoticeText ?? 'Autorizo el tratamiento de mis datos para gestionar esta solicitud.',
+      p_privacy_policy_url: input.privacyPolicyUrl?.trim() || null
     });
     if (error) throw error;
   },
@@ -1988,7 +1986,7 @@ export const supabaseSigcRepository: SigcRepository = {
 export const supabasePublicSigcRepository: PublicSigcRepository = {
   async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_public_intake_context', {
+    const { data, error } = await client.rpc('get_public_intake_context_v4', {
       p_tenant: locator.tenant?.trim() || null,
       p_hostname: locator.hostname?.trim() || null
     });
@@ -2016,6 +2014,17 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
         maxFiles: Number(raw.intake?.maxFiles ?? 5),
         maxFileSizeBytes: Number(raw.intake?.maxFileSizeBytes ?? 26214400)
       },
+      security: {
+        rateLimitPerHour: Number(raw.security?.rateLimitPerHour ?? 20),
+        challengeMode: raw.security?.challengeMode === 'always' ? 'always' : raw.security?.challengeMode === 'off' ? 'off' : 'adaptive',
+        challengeRequired: Boolean(raw.security?.challengeRequired),
+        challenge: raw.security?.challenge ? { id: String(raw.security.challenge.id), prompt: String(raw.security.challenge.prompt), expiresAt: String(raw.security.challenge.expiresAt) } : null
+      },
+      privacy: {
+        requireConsent: Boolean(raw.privacy?.requireConsent ?? true),
+        noticeText: String(raw.privacy?.noticeText ?? 'Autorizo el tratamiento de mis datos para gestionar esta solicitud.'),
+        policyUrl: raw.privacy?.policyUrl ?? null
+      },
       caseTypes: Array.isArray(raw.caseTypes) ? raw.caseTypes.map((item: any) => ({
         id: String(item.id),
         name: String(item.name),
@@ -2027,7 +2036,7 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const client = requireClient();
-    const { data, error } = await client.rpc('submit_public_case', {
+    const { data, error } = await client.rpc('submit_public_case_v4', {
       p_tenant: input.tenant?.trim() || null,
       p_hostname: input.hostname?.trim() || null,
       p_case_type_id: input.caseTypeId,
@@ -2039,7 +2048,10 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
       p_subject: input.subject,
       p_description: input.description,
       p_website: input.website ?? null,
-      p_attachment_count: input.attachments?.length ?? 0
+      p_attachment_count: input.attachments?.length ?? 0,
+      p_privacy_consent: input.privacyConsent,
+      p_challenge_id: input.challengeId || null,
+      p_challenge_answer: input.challengeAnswer?.trim() || null
     });
     if (error) throw error;
     const created = data?.[0];

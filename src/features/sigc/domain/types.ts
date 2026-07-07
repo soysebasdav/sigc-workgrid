@@ -50,6 +50,8 @@ export interface SigcCase {
 
 export interface SigcCaseFilters {
   query?: string;
+  fromDate?: string;
+  toDate?: string;
   stateId?: string;
   areaId?: string;
   ownerId?: string;
@@ -95,11 +97,32 @@ export interface PublicIntakeSettings {
   maxFileSizeBytes: number;
 }
 
+export interface PublicIntakeChallenge {
+  id: string;
+  prompt: string;
+  expiresAt: string;
+}
+
+export interface PublicIntakeSecurity {
+  rateLimitPerHour: number;
+  challengeMode: 'off' | 'adaptive' | 'always';
+  challengeRequired: boolean;
+  challenge?: PublicIntakeChallenge | null;
+}
+
+export interface PublicIntakePrivacy {
+  requireConsent: boolean;
+  noticeText: string;
+  policyUrl?: string | null;
+}
+
 export interface PublicIntakeContext {
   organizationName: string;
   organizationSlug: string;
   branding: PublicIntakeBranding;
   intake: PublicIntakeSettings;
+  security: PublicIntakeSecurity;
+  privacy: PublicIntakePrivacy;
   caseTypes: PublicCaseTypeOption[];
 }
 
@@ -118,6 +141,9 @@ export interface PublicCaseCreateInput extends PublicIntakeLocator {
   subject: string;
   description: string;
   website?: string;
+  privacyConsent: boolean;
+  challengeId?: string;
+  challengeAnswer?: string;
   attachments?: File[];
 }
 
@@ -315,6 +341,32 @@ export interface SigcSubtaskFilters {
   query?: string;
   state?: SubtaskState | '';
   responsibleUserId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SigcSubtaskPage {
+  items: SigcSubtask[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SigcDocumentFilters {
+  caseId?: string;
+  query?: string;
+  category?: string;
+  state?: string;
+  clientVisibleOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface SigcDocumentPage {
+  items: SigcDocument[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface CreateSubtaskInput {
@@ -395,6 +447,7 @@ export interface SigcDocument {
   currentSizeBytes: number;
   retentionUntil?: string | null;
   legalHold: boolean;
+  clientVisible: boolean;
 }
 
 export interface SigcDocumentVersion {
@@ -731,6 +784,9 @@ export type AutomationAction =
   | { type: 'email_requester'; templateCode: string }
   | { type: 'suggest_close' };
 
+export type AutomationRuleStatus = 'draft' | 'published' | 'archived';
+export type AutomationConditionMode = 'all' | 'any';
+
 export interface AutomationRule {
   id: string;
   code: string;
@@ -738,14 +794,80 @@ export interface AutomationRule {
   description?: string;
   triggerEvent: string;
   conditions: AutomationCondition[];
+  conditionMode: AutomationConditionMode;
   actions: AutomationAction[];
   stopOnError: boolean;
+  stopProcessing: boolean;
   sortOrder: number;
   isActive: boolean;
+  lifecycleStatus: AutomationRuleStatus;
+  currentVersion: number;
+  publishedVersion?: number | null;
+  publishedAt?: string | null;
+  archivedAt?: string | null;
   lastRunAt?: string;
   runCount: number;
   maxAttempts: number;
   retryDelayMinutes: number;
+}
+
+export interface AutomationRuleVersion {
+  id: string;
+  ruleId: string;
+  versionNumber: number;
+  lifecycleStatus: AutomationRuleStatus;
+  name: string;
+  description?: string;
+  triggerEvent: string;
+  conditions: AutomationCondition[];
+  conditionMode: AutomationConditionMode;
+  actions: AutomationAction[];
+  stopOnError: boolean;
+  stopProcessing: boolean;
+  sortOrder: number;
+  maxAttempts: number;
+  retryDelayMinutes: number;
+  createdByName: string;
+  createdAt: string;
+  publishedAt?: string | null;
+}
+
+export interface AutomationConditionEvaluation {
+  index: number;
+  field: string;
+  operator: string;
+  expected: unknown;
+  actual: unknown;
+  matched: boolean;
+}
+
+export interface AutomationDryRunAction {
+  index: number;
+  type: AutomationAction['type'];
+  status: 'would_execute' | 'skipped' | 'blocked';
+  description: string;
+  reason?: string;
+}
+
+export interface AutomationDiagnostic {
+  id: string;
+  kind: 'cycle' | 'conflict' | 'warning';
+  severity: 'high' | 'medium' | 'low';
+  ruleIds: string[];
+  message: string;
+}
+
+export interface AutomationDryRunResult {
+  ruleId: string;
+  ruleVersion: number;
+  caseId: string;
+  caseRadicado: string;
+  matched: boolean;
+  conditionMode: AutomationConditionMode;
+  conditionResults: AutomationConditionEvaluation[];
+  actions: AutomationDryRunAction[];
+  diagnostics: AutomationDiagnostic[];
+  generatedAt: string;
 }
 
 export interface AutomationExecution {
@@ -767,6 +889,92 @@ export interface AutomationExecution {
   retryOfId?: string;
   startedAt: string;
   finishedAt?: string;
+}
+
+export interface SigcNotificationPage {
+  items: Array<{
+    id: string;
+    recipientUserId: string;
+    actorUserId: string | null;
+    caseId?: string | null;
+    type: string;
+    title: string;
+    message: string;
+    actionUrl?: string | null;
+    isRead: boolean;
+    createdAt: string;
+  }>;
+  total: number;
+  unreadTotal: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SigcSidebarSummary {
+  slaCompliancePct: number;
+  criticalCases: number;
+  overdueCases: number;
+}
+
+export interface SigcSecurityHealth {
+  organizationId: string;
+  rlsEnabledTables: number;
+  auditedTenantTables: number;
+  tablesWithoutRls: string[];
+  policyCount: number;
+  activeWorkspaceManagers: number;
+  rateLimitPerHour: number;
+  challengeMode: 'off' | 'adaptive' | 'always';
+  requirePrivacyConsent: boolean;
+  generatedAt: string;
+}
+
+export interface ClientPortalDocument {
+  id: string;
+  caseId: string;
+  name: string;
+  currentVersion: number;
+  currentFilename: string;
+  currentStoragePath: string;
+  currentMimeType?: string | null;
+  currentSizeBytes: number;
+  updatedAt: string;
+}
+
+export interface ClientPortalDelivery {
+  id: string;
+  channel: string;
+  recipient: string;
+  reference?: string | null;
+  deliveredAt: string;
+}
+
+export interface ClientPortalCase {
+  id: string;
+  radicado: string;
+  subject: string;
+  type: string;
+  state: string;
+  stateColor?: string | null;
+  priority: string;
+  priorityColor?: string | null;
+  openedAt: string;
+  dueAt?: string | null;
+  updatedAt: string;
+  progress: number;
+  documents: ClientPortalDocument[];
+  deliveries: ClientPortalDelivery[];
+}
+
+export interface ClientPortalSnapshot {
+  organizationId: string;
+  organizationName: string;
+  email: string;
+  summary: { total: number; open: number; closed: number; overdue: number };
+  items: ClientPortalCase[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface SigcUserManagementSnapshot {
@@ -791,6 +999,7 @@ export interface SigcAdminSnapshot {
   reminderRules: AdminReminderRule[];
   automationRules: AutomationRule[];
   automationExecutions: AutomationExecution[];
+  automationDiagnostics: AutomationDiagnostic[];
 }
 
 export interface SaveAdminCatalogInput {
@@ -873,8 +1082,10 @@ export interface SaveAutomationRuleInput {
   description?: string;
   triggerEvent: string;
   conditions: AutomationCondition[];
+  conditionMode: AutomationConditionMode;
   actions: AutomationAction[];
   stopOnError: boolean;
+  stopProcessing: boolean;
   sortOrder: number;
   isActive: boolean;
   maxAttempts: number;
@@ -974,6 +1185,8 @@ export interface SigcDashboardAnalytics {
   byOwner: AnalyticsValue[];
   byType: AnalyticsValue[];
   byPriority: AnalyticsValue[];
+  avgResolutionByArea: AnalyticsValue[];
+  productivityByArea: Array<AnalyticsValue & { created: number; closed: number; closureRatePct: number }>;
   criticalCases: DashboardCriticalCase[];
   myWork: DashboardWorkItem[];
   recentActivity: DashboardActivityItem[];
@@ -988,6 +1201,8 @@ export interface SigcReportFilters {
   caseTypeId?: string;
   priorityId?: string;
   overdueOnly?: boolean;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface SigcReportRow {
@@ -1038,7 +1253,33 @@ export interface SigcReportResult {
   slaByArea: Array<AnalyticsValue & { total: number; compliant: number }>;
   throughput: DashboardMonthlyPoint[];
   rows: SigcReportRow[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
   isTruncated: boolean;
+}
+
+export type SigcReportExportFormat = 'csv' | 'xlsx' | 'pdf';
+
+export interface SigcReportExportJob {
+  id: string;
+  format: SigcReportExportFormat;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  totalRows: number;
+  processedRows: number;
+  progressPct: number;
+  createdAt: string;
+  updatedAt: string;
+  errorMessage?: string | null;
+}
+
+export interface SigcReportExportPage {
+  job: SigcReportExportJob;
+  rows: SigcReportRow[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 
@@ -1163,6 +1404,12 @@ export interface UpdatePublicIntakeSettingsInput {
   allowAttachments: boolean;
   maxFiles: number;
   maxFileSizeBytes: number;
+  rateLimitPerHour?: number;
+  challengeMode?: 'off' | 'adaptive' | 'always';
+  challengeThreshold?: number;
+  requirePrivacyConsent?: boolean;
+  privacyNoticeText?: string;
+  privacyPolicyUrl?: string;
 }
 
 export interface CreateSaasOrganizationInput {

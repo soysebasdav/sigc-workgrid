@@ -18,12 +18,19 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
+  SigcSubtaskPage,
+  SigcDocumentFilters,
+  SigcDocumentPage,
   SigcSlaOverride,
   SigcCaseReview,
   SigcCaseDelivery,
   SigcCaseReminder,
   SigcAdminSnapshot,
   SigcUserManagementSnapshot,
+  SigcNotificationPage,
+  SigcSidebarSummary,
+  SigcSecurityHealth,
+  ClientPortalSnapshot,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
@@ -36,6 +43,16 @@ import type {
   AutomationRuntimeHealth
 } from '../domain/types';
 import { SIGC_DATA_CHANGED_EVENT, sigcService } from '../services/sigcService';
+import { dataMode, supabase } from '../../../lib/supabaseClient';
+
+export function useDebouncedValue<T>(value: T, delayMs = 350): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 type AsyncState<T> = {
   data: T;
@@ -92,10 +109,6 @@ function useSigcQuery<T>(
   return { ...state, reload };
 }
 
-export function useSigcCases(enabled = true): AsyncState<SigcCase[]> {
-  return useSigcQuery('all-cases', [], () => sigcService.listCases(), true, enabled);
-}
-
 export function useSigcCaseSearch(filters: SigcCaseFilters): AsyncState<SigcCasePage> {
   const key = useMemo(() => JSON.stringify(filters), [filters]);
   return useSigcQuery(key, { items: [], total: 0, page: filters.page ?? 1, pageSize: filters.pageSize ?? 10 }, () => sigcService.searchCases(filters));
@@ -149,6 +162,11 @@ export function useSigcSubtasks(filters: SigcSubtaskFilters = {}): AsyncState<Si
   return useSigcQuery(key, [], () => sigcService.listSubtasks(filters));
 }
 
+export function useSigcSubtaskSearch(filters: SigcSubtaskFilters = {}): AsyncState<SigcSubtaskPage> {
+  const key = useMemo(() => `subtasks-page:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, { items: [], total: 0, page: filters.page ?? 1, pageSize: filters.pageSize ?? 25 }, () => sigcService.searchSubtasks(filters));
+}
+
 export function useCaseComments(caseId: string | undefined): AsyncState<SigcComment[]> {
   return useSigcQuery(
     `comments:${caseId ?? 'missing'}`,
@@ -159,6 +177,11 @@ export function useCaseComments(caseId: string | undefined): AsyncState<SigcComm
 
 export function useSigcDocuments(caseId?: string): AsyncState<SigcDocument[]> {
   return useSigcQuery(`documents:${caseId ?? 'all'}`, [], () => sigcService.getDocuments(caseId));
+}
+
+export function useSigcDocumentSearch(filters: SigcDocumentFilters = {}): AsyncState<SigcDocumentPage> {
+  const key = useMemo(() => `documents-page:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, { items: [], total: 0, page: filters.page ?? 1, pageSize: filters.pageSize ?? 25 }, () => sigcService.searchDocuments(filters));
 }
 
 export function useDocumentVersions(documentId?: string): AsyncState<SigcDocumentVersion[]> {
@@ -228,8 +251,39 @@ export function useAutomationRuntimeHealth(enabled = true): AsyncState<Automatio
 }
 
 
+export function useSigcSidebarSummary(enabled = true): AsyncState<SigcSidebarSummary | null> {
+  return useSigcQuery('sidebar-summary-v4', null, () => sigcService.getSidebarSummary(), true, enabled);
+}
+
+export function useSigcNotificationPage(page = 1, pageSize = 25): AsyncState<SigcNotificationPage> {
+  return useSigcQuery(`notification-page:${page}:${pageSize}`, { items: [], total: 0, unreadTotal: 0, page, pageSize }, () => sigcService.getNotificationPage(page, pageSize));
+}
+
 export function useSigcDashboard(enabled = true): AsyncState<SigcDashboardAnalytics | null> {
-  return useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics(), true, enabled);
+  const state = useSigcQuery('dashboard-analytics', null, () => sigcService.getDashboardAnalytics(), true, enabled);
+  const organizationId = state.data?.organizationId;
+
+  useEffect(() => {
+    if (!enabled || dataMode !== 'supabase' || !supabase || !organizationId) return;
+    let timer: number | undefined;
+    const scheduleReload = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => state.reload(), 500);
+    };
+    const channel = supabase
+      .channel(`sigc-dashboard:${organizationId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cases', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_assignments', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'case_subtasks', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_events', filter: `organization_id=eq.${organizationId}` }, scheduleReload)
+      .subscribe();
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [enabled, organizationId, state.reload]);
+
+  return state;
 }
 
 export function useSigcAgenda(from: string, to: string, enabled = true): AsyncState<SigcAgendaSnapshot | null> {
@@ -242,9 +296,9 @@ export function useSigcAgenda(from: string, to: string, enabled = true): AsyncSt
   );
 }
 
-export function useSigcReport(filters: SigcReportFilters): AsyncState<SigcReportResult | null> {
+export function useSigcReport(filters: SigcReportFilters, enabled = true): AsyncState<SigcReportResult | null> {
   const key = useMemo(() => `report:${JSON.stringify(filters)}`, [filters]);
-  return useSigcQuery(key, null, () => sigcService.getReport(filters));
+  return useSigcQuery(key, null, () => sigcService.getReport(filters), true, enabled);
 }
 
 export function useSigcSaasContext(): AsyncState<SigcSaasContext | null> {
@@ -253,6 +307,15 @@ export function useSigcSaasContext(): AsyncState<SigcSaasContext | null> {
 
 export function useSigcAuthorizationContext(): AsyncState<SigcAuthorizationContext | null> {
   return useSigcQuery('authorization-context', null, () => sigcService.getAuthorizationContext());
+}
+
+export function useSigcSecurityHealth(enabled = true): AsyncState<SigcSecurityHealth | null> {
+  return useSigcQuery('security-health-v4', null, () => sigcService.getSecurityHealth(), true, enabled);
+}
+
+export function useClientPortal(page = 1, pageSize = 10, query = '', enabled = true): AsyncState<ClientPortalSnapshot | null> {
+  const key = useMemo(() => `client-portal:${page}:${pageSize}:${query}`, [page, pageSize, query]);
+  return useSigcQuery(key, null, () => sigcService.getClientPortal(page, pageSize, query), true, enabled);
 }
 
 export function useOrganizationInvitation(token: string | undefined): AsyncState<PublicOrganizationInvitation | null> {

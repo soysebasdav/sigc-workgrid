@@ -5,10 +5,13 @@ import { nowISO } from '../utils/dates';
 import { dataMode, isSupabaseConfigured, supabase } from '../lib/supabaseClient';
 import {
   getCurrentSession,
+  getUnreadNotificationCount,
   loadSupabaseState,
   signInWithPassword,
   signOut,
-  updateAuthUser
+  updateAuthUser,
+  requestPasswordReset as requestSupabasePasswordReset,
+  completePasswordRecovery as completeSupabasePasswordRecovery
 } from '../lib/supabaseRepository';
 
 type Mutator = (state: AppState) => AppState;
@@ -28,9 +31,13 @@ interface AppContextValue {
   markAllNotificationsRead: () => Promise<void>;
   updateProfile: (values: { name: string; email: string; password?: string }) => Promise<void>;
   updateSettings: (values: { inactivityTimeoutMinutes: number }) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  completePasswordRecovery: (password: string) => Promise<void>;
+  isPasswordRecovery: boolean;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
+const PASSWORD_RECOVERY_SESSION_KEY = 'sigc.password-recovery-active';
 const EMPTY_REMOTE_STATE: AppState = {
   users: [],
   notifications: [],
@@ -62,6 +69,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const runtimeMode = dataMode as RuntimeMode;
   const [state, setState] = useState<AppState>(() => (runtimeMode === 'supabase' ? EMPTY_REMOTE_STATE : loadState()));
   const [isLoading, setIsLoading] = useState(runtimeMode === 'supabase');
+  const [remoteUnreadTotal, setRemoteUnreadTotal] = useState(0);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(() => runtimeMode === 'supabase' && window.sessionStorage.getItem(PASSWORD_RECOVERY_SESSION_KEY) === '1');
 
   const currentUser = useMemo(
     () => state.users.find((user) => user.id === state.currentUserId) ?? null,
@@ -90,10 +99,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         if (!session?.user) {
           setState(EMPTY_REMOTE_STATE);
+          setRemoteUnreadTotal(0);
+          setIsPasswordRecovery(false);
+          window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
           return;
         }
-        const next = await loadSupabaseState(session.user.id);
-        if (mounted) setState(next);
+        const [next, unreadTotal] = await Promise.all([loadSupabaseState(session.user.id), getUnreadNotificationCount(session.user.id)]);
+        if (mounted) { setState(next); setRemoteUnreadTotal(unreadTotal); }
       } catch (error) {
         console.error('No fue posible cargar estado desde Supabase:', error);
         if (mounted) setState(EMPTY_REMOTE_STATE);
@@ -104,11 +116,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     void bootSupabase();
 
-    const subscription = supabase?.auth.onAuthStateChange((_event, session) => {
+    const subscription = supabase?.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (!session?.user) {
         setState(EMPTY_REMOTE_STATE);
+        setRemoteUnreadTotal(0);
+        setIsPasswordRecovery(false);
+        window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
         setIsLoading(false);
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true);
+        window.sessionStorage.setItem(PASSWORD_RECOVERY_SESSION_KEY, '1');
+      }
+      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        setIsLoading(true);
+        void Promise.all([loadSupabaseState(session.user.id), getUnreadNotificationCount(session.user.id)])
+          .then(([next, unreadTotal]) => { if (mounted) { setState(next); setRemoteUnreadTotal(unreadTotal); } })
+          .catch((authError) => console.error('No fue posible actualizar la sesión de autenticación:', authError))
+          .finally(() => { if (mounted) setIsLoading(false); });
       }
     });
 
@@ -125,14 +152,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const channel = realtimeClient
       .channel(`sigc-notifications-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_user_id=eq.${userId}` }, (payload) => {
+        const oldRow = (payload.old ?? {}) as Record<string, unknown>;
+        const newRow = (payload.new ?? {}) as Record<string, unknown>;
+        const wasUnread = payload.eventType !== 'INSERT' && oldRow.is_read === false;
+        const isUnread = payload.eventType !== 'DELETE' && newRow.is_read === false;
+        if (wasUnread !== isUnread) setRemoteUnreadTotal((current) => Math.max(0, current + (isUnread ? 1 : -1)));
         setState((previous) => {
           if (payload.eventType === 'DELETE') {
-            const deletedId = String((payload.old as Record<string, unknown>)?.id ?? '');
+            const deletedId = String(oldRow.id ?? '');
             return { ...previous, notifications: previous.notifications.filter((notification) => notification.id !== deletedId) };
           }
-          const notification = mapRealtimeNotification(payload.new as Record<string, unknown>);
+          const notification = mapRealtimeNotification(newRow);
           const withoutCurrent = previous.notifications.filter((item) => item.id !== notification.id);
-          return { ...previous, notifications: [notification, ...withoutCurrent].slice(0, 250) };
+          return { ...previous, notifications: [notification, ...withoutCurrent].slice(0, 50) };
         });
       })
       .subscribe();
@@ -149,10 +181,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const unreadNotifications = useMemo(() => {
     if (!currentUser) return 0;
+    if (runtimeMode === 'supabase') return remoteUnreadTotal;
     return state.notifications.filter(
       (notification) => notification.recipientUserId === currentUser.id && !notification.isRead
     ).length;
-  }, [currentUser, state.notifications]);
+  }, [currentUser, remoteUnreadTotal, runtimeMode, state.notifications]);
 
   async function login(email: string, password: string): Promise<boolean> {
     if (runtimeMode === 'supabase') {
@@ -160,7 +193,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const userId = await signInWithPassword(normalizeEmail(email), password);
         if (!userId) return false;
-        setState(await loadSupabaseState(userId));
+        const [next, unreadTotal] = await Promise.all([loadSupabaseState(userId), getUnreadNotificationCount(userId)]);
+        setState(next);
+        setRemoteUnreadTotal(unreadTotal);
+        setIsPasswordRecovery(false);
+        window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
         return true;
       } catch (error) {
         console.error('Error de login Supabase:', error);
@@ -181,6 +218,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (runtimeMode === 'supabase') {
       await signOut();
       setState(EMPTY_REMOTE_STATE);
+      setRemoteUnreadTotal(0);
+      setIsPasswordRecovery(false);
+      window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
       return;
     }
     commit((previous) => ({ ...previous, currentUserId: null }));
@@ -219,6 +259,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('id', notificationId)
         .eq('recipient_user_id', currentUser?.id ?? '');
       if (error) throw error;
+      const wasUnread = state.notifications.some((notification) => notification.id === notificationId && !notification.isRead);
+      if (wasUnread) setRemoteUnreadTotal((current) => Math.max(0, current - 1));
       setState((previous) => ({ ...previous, notifications: previous.notifications.map((notification) => notification.id === notificationId ? { ...notification, isRead: true } : notification) }));
       return;
     }
@@ -243,6 +285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (state.settings.organizationId) query = query.eq('organization_id', state.settings.organizationId);
       const { error } = await query;
       if (error) throw error;
+      setRemoteUnreadTotal(0);
       setState((previous) => ({ ...previous, notifications: previous.notifications.map((notification) => notification.recipientUserId === currentUser.id ? { ...notification, isRead: true } : notification) }));
       return;
     }
@@ -309,6 +352,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }
 
+  async function requestPasswordReset(email: string): Promise<void> {
+    if (runtimeMode !== 'supabase') throw new Error('La recuperación de contraseña solo está disponible con Supabase Auth.');
+    const redirectTo = `${window.location.origin}/reset-password`;
+    await requestSupabasePasswordReset(normalizeEmail(email), redirectTo);
+  }
+
+  async function completePasswordRecovery(password: string): Promise<void> {
+    if (runtimeMode !== 'supabase') throw new Error('La recuperación de contraseña solo está disponible con Supabase Auth.');
+    if (!isPasswordRecovery) throw new Error('La sesión actual no proviene de un enlace de recuperación válido.');
+    await completeSupabasePasswordRecovery(password);
+    setIsPasswordRecovery(false);
+    window.sessionStorage.removeItem(PASSWORD_RECOVERY_SESSION_KEY);
+  }
+
   async function resetDemoData(): Promise<void> {
     if (runtimeMode === 'supabase') {
       await reloadSupabaseState(currentUser?.id ?? null);
@@ -330,7 +387,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markNotificationRead,
     markAllNotificationsRead,
     updateProfile,
-    updateSettings
+    updateSettings,
+    requestPasswordReset,
+    completePasswordRecovery,
+    isPasswordRecovery
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

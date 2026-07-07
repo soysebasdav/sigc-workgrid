@@ -11,6 +11,7 @@ import { ProfilePage } from './features/profile/ProfilePage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { UsersPage } from './features/users/UsersPage';
 import { ClientObservability, SigcErrorBoundary } from './features/sigc/components/SaasRuntime';
+import { ClientPortalPage, ForgotPasswordPage, ResetPasswordPage } from './features/sigc/components/Phase1011Product';
 import {
   BoardPage,
   CaseDetailPage,
@@ -40,6 +41,7 @@ function LazyRoute({ children }: { children: ReactNode }) {
 function HomeRedirect() {
   const { isLoading, can, canAny } = useAuthorization();
   if (isLoading) return <main className="login-workgrid"><section className="login-card card"><strong>Resolviendo acceso...</strong></section></main>;
+  if (can(PERMISSIONS.clientPortal)) return <Navigate to="/portal" replace />;
   if (can(PERMISSIONS.reportsView)) return <Navigate to="/dashboard" replace />;
   if (canAny(CASE_READ_PERMISSIONS)) return <Navigate to="/cases" replace />;
   if (can(PERMISSIONS.caseCreate)) return <Navigate to="/manual-case" replace />;
@@ -51,6 +53,8 @@ function HomeRedirect() {
 
 const router = createBrowserRouter([
   { path: '/login', element: <SigcLoginPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   { path: '/radicar', element: <PublicFormPage /> },
   { path: '/radicar/:tenant', element: <PublicFormPage /> },
   { path: '/casos', element: <PublicFormPage /> },
@@ -65,6 +69,10 @@ const router = createBrowserRouter([
       {
         element: <PermissionRoute anyOf={[PERMISSIONS.reportsView]} />,
         children: [{ path: 'dashboard', element: <LazyRoute><AnalyticsDashboardPage /></LazyRoute> }]
+      },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.clientPortal]} />,
+        children: [{ path: 'portal', element: <ClientPortalPage /> }]
       },
       {
         element: <PermissionRoute anyOf={CASE_READ_PERMISSIONS} />,
@@ -103,10 +111,11 @@ const router = createBrowserRouter([
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.adminManageConfiguration]} />,
-        children: [
-          { path: 'settings', element: <SettingsPage /> },
-          { path: 'admin', element: <LazyRoute><AdminConfigurationPage /></LazyRoute> }
-        ]
+        children: [{ path: 'settings', element: <SettingsPage /> }]
+      },
+      {
+        element: <PermissionRoute anyOf={[PERMISSIONS.adminManageConfiguration, PERMISSIONS.automationView, PERMISSIONS.automationManage]} />,
+        children: [{ path: 'admin', element: <LazyRoute><AdminConfigurationPage /></LazyRoute> }]
       }
     ]
   },

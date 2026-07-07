@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Check, LoaderCircle, Paperclip, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext, SigcAssignment, SigcCase } from '../domain/types';
 import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
@@ -23,11 +23,13 @@ function formatFileSize(bytes: number): string {
 export function PublicCaseForm({
   context,
   tenant,
-  hostname
+  hostname,
+  onSecurityRefresh
 }: {
   context: PublicIntakeContext;
   tenant?: string;
   hostname?: string;
+  onSecurityRefresh?: () => void;
 }) {
   const caseTypes = context.caseTypes;
   const [values, setValues] = useState({
@@ -42,6 +44,8 @@ export function PublicCaseForm({
     website: ''
   });
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [challengeAnswer, setChallengeAnswer] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [created, setCreated] = useState<{
@@ -52,6 +56,10 @@ export function PublicCaseForm({
     attachmentSessionFinalized: boolean;
     attachmentFinalizeError?: string;
   } | null>(null);
+
+  useEffect(() => {
+    setChallengeAnswer('');
+  }, [context.security.challenge?.id]);
 
   function setField(field: keyof typeof values, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -93,6 +101,9 @@ export function PublicCaseForm({
         ...values,
         tenant,
         hostname,
+        privacyConsent,
+        challengeId: context.security.challenge?.id,
+        challengeAnswer: challengeAnswer.trim() || undefined,
         attachments
       });
       setCreated({
@@ -108,8 +119,13 @@ export function PublicCaseForm({
         caseTypeId: '', subject: '', description: '', website: ''
       });
       setAttachments([]);
+      setPrivacyConsent(false);
+      setChallengeAnswer('');
+      onSecurityRefresh?.();
     } catch (error) {
-      setSubmitError(errorMessage(error));
+      const message = errorMessage(error);
+      setSubmitError(message);
+      if (/verificaci[oó]n antiabuso|l[ií]mite temporal/i.test(message)) onSecurityRefresh?.();
     } finally {
       setSubmitting(false);
     }
@@ -158,9 +174,24 @@ export function PublicCaseForm({
         ) : (
           <div className="upload-zone wide phase-note"><strong>Adjuntos no habilitados</strong><span>Esta organización no recibe archivos desde el formulario público.</span></div>
         )}
+
+        {context.security.challengeRequired && context.security.challenge ? (
+          <label className="field-label wide public-security-challenge">
+            Verificación antiabuso *
+            <span className="muted">{context.security.challenge.prompt}</span>
+            <input className="field" value={challengeAnswer} onChange={(event) => setChallengeAnswer(event.target.value)} required autoComplete="off" inputMode="numeric" />
+          </label>
+        ) : null}
+
+        {context.privacy.requireConsent ? (
+          <label className="public-privacy-consent wide">
+            <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required />
+            <span>{context.privacy.noticeText}{context.privacy.policyUrl ? <> <a href={context.privacy.policyUrl} target="_blank" rel="noreferrer">Consultar política de privacidad</a>.</> : null}</span>
+          </label>
+        ) : null}
       </div>
       {submitError ? <div className="alert danger">{submitError}</div> : null}
-      <button className="btn btn-primary full" type="submit" disabled={isSubmitting || !caseTypes.length}>
+      <button className="btn btn-primary full" type="submit" disabled={isSubmitting || !caseTypes.length || (context.privacy.requireConsent && !privacyConsent)}>
         {isSubmitting ? <><LoaderCircle size={17} className="spin" /> Radicando...</> : 'Enviar solicitud'}
       </button>
       {created ? (

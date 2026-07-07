@@ -147,6 +147,8 @@ export interface Database {
         is_active: boolean;
         joined_at: string;
         updated_at: string;
+        removed_at: string | null;
+        removed_by: string | null;
       }>;
 
       areas: TableDef<OrganizationScoped & {
@@ -316,6 +318,7 @@ export interface Database {
         deleted_at: string | null;
         retention_until: string | null;
         legal_hold: boolean;
+        client_visible: boolean;
       }>;
 
       document_versions: TableDef<{
@@ -332,6 +335,59 @@ export interface Database {
         change_notes: string | null;
         uploaded_by: string | null;
         created_at: string;
+      }>;
+
+      client_case_access: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string;
+        user_id: string;
+        created_by: string | null;
+        created_at: string;
+      }>;
+
+      public_intake_security: TableDef<{
+        organization_id: string;
+        rate_limit_per_hour: number;
+        challenge_mode: 'off' | 'adaptive' | 'always';
+        challenge_threshold: number;
+        require_privacy_consent: boolean;
+        privacy_notice_text: string;
+        privacy_policy_url: string | null;
+        updated_by: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      public_intake_challenges: TableDef<{
+        id: string;
+        organization_id: string;
+        ip_hash: string;
+        prompt: string;
+        answer_hash: string;
+        expires_at: string;
+        used_at: string | null;
+        created_at: string;
+      }>;
+
+      public_submission_events: TableDef<{
+        id: number;
+        organization_id: string;
+        case_id: string | null;
+        ip_hash: string;
+        created_at: string;
+      }>;
+
+      public_submission_consents: TableDef<{
+        id: number;
+        organization_id: string;
+        case_id: string;
+        requester_email: string | null;
+        consented_at: string;
+        notice_text: string;
+        policy_url: string | null;
+        ip_hash: string;
+        user_agent_hash: string | null;
       }>;
 
       public_case_upload_sessions: TableDef<{
@@ -439,16 +495,62 @@ export interface Database {
         description: string | null;
         trigger_event: string;
         conditions: Json;
+        condition_mode: 'all' | 'any';
         actions: Json;
         stop_on_error: boolean;
+        stop_processing: boolean;
         sort_order: number;
         is_active: boolean;
+        lifecycle_status: 'draft' | 'published' | 'archived';
+        current_version: number;
+        published_version: number | null;
+        published_at: string | null;
+        archived_at: string | null;
+        archived_by: string | null;
         last_run_at: string | null;
         run_count: number;
         max_attempts: number;
         retry_delay_minutes: number;
         created_at: string;
         updated_at: string;
+      }>;
+
+      automation_rule_versions: TableDef<{
+        id: string;
+        organization_id: string;
+        rule_id: string;
+        version_number: number;
+        lifecycle_status: 'draft' | 'published' | 'archived';
+        snapshot: Json;
+        created_by: string | null;
+        created_at: string;
+        published_at: string | null;
+      }>;
+
+      automation_execution_keys: TableDef<{
+        id: string;
+        organization_id: string;
+        rule_id: string;
+        case_id: string;
+        event_key: string;
+        created_at: string;
+      }>;
+
+      report_export_jobs: TableDef<{
+        id: string;
+        organization_id: string;
+        requested_by: string;
+        format: 'csv' | 'xlsx' | 'pdf';
+        from_date: string;
+        to_date: string;
+        filters: Json;
+        status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+        total_rows: number;
+        processed_rows: number;
+        error_message: string | null;
+        created_at: string;
+        updated_at: string;
+        completed_at: string | null;
       }>;
 
       automation_executions: TableDef<{
@@ -813,6 +915,44 @@ export interface Database {
       queue_test_email_v2: { Args: { p_recipient_email: string; p_template_id?: string | null; p_subject?: string; p_body_text?: string; p_body_html?: string | null; p_case_id?: string | null }; Returns: string };
       save_reminder_rule_v2: { Args: { p_rule_id?: string | null; p_code?: string | null; p_name?: string | null; p_trigger_kind?: string; p_offset_minutes?: number; p_include_managers?: boolean; p_message_template?: string; p_email_template_code?: string | null; p_is_active?: boolean }; Returns: undefined };
       process_sigc_runtime_v2: { Args: { p_batch_size?: number }; Returns: Json };
+
+      search_sigc_cases_v3: { Args: { p_filters?: Json }; Returns: Json };
+      analyze_automation_rules_v3: { Args: Record<PropertyKey, never>; Returns: Json };
+      save_automation_rule_v3: { Args: { p_rule_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_trigger_event?: string | null; p_conditions?: Json; p_condition_mode?: string; p_actions?: Json; p_stop_on_error?: boolean; p_stop_processing?: boolean; p_sort_order?: number; p_max_attempts?: number; p_retry_delay_minutes?: number }; Returns: string };
+      publish_automation_rule_v3: { Args: { p_rule_id: string }; Returns: undefined };
+      archive_automation_rule_v3: { Args: { p_rule_id: string }; Returns: undefined };
+      restore_automation_rule_version_v3: { Args: { p_rule_id: string; p_version_number: number }; Returns: undefined };
+      get_automation_rule_versions_v3: { Args: { p_rule_id: string }; Returns: Json };
+      preview_automation_rule_v3: { Args: { p_rule_id: string; p_case_id: string }; Returns: Json };
+      set_automation_rule_active_v3: { Args: { p_rule_id: string; p_is_active: boolean }; Returns: undefined };
+      execute_automation_rule_manual_v3: { Args: { p_rule_id: string; p_case_id: string }; Returns: undefined };
+      process_automation_schedules_v3: { Args: { p_batch_size?: number }; Returns: Json };
+      get_sigc_dashboard_v3: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_sigc_report_v3: { Args: { p_from: string; p_to: string; p_filters?: Json; p_page?: number; p_page_size?: number }; Returns: Json };
+      create_report_export_job_v3: { Args: { p_format: string; p_from: string; p_to: string; p_filters?: Json }; Returns: Json };
+      get_report_export_page_v3: { Args: { p_job_id: string; p_page: number; p_page_size: number }; Returns: Json };
+      complete_report_export_job_v3: { Args: { p_job_id: string; p_status: string; p_error_message?: string | null }; Returns: undefined };
+
+      get_public_intake_context_v4: { Args: { p_tenant?: string | null; p_hostname?: string | null }; Returns: Json | null };
+      submit_public_case_v4: {
+        Args: {
+          p_tenant: string | null; p_hostname: string | null; p_case_type_id: string; p_requester_name: string;
+          p_requester_company: string; p_requester_document: string; p_requester_email: string; p_requester_phone: string;
+          p_subject: string; p_description: string; p_website?: string | null; p_attachment_count?: number;
+          p_privacy_consent?: boolean; p_challenge_id?: string | null; p_challenge_answer?: string | null;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null; upload_token: string | null; upload_path_prefix: string | null; upload_expires_at: string | null; max_files: number; max_file_size_bytes: number }>;
+      };
+      update_public_intake_settings_v4: { Args: { p_enabled: boolean; p_form_title: string; p_form_description: string; p_confirmation_message: string; p_allow_attachments: boolean; p_max_files: number; p_max_file_size_bytes: number; p_rate_limit_per_hour?: number; p_challenge_mode?: string; p_challenge_threshold?: number; p_require_privacy_consent?: boolean; p_privacy_notice_text?: string; p_privacy_policy_url?: string | null }; Returns: undefined };
+      set_organization_member_status_v4: { Args: { p_membership_id: string; p_action: string }; Returns: undefined };
+      get_user_management_context_v4: { Args: Record<PropertyKey, never>; Returns: Json };
+      set_document_client_visibility_v4: { Args: { p_document_id: string; p_is_visible: boolean }; Returns: undefined };
+      get_client_portal_v4: { Args: { p_page?: number; p_page_size?: number; p_query?: string }; Returns: Json };
+      search_sigc_subtasks_v4: { Args: { p_filters?: Json }; Returns: Json };
+      search_sigc_documents_v4: { Args: { p_filters?: Json }; Returns: Json };
+      get_notification_page_v4: { Args: { p_page?: number; p_page_size?: number }; Returns: Json };
+      get_sigc_sidebar_summary_v4: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_security_health_v4: { Args: Record<PropertyKey, never>; Returns: Json };
 
       calculate_sla_due_at: {
         Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };

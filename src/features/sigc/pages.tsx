@@ -43,7 +43,7 @@ import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersi
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
 import { DocumentHistoryModal } from './components/DocumentHistoryModal';
 import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
-import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard, usePublicIntakeContext, useWorkflowBoard } from './hooks/useSigcData';
+import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useDebouncedValue, useSigcCase, useSigcCaseSearch, useSigcCatalogs, useSigcDocumentSearch, useSigcMembers, useSigcSidebarSummary, useSigcSubtaskSearch, usePublicIntakeContext, useWorkflowBoard } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
 import {
   adminModules,
@@ -70,7 +70,6 @@ export function SigcShell() {
   const [topSearch, setTopSearch] = useState('');
   const navigate = useNavigate();
   const { context: saasContext, style: saasStyle } = useSaasTheme();
-  const { data: sigcCases, source: sigcSource, warning: sigcWarning } = useSigcCases(canReadCases);
 
   if (!currentUser) {
     if (isLoading) {
@@ -98,7 +97,15 @@ export function SigcShell() {
   }
 
   const context = {
-    openDrawer: (id: string) => setDrawerCase(sigcCases.find((item) => item.id === id || item.radicado === id) ?? sigcCases[0] ?? null),
+    openDrawer: async (id: string) => {
+      if (!id) return;
+      try {
+        const result = await sigcService.getCase(id);
+        setDrawerCase(result.data);
+      } catch (drawerError) {
+        showToast(drawerError instanceof Error ? drawerError.message : 'No fue posible abrir la vista rápida.');
+      }
+    },
     showToast
   };
 
@@ -126,8 +133,8 @@ export function SigcShell() {
               }}
             />
           </div>
-          <button className="btn btn-white topbar-secondary" onClick={() => context.openDrawer(sigcCases.find((item) => item.priority === 'Crítica')?.id ?? sigcCases[0]?.id ?? '')}>
-            <Zap size={17} /> Vista rápida
+          <button className="btn btn-white topbar-secondary" onClick={() => navigate('/cases?overdue=1')}>
+            <Zap size={17} /> Vencidos
           </button>
         </> : <div className="search-box" aria-hidden="true" />}
         {can(PERMISSIONS.caseCreate) ? <Link className="btn btn-primary" to="/manual-case">
@@ -142,7 +149,7 @@ export function SigcShell() {
         <div className="topbar-user">
           <div>
             <strong>{currentUser.name}</strong>
-            <span title={sigcWarning ?? undefined}>{roleName} · {saasContext?.activeOrganization.name ?? (sigcSource === 'supabase' ? 'Datos reales' : 'Demo')}</span>
+            <span>{roleName} · {saasContext?.activeOrganization.name ?? (dataMode === 'supabase' ? 'Datos reales' : 'Demo')}</span>
           </div>
           <div className="avatar">{initials(currentUser.name)}</div>
         </div>
@@ -215,6 +222,7 @@ export function SigcLoginPage() {
           </label>
           {error ? <div className="alert danger">{error}</div> : null}
           <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading}>{isSubmitting || isLoading ? 'Validando...' : 'Entrar al SIGC'}</button>
+          {dataMode === 'supabase' ? <Link className="login-forgot-link" to="/forgot-password">Olvidé mi contraseña</Link> : null}
         </form>
         {dataMode === 'local' ? (
           <div className="demo-credentials">
@@ -236,16 +244,19 @@ export function CasesPage() {
   const { data: members } = useSigcMembers();
   const [filters, setFilters] = useState<SigcCaseFilters>({
     query: searchParams.get('q') ?? '',
+    fromDate: '',
+    toDate: '',
     page: 1,
     pageSize: 10
   });
+  const debouncedQuery = useDebouncedValue(filters.query ?? '', 400);
 
   useEffect(() => {
     const query = searchParams.get('q') ?? '';
     setFilters((current) => current.query === query ? current : { ...current, query, page: 1 });
   }, [searchParams]);
 
-  const activeFilters = useMemo(() => ({ ...filters }), [filters]);
+  const activeFilters = useMemo(() => ({ ...filters, query: debouncedQuery }), [filters, debouncedQuery]);
   const { data: result, isLoading, source, warning, error } = useSigcCaseSearch(activeFilters);
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
 
@@ -254,7 +265,7 @@ export function CasesPage() {
   }
 
   function clearFilters() {
-    setFilters({ query: '', page: 1, pageSize: 10 });
+    setFilters({ query: '', fromDate: '', toDate: '', page: 1, pageSize: 10 });
   }
 
   return (
@@ -277,6 +288,8 @@ export function CasesPage() {
           <select className="field" value={filters.ownerId ?? ''} onChange={(event) => setFilter('ownerId', event.target.value || undefined)}><option value="">Todos los responsables</option>{members.map((item) => <option value={item.userId} key={item.userId}>{item.name}</option>)}</select>
           <select className="field" value={filters.caseTypeId ?? ''} onChange={(event) => setFilter('caseTypeId', event.target.value || undefined)}><option value="">Todos los tipos</option>{catalogs?.caseTypes.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
           <select className="field" value={filters.priorityId ?? ''} onChange={(event) => setFilter('priorityId', event.target.value || undefined)}><option value="">Todas las prioridades</option>{catalogs?.priorities.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select>
+          <label className="compact-date-filter"><span>Desde</span><input className="field" type="date" value={filters.fromDate ?? ''} max={filters.toDate || undefined} onChange={(event) => setFilter('fromDate', event.target.value || undefined)} /></label>
+          <label className="compact-date-filter"><span>Hasta</span><input className="field" type="date" value={filters.toDate ?? ''} min={filters.fromDate || undefined} onChange={(event) => setFilter('toDate', event.target.value || undefined)} /></label>
           <button className={`btn ${filters.overdueOnly ? 'btn-primary' : 'btn-soft'}`} onClick={() => setFilters((current) => ({ ...current, overdueOnly: !current.overdueOnly, upcomingOnly: false, page: 1 }))}>Vencidos</button>
           <button className={`btn ${filters.upcomingOnly ? 'btn-primary' : 'btn-white'}`} onClick={() => setFilters((current) => ({ ...current, upcomingOnly: !current.upcomingOnly, overdueOnly: false, page: 1 }))}>Próximos 72 h</button>
           <button className="btn btn-white" onClick={clearFilters}>Limpiar</button>
@@ -300,11 +313,13 @@ export function CaseDetailPage() {
   const { showToast } = useSigcActions();
   const { can } = useAuthorization();
   const { data: item, isLoading, source, warning, error } = useSigcCase(caseId);
-  const resolvedCaseId = item?.databaseId ?? caseId;
+  const resolvedCaseId = item?.databaseId;
   const { data: assignments } = useCaseAssignments(resolvedCaseId);
-  const { data: caseSubtasks } = useSigcSubtasks({ caseId: resolvedCaseId });
+  const { data: caseSubtaskPage } = useSigcSubtaskSearch({ caseId: resolvedCaseId, page: 1, pageSize: 50 });
+  const caseSubtasks = caseSubtaskPage.items;
   const { data: comments } = useCaseComments(resolvedCaseId);
-  const { data: caseDocuments } = useSigcDocuments(resolvedCaseId);
+  const { data: caseDocumentPage } = useSigcDocumentSearch({ caseId: resolvedCaseId, page: 1, pageSize: 6 });
+  const caseDocuments = caseDocumentPage.items;
   const [timelinePageNumber, setTimelinePageNumber] = useState(1);
   const { data: timelinePage } = useCaseTimeline(resolvedCaseId, timelinePageNumber, 100);
   const timelineEvents = timelinePage.items;
@@ -312,7 +327,6 @@ export function CaseDetailPage() {
   const { data: reviews } = useCaseReviews(resolvedCaseId);
   const { data: deliveries } = useCaseDeliveries(resolvedCaseId);
   const { data: reminders } = useCaseReminders(resolvedCaseId);
-  const { data: allCases } = useSigcCases();
   const { data: members } = useSigcMembers();
   const [detailModal, setDetailModal] = useState<'classify' | 'assign' | 'state' | 'comment' | 'subtask' | 'document' | 'sla' | 'reminder' | 'review' | 'delivery' | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<SigcAssignment | null>(null);
@@ -444,13 +458,15 @@ export function CaseDetailPage() {
             </CardBlock>
           </section>
           <section className="grid-2">
-            <CardBlock title="Subtareas del caso" description={`${caseSubtasks.length} actividad${caseSubtasks.length === 1 ? '' : 'es'} vinculadas al expediente.`} icon={<CalendarCheck />}>
+            <CardBlock title="Subtareas del caso" description={`${caseSubtaskPage.total} actividad${caseSubtaskPage.total === 1 ? '' : 'es'} vinculadas al expediente.`} icon={<CalendarCheck />}>
               {can(PERMISSIONS.caseManageSubtasks) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('subtask')}><Plus size={15} /> Nueva subtarea</button></div> : null}
               {caseSubtasks.length ? caseSubtasks.slice(0, 6).map((task) => <SubtaskMini task={task} key={task.id} />) : <div className="empty-inline">No hay subtareas creadas.</div>}
+              {caseSubtaskPage.total > 6 ? <div className="card-inline-actions"><Link className="btn btn-white small" to={`/subtasks?caseId=${encodeURIComponent(resolvedCaseId!)}`}>Ver todas ({caseSubtaskPage.total})</Link></div> : null}
             </CardBlock>
-            <CardBlock title="Documentos adjuntos" description={`${caseDocuments.length} documento${caseDocuments.length === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
+            <CardBlock title="Documentos adjuntos" description={`${caseDocumentPage.total} documento${caseDocumentPage.total === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
               {can(PERMISSIONS.documentUpload) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div> : null}
               {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-white icon-only small" onClick={() => setHistoryDocument(doc)} title="Historial de versiones"><Archive size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
+              {caseDocumentPage.total > 6 ? <div className="card-inline-actions"><Link className="btn btn-white small" to={`/documents?caseId=${encodeURIComponent(resolvedCaseId!)}`}>Ver todos ({caseDocumentPage.total})</Link></div> : null}
             </CardBlock>
           </section>
         </div>
@@ -472,8 +488,8 @@ export function CaseDetailPage() {
       {deactivatingAssignment && can(PERMISSIONS.caseAssign) ? <DeactivateAssignmentModal caseId={resolvedCaseId!} assignment={deactivatingAssignment} onClose={() => setDeactivatingAssignment(null)} onSaved={() => { setDeactivatingAssignment(null); showToast('Asignación retirada y trazabilidad registrada.'); }} /> : null}
       {detailModal === 'state' && can(PERMISSIONS.caseChangeState) ? <ChangeCaseStateModal caseId={resolvedCaseId!} onClose={() => setDetailModal(null)} onSaved={() => { setDetailModal(null); showToast('Estado actualizado correctamente.'); }} /> : null}
       {detailModal === 'comment' && can(PERMISSIONS.caseComment) ? <CommentModal caseId={resolvedCaseId!} subtasks={caseSubtasks} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'subtask' && can(PERMISSIONS.caseManageSubtasks) ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'document' && can(PERMISSIONS.documentUpload) ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} cases={allCases} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'subtask' && can(PERMISSIONS.caseManageSubtasks) ? <SubtaskFormModal fixedCaseId={resolvedCaseId!} fixedCaseLabel={`${item?.radicado ?? ''} · ${item?.subject ?? ''}`} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'document' && can(PERMISSIONS.documentUpload) ? <DocumentUploadModal fixedCaseId={resolvedCaseId!} fixedCaseLabel={`${item?.radicado ?? ''} · ${item?.subject ?? ''}`} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'sla' && can(PERMISSIONS.caseOverrideSla) ? <SlaOverrideModal caseId={resolvedCaseId!} currentDueAt={item.dueAt} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'reminder' && can(PERMISSIONS.caseSendReminder) ? <ManualReminderModal caseId={resolvedCaseId!} members={members} assignments={assignments} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'review' && can(PERMISSIONS.caseReview) ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
@@ -488,7 +504,7 @@ export function CaseDetailPage() {
 export function PublicFormPage() {
   const { tenant } = useParams<{ tenant?: string }>();
   const hostname = typeof window === 'undefined' ? undefined : window.location.hostname;
-  const { data: context, isLoading, error } = usePublicIntakeContext({ tenant, hostname });
+  const { data: context, isLoading, error, reload } = usePublicIntakeContext({ tenant, hostname });
 
   if (isLoading && !context) {
     return (
@@ -539,7 +555,7 @@ export function PublicFormPage() {
           </div>
           <div className="card public-card">
             <div className="public-card-head"><div><span className="eyebrow">{context.organizationSlug}</span><h2>Crear solicitud</h2><p className="muted">El caso quedará en estado Pendiente de Clasificación.</p></div></div>
-            <PublicCaseForm context={context} tenant={tenant} hostname={hostname} />
+            <PublicCaseForm context={context} tenant={tenant} hostname={hostname} onSecurityRefresh={reload} />
           </div>
         </section>
       </Page>
@@ -747,29 +763,38 @@ export function BoardPage() {
 }
 
 export function SubtasksPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const caseIdFilter = searchParams.get('caseId') || undefined;
   const { showToast } = useSigcActions();
   const { can } = useAuthorization();
   const canManageSubtasks = can(PERMISSIONS.caseManageSubtasks);
-  const { data: cases } = useSigcCases();
   const { data: members } = useSigcMembers();
   const [filters, setFilters] = useState<{ query: string; state: '' | SigcSubtask['state']; responsibleUserId: string }>({ query: '', state: '', responsibleUserId: '' });
-  const { data: subtasks, isLoading, warning, error } = useSigcSubtasks(filters);
+  const debouncedQuery = useDebouncedValue(filters.query, 400);
+  const [pageNumber, setPageNumber] = useState(1);
+  const pageSize = 25;
+  const { data: subtaskPage, isLoading, warning, error } = useSigcSubtaskSearch({ ...filters, query: debouncedQuery, caseId: caseIdFilter, page: pageNumber, pageSize });
+  const subtasks = subtaskPage.items;
+  const totalPages = Math.max(1, Math.ceil(subtaskPage.total / pageSize));
   const [editing, setEditing] = useState<SigcSubtask | null>(null);
   const [creating, setCreating] = useState(false);
+
+  useEffect(() => { setPageNumber(1); }, [debouncedQuery, filters.state, filters.responsibleUserId]);
 
   async function remove(task: SigcSubtask) {
     if (!window.confirm(`¿Eliminar lógicamente la subtarea "${task.title}"? Su historial permanecerá en auditoría.`)) return;
     try {
       await sigcService.deleteSubtask(task.id);
       showToast('Subtarea eliminada lógicamente.');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No fue posible eliminar la subtarea.');
+    } catch (removeError) {
+      showToast(removeError instanceof Error ? removeError.message : 'No fue posible eliminar la subtarea.');
     }
   }
 
   return (
     <Page>
-      <PageHead title="Módulo de subtareas" description="Control real de actividades por caso, responsable, fecha límite, estado, adjuntos y avance." actions={canManageSubtasks ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Nueva subtarea</button> : undefined} />
+      <PageHead title="Módulo de subtareas" description="Control paginado de actividades por caso, responsable, fecha límite, estado, adjuntos y avance." actions={canManageSubtasks ? <button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={17} /> Nueva subtarea</button> : undefined} />
+      {caseIdFilter ? <div className="alert info case-scope-filter"><span>Mostrando solo las subtareas del expediente seleccionado.</span><button className="btn btn-white small" onClick={() => setSearchParams({})}>Ver todas</button></div> : null}
       <section className="card filter-card">
         <div className="filter-grid phase3-filter-grid">
           <div className="filter-search-field"><Search size={17} /><input className="field" placeholder="Buscar subtarea" value={filters.query} onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))} /></div>
@@ -780,32 +805,36 @@ export function SubtasksPage() {
       </section>
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
-      <div className="case-list-meta"><span>{isLoading ? 'Cargando actividades...' : 'Subtareas activas y trazables'}</span><strong>{subtasks.length} subtarea{subtasks.length === 1 ? '' : 's'}</strong></div>
+      <div className="case-list-meta"><span>{isLoading ? 'Cargando actividades...' : 'Consulta paginada desde servidor'}</span><strong>{subtaskPage.total} subtarea{subtaskPage.total === 1 ? '' : 's'}</strong></div>
       <section className="card table-card"><SubtasksTable rows={subtasks} onEdit={canManageSubtasks ? setEditing : undefined} onDelete={canManageSubtasks ? (task) => void remove(task) : undefined} /></section>
-      {creating && canManageSubtasks ? <SubtaskFormModal cases={cases} onClose={() => setCreating(false)} onSaved={(message) => { setCreating(false); showToast(message); }} /> : null}
-      {editing && canManageSubtasks ? <SubtaskFormModal cases={cases} initial={editing} onClose={() => setEditing(null)} onSaved={(message) => { setEditing(null); showToast(message); }} /> : null}
+      <Pagination page={pageNumber} totalPages={totalPages} onChange={setPageNumber} />
+      {creating && canManageSubtasks ? <SubtaskFormModal onClose={() => setCreating(false)} onSaved={(message) => { setCreating(false); showToast(message); }} /> : null}
+      {editing && canManageSubtasks ? <SubtaskFormModal initial={editing} onClose={() => setEditing(null)} onSaved={(message) => { setEditing(null); showToast(message); }} /> : null}
     </Page>
   );
 }
 
 export function DocumentsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const caseIdFilter = searchParams.get('caseId') || undefined;
   const { showToast } = useSigcActions();
   const { can } = useAuthorization();
   const canUploadDocuments = can(PERMISSIONS.documentUpload);
   const canDeleteDocuments = can(PERMISSIONS.documentDelete);
-  const { data: cases } = useSigcCases();
-  const { data: documents, isLoading, warning, error } = useSigcDocuments();
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 400);
+  const [pageNumber, setPageNumber] = useState(1);
+  const pageSize = 25;
+  const { data: documentPage, isLoading, warning, error } = useSigcDocumentSearch({ query: debouncedQuery, caseId: caseIdFilter, page: pageNumber, pageSize });
+  const documents = documentPage.items;
+  const totalPages = Math.max(1, Math.ceil(documentPage.total / pageSize));
   const [uploading, setUploading] = useState(false);
   const [versioning, setVersioning] = useState<SigcDocument | null>(null);
   const [editingDocument, setEditingDocument] = useState<SigcDocument | null>(null);
   const [historyDocument, setHistoryDocument] = useState<SigcDocument | null>(null);
 
-  const filtered = documents.filter((document) => {
-    const value = query.trim().toLowerCase();
-    if (!value) return true;
-    return [document.name, document.category, document.caseRadicado, document.caseSubject, document.ownerName].some((item) => item.toLowerCase().includes(value));
-  });
+  useEffect(() => { setPageNumber(1); }, [debouncedQuery]);
+
   const versions = documents.reduce((sum, document) => sum + document.currentVersion, 0);
   const inReview = documents.filter((document) => document.state === 'En revisión').length;
   const approved = documents.filter((document) => document.state === 'Aprobado').length;
@@ -814,8 +843,8 @@ export function DocumentsPage() {
     try {
       const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
       window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No fue posible abrir el documento.');
+    } catch (openError) {
+      showToast(openError instanceof Error ? openError.message : 'No fue posible abrir el documento.');
     }
   }
 
@@ -824,21 +853,32 @@ export function DocumentsPage() {
     try {
       await sigcService.deleteDocument(document.id);
       showToast('Documento eliminado lógicamente.');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'No fue posible eliminar el documento.');
+    } catch (removeError) {
+      showToast(removeError instanceof Error ? removeError.message : 'No fue posible eliminar el documento.');
+    }
+  }
+
+  async function togglePortalVisibility(document: SigcDocument) {
+    try {
+      await sigcService.setDocumentClientVisibility(document.id, !document.clientVisible);
+      showToast(document.clientVisible ? 'Documento ocultado del portal externo.' : 'Documento compartido en el portal externo.');
+    } catch (visibilityError) {
+      showToast(visibilityError instanceof Error ? visibilityError.message : 'No fue posible actualizar la visibilidad del documento.');
     }
   }
 
   return (
     <Page>
-      <PageHead title="Gestión documental" description="Repositorio real por caso con versiones inmutables: cada nueva carga crea una versión y nunca sobrescribe la anterior." actions={canUploadDocuments ? <button className="btn btn-primary" onClick={() => setUploading(true)}><Upload size={17} /> Cargar documento</button> : undefined} />
-      <section className="document-kpis">{[['Documentos', String(documents.length)], ['Versiones creadas', String(versions)], ['En revisión', String(inReview)], ['Aprobados', String(approved)]].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
+      <PageHead title="Gestión documental" description="Repositorio paginado por caso con versiones inmutables y control de visibilidad para el portal externo." actions={canUploadDocuments ? <button className="btn btn-primary" onClick={() => setUploading(true)}><Upload size={17} /> Cargar documento</button> : undefined} />
+      {caseIdFilter ? <div className="alert info case-scope-filter"><span>Mostrando solo los documentos del expediente seleccionado.</span><button className="btn btn-white small" onClick={() => setSearchParams({})}>Ver todos</button></div> : null}
+      <section className="document-kpis">{[['Documentos encontrados', String(documentPage.total)], ['Versiones en esta página', String(versions)], ['En revisión', String(inReview)], ['Aprobados', String(approved)]].map(([label, value]) => <article className="card" key={label}><span>{label}</span><strong>{value}</strong></article>)}</section>
       <section className="card filter-card"><div className="filter-search-field document-search"><Search size={17} /><input className="field" placeholder="Buscar por documento, caso, categoría o responsable" value={query} onChange={(event) => setQuery(event.target.value)} /></div></section>
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
-      <div className="case-list-meta"><span>{isLoading ? 'Consultando Storage y metadatos...' : 'Versionamiento y eliminación lógica activos'}</span><strong>{filtered.length} documento{filtered.length === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onHistory={setHistoryDocument} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
-      {uploading && canUploadDocuments ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
+      <div className="case-list-meta"><span>{isLoading ? 'Consultando documentos...' : 'Consulta paginada desde servidor'}</span><strong>{documentPage.total} documento{documentPage.total === 1 ? '' : 's'}</strong></div>
+      <section className="card table-card"><DocumentsTable rows={documents} onOpen={(document) => void openDocument(document)} onHistory={setHistoryDocument} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onToggleClientVisibility={canUploadDocuments ? (document) => void togglePortalVisibility(document) : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
+      <Pagination page={pageNumber} totalPages={totalPages} onChange={setPageNumber} />
+      {uploading && canUploadDocuments ? <DocumentUploadModal onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
       {versioning && canUploadDocuments ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
       {historyDocument ? <DocumentHistoryModal document={historyDocument} canManageRetention={canUploadDocuments} onClose={() => setHistoryDocument(null)} onSaved={(message) => showToast(message)} /> : null}
       {editingDocument && canUploadDocuments ? <TextDocumentEditorModal document={editingDocument} onClose={() => setEditingDocument(null)} onSaved={(message) => { setEditingDocument(null); showToast(message); }} /> : null}
@@ -862,10 +902,11 @@ export function SimpleLegacyPage({ title, description }: { title: string; descri
 function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const { currentUser, unreadNotifications } = useApp();
   const { can, canAny, canAll, roleName } = useAuthorization();
-  const { data: dashboard } = useSigcDashboard(can(PERMISSIONS.reportsView));
+  const canViewReports = can(PERMISSIONS.reportsView);
+  const { data: sidebarSummary } = useSigcSidebarSummary(canViewReports);
   const { context } = useSaasTheme();
-  const compliance = Math.round(dashboard?.summary.slaCompliancePct ?? 0);
-  const critical = dashboard?.summary.criticalCases ?? 0;
+  const compliance = Math.round(sidebarSummary?.slaCompliancePct ?? 0);
+  const critical = sidebarSummary?.criticalCases ?? 0;
   return (
     <div className="sidebar-inner">
       <div className="brand">
@@ -883,12 +924,12 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
           </NavLink>
         ))}
       </nav>
-      <div className="sidebar-compliance card">
+      {canViewReports ? <div className="sidebar-compliance card">
         <strong>Cumplimiento del SLA</strong>
         <b>{compliance}%</b>
         <Progress value={compliance} />
         <p>{critical} caso{critical === 1 ? '' : 's'} crítico{critical === 1 ? '' : 's'} requiere{critical === 1 ? '' : 'n'} seguimiento.</p>
-      </div>
+      </div> : null}
       <NavLink to="/profile" className="sidebar-profile" onClick={closeMobile}>
         <UserCog size={18} />
         <div><strong>{currentUser?.name}</strong><span>{roleName}</span></div>
@@ -936,6 +977,11 @@ function Progress({ value, large = false }: { value: number; large?: boolean }) 
   return <span className={`progress ${large ? 'large' : ''}`}><i style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} /></span>;
 }
 
+function Pagination({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (page: number) => void }) {
+  if (totalPages <= 1) return null;
+  return <div className="pagination-row"><button className="btn btn-white" disabled={page <= 1} onClick={() => onChange(page - 1)}>Anterior</button><span>Página <strong>{page}</strong> de <strong>{totalPages}</strong></span><button className="btn btn-white" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>Siguiente</button></div>;
+}
+
 function CasesTable({ rows, compact = false }: { rows: SigcCase[]; compact?: boolean }) {
   const { openDrawer } = useSigcActions();
   return (
@@ -976,12 +1022,12 @@ function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit
   );
 }
 
-function DocumentsTable({ rows, onOpen, onHistory, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onHistory: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
+function DocumentsTable({ rows, onOpen, onHistory, onEdit, onVersion, onToggleClientVisibility, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onHistory: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onToggleClientVisibility?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
-        <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-white small" onClick={() => onHistory(doc)}><Archive size={14} /> Historial</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
+        <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Portal', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><Badge tone={doc.clientVisible ? 'tone-green' : 'tone-slate'}>{doc.clientVisible ? 'Compartido' : 'Interno'}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-white small" onClick={() => onHistory(doc)}><Archive size={14} /> Historial</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onToggleClientVisibility ? <button className="btn btn-white small" onClick={() => onToggleClientVisibility(doc)}>{doc.clientVisible ? 'Ocultar portal' : 'Compartir'}</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={9}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );

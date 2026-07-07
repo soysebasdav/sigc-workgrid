@@ -35,6 +35,9 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
+  SigcSubtaskPage,
+  SigcDocumentFilters,
+  SigcDocumentPage,
   SigcTimelineEvent,
   UpdateSubtaskInput,
   UploadCaseDocumentInput,
@@ -49,6 +52,10 @@ import type {
   SendManualReminderInput,
   SigcAdminSnapshot,
   SigcUserManagementSnapshot,
+  SigcNotificationPage,
+  SigcSidebarSummary,
+  SigcSecurityHealth,
+  ClientPortalSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -57,9 +64,14 @@ import type {
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
   SaveAutomationRuleInput,
+  AutomationRuleVersion,
+  AutomationDryRunResult,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
+  SigcReportExportFormat,
+  SigcReportExportJob,
+  SigcReportExportPage,
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
@@ -77,7 +89,6 @@ import type {
 } from '../domain/types';
 
 export interface SigcRepository {
-  listCases(): Promise<SigcCase[]>;
   searchCases(filters: SigcCaseFilters): Promise<SigcCasePage>;
   getCaseByIdentifier(identifier: string): Promise<SigcCase | null>;
   getCatalogs(): Promise<SigcCatalogs>;
@@ -94,6 +105,7 @@ export interface SigcRepository {
   moveCaseInWorkflow(input: MoveWorkflowCaseInput): Promise<MoveWorkflowCaseResult>;
 
   listSubtasks(filters?: SigcSubtaskFilters): Promise<SigcSubtask[]>;
+  searchSubtasks(filters?: SigcSubtaskFilters): Promise<SigcSubtaskPage>;
   createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult>;
   updateSubtask(input: UpdateSubtaskInput): Promise<void>;
   deleteSubtask(subtaskId: string): Promise<void>;
@@ -102,8 +114,10 @@ export interface SigcRepository {
   addComment(input: AddCommentInput): Promise<CreatedCommentResult>;
 
   listDocuments(caseId?: string): Promise<SigcDocument[]>;
+  searchDocuments(filters?: SigcDocumentFilters): Promise<SigcDocumentPage>;
   listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]>;
   updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void>;
+  setDocumentClientVisibility(documentId: string, isVisible: boolean): Promise<void>;
   uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument>;
   addDocumentVersion(input: AddDocumentVersionInput): Promise<void>;
   deleteDocument(documentId: string): Promise<void>;
@@ -135,6 +149,8 @@ export interface SigcRepository {
   saveRole(input: SaveRoleInput): Promise<string>;
   setRolePermissions(roleId: string, permissionIds: string[]): Promise<void>;
   setMemberRole(membershipId: string, roleId: string): Promise<void>;
+  setMemberActive(membershipId: string, isActive: boolean): Promise<void>;
+  removeMember(membershipId: string): Promise<void>;
   saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void>;
   saveTransition(input: SaveTransitionInput): Promise<void>;
   deleteTransition(id: string): Promise<void>;
@@ -144,15 +160,27 @@ export interface SigcRepository {
   sendTestEmail(input: SendTestEmailInput): Promise<void>;
   runRuntimeNow(): Promise<RuntimeExecutionResult>;
   saveAutomationRule(input: SaveAutomationRuleInput): Promise<void>;
+  publishAutomationRule(id: string): Promise<void>;
+  archiveAutomationRule(id: string): Promise<void>;
+  restoreAutomationRuleVersion(id: string, versionNumber: number): Promise<void>;
+  listAutomationRuleVersions(id: string): Promise<AutomationRuleVersion[]>;
+  dryRunAutomationRule(ruleId: string, caseId: string): Promise<AutomationDryRunResult>;
   toggleAutomationRule(id: string, isActive: boolean): Promise<void>;
   runAutomationRule(ruleId: string, caseId: string): Promise<void>;
   getAutomationRuntimeHealth(): Promise<AutomationRuntimeHealth>;
 
   getDashboardAnalytics(): Promise<SigcDashboardAnalytics>;
+  getSidebarSummary(): Promise<SigcSidebarSummary>;
+  getNotificationPage(page?: number, pageSize?: number): Promise<SigcNotificationPage>;
   getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot>;
-  getReport(filters: SigcReportFilters): Promise<SigcReportResult>;
+  getReport(filters: SigcReportFilters, page?: number, pageSize?: number): Promise<SigcReportResult>;
+  createReportExportJob(format: SigcReportExportFormat, filters: SigcReportFilters): Promise<SigcReportExportJob>;
+  getReportExportPage(jobId: string, page: number, pageSize: number): Promise<SigcReportExportPage>;
+  completeReportExportJob(jobId: string, status: 'completed' | 'failed' | 'cancelled', errorMessage?: string): Promise<void>;
 
   getSaasContext(): Promise<SigcSaasContext>;
+  getSecurityHealth(): Promise<SigcSecurityHealth>;
+  getClientPortal(page?: number, pageSize?: number, query?: string): Promise<ClientPortalSnapshot>;
   getAuthorizationContext(): Promise<SigcAuthorizationContext>;
   setActiveOrganization(organizationId: string): Promise<void>;
   updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void>;

@@ -36,6 +36,9 @@ import type {
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
+  SigcSubtaskPage,
+  SigcDocumentFilters,
+  SigcDocumentPage,
   SigcTimelineEvent,
   UpdateSubtaskInput,
   UploadCaseDocumentInput,
@@ -50,6 +53,10 @@ import type {
   SendManualReminderInput,
   SigcAdminSnapshot,
   SigcUserManagementSnapshot,
+  SigcNotificationPage,
+  SigcSidebarSummary,
+  SigcSecurityHealth,
+  ClientPortalSnapshot,
   SaveAdminCatalogInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
@@ -58,9 +65,14 @@ import type {
   SaveEmailTemplateInput,
   SaveReminderRuleInput,
   SaveAutomationRuleInput,
+  AutomationRuleVersion,
+  AutomationDryRunResult,
   SigcDashboardAnalytics,
   SigcReportFilters,
   SigcReportResult,
+  SigcReportExportFormat,
+  SigcReportExportJob,
+  SigcReportExportPage,
   SigcSaasContext,
   SigcAuthorizationContext,
   UpdateOrganizationProfileInput,
@@ -91,6 +103,7 @@ const SLA_OVERRIDES_KEY = 'sigc_phase4_demo_sla_overrides';
 const REVIEWS_KEY = 'sigc_phase4_demo_reviews';
 const DELIVERIES_KEY = 'sigc_phase4_demo_deliveries';
 const REMINDERS_KEY = 'sigc_phase4_demo_reminders';
+const demoReportExportJobs = new Map<string, { format: SigcReportExportFormat; filters: SigcReportFilters; createdAt: string }>();
 
 const catalogs: SigcCatalogs = {
   organizationId: null,
@@ -201,7 +214,7 @@ function readDocuments(): SigcDocument[] {
     return {
       id: `demo-document-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? doc.caseId, caseSubject: caseItem?.subject ?? '',
       name: doc.name, category: doc.type, state: doc.state, currentVersion: Number(doc.version.replace(/\D/g, '')) || 1, ownerName: doc.owner, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0, retentionUntil: null, legalHold: false
+      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0, retentionUntil: null, legalHold: false, clientVisible: index % 2 === 0
     } satisfies SigcDocument;
   });
   writeJson(DOCUMENTS_KEY, seeded);
@@ -336,9 +349,6 @@ function createCaseBase(input: PublicCaseCreateInput | ManualCaseCreateInput, so
 }
 
 export const demoSigcRepository: SigcRepository = {
-  async listCases(): Promise<SigcCase[]> {
-    return readCases();
-  },
 
   async searchCases(filters: SigcCaseFilters): Promise<SigcCasePage> {
     const page = Math.max(1, filters.page ?? 1);
@@ -665,6 +675,13 @@ export const demoSigcRepository: SigcRepository = {
     return rows;
   },
 
+  async searchSubtasks(filters: SigcSubtaskFilters = {}): Promise<SigcSubtaskPage> {
+    const all = await this.listSubtasks(filters);
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(100, Math.max(5, filters.pageSize ?? 25));
+    return { items: all.slice((page - 1) * pageSize, page * pageSize), total: all.length, page, pageSize };
+  },
+
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
     const item = await this.getCaseByIdentifier(input.caseId);
     if (!item) throw new Error('Caso no encontrado.');
@@ -723,6 +740,18 @@ export const demoSigcRepository: SigcRepository = {
     return rows;
   },
 
+  async searchDocuments(filters: SigcDocumentFilters = {}): Promise<SigcDocumentPage> {
+    let rows = await this.listDocuments(filters.caseId);
+    const query = filters.query?.trim().toLowerCase() ?? '';
+    if (query) rows = rows.filter((document) => [document.name, document.category, document.caseRadicado, document.caseSubject, document.ownerName].some((value) => value.toLowerCase().includes(query)));
+    if (filters.category) rows = rows.filter((document) => document.category === filters.category);
+    if (filters.state) rows = rows.filter((document) => document.state === filters.state);
+    if (filters.clientVisibleOnly) rows = rows.filter((document) => document.clientVisible);
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.min(100, Math.max(5, filters.pageSize ?? 25));
+    return { items: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length, page, pageSize };
+  },
+
   async listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]> {
     return readJson<SigcDocumentVersion[]>(DOCUMENT_VERSIONS_KEY, [])
       .filter((version) => version.documentId === documentId)
@@ -735,10 +764,15 @@ export const demoSigcRepository: SigcRepository = {
       : document));
   },
 
+  async setDocumentClientVisibility(documentId: string, isVisible: boolean): Promise<void> {
+    writeJson(DOCUMENTS_KEY, readDocuments().map((document) => document.id === documentId ? { ...document, clientVisible: isVisible, updatedAt: new Date().toISOString() } : document));
+  },
+
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
     const item = await this.getCaseByIdentifier(input.caseId);
     if (!item) throw new Error('Caso no encontrado.');
-    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size, retentionUntil: null, legalHold: false };
+    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', clientVisible: false,
+      currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size, retentionUntil: null, legalHold: false };
     writeJson(DOCUMENTS_KEY, [document, ...readDocuments()]);
     const version: SigcDocumentVersion = {
       id: `demo-version-${crypto.randomUUID()}`,
@@ -945,8 +979,9 @@ export const demoSigcRepository: SigcRepository = {
       })),
       emailTemplates: [{ id: 'template-1', code: 'CASE_CREATED', name: 'Confirmación de radicación', eventType: 'case.created', subject: 'Confirmación {{radicado}}', bodyText: 'Tu solicitud {{radicado}} fue registrada.', bodyHtml: null, variableCodes: ['radicado'], isActive: true }],
       reminderRules: [{ id: 'reminder-1', code: 'BEFORE_24H', name: '24 horas antes', triggerKind: 'before_due', offsetMinutes: 1440, includeManagers: false, messageTemplate: 'El caso {{radicado}} vence el {{fecha_limite}}.', emailTemplateCode: 'CASE_DUE_SOON', isActive: true }],
-      automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], actions: [{ type: 'assign_area', areaId: catalogs.areas[0]?.id ?? '' }], stopOnError: true, sortOrder: 10, isActive: true, runCount: 0, maxAttempts: 3, retryDelayMinutes: 10 }],
-      automationExecutions: []
+      automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], conditionMode: 'all', actions: [{ type: 'assign_area', areaId: catalogs.areas[0]?.id ?? '' }], stopOnError: true, stopProcessing: false, sortOrder: 10, isActive: true, lifecycleStatus: 'published', currentVersion: 1, publishedVersion: 1, publishedAt: new Date().toISOString(), runCount: 0, maxAttempts: 3, retryDelayMinutes: 10 }],
+      automationExecutions: [],
+      automationDiagnostics: []
     };
   },
 
@@ -958,6 +993,8 @@ export const demoSigcRepository: SigcRepository = {
   async saveRole(input: SaveRoleInput): Promise<string> { return input.id ?? `demo-role-${crypto.randomUUID()}`; },
   async setRolePermissions(_roleId: string, _permissionIds: string[]): Promise<void> {},
   async setMemberRole(_membershipId: string, _roleId: string): Promise<void> {},
+  async setMemberActive(_membershipId: string, _isActive: boolean): Promise<void> {},
+  async removeMember(_membershipId: string): Promise<void> {},
   async saveWorkflowStates(_caseTypeId: string, _stateIds: string[]): Promise<void> {},
   async saveTransition(_input: SaveTransitionInput): Promise<void> {},
   async deleteTransition(_id: string): Promise<void> {},
@@ -978,6 +1015,21 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
+  async publishAutomationRule(_id: string): Promise<void> {},
+  async archiveAutomationRule(_id: string): Promise<void> {},
+  async restoreAutomationRuleVersion(_id: string, _versionNumber: number): Promise<void> {},
+  async listAutomationRuleVersions(id: string): Promise<AutomationRuleVersion[]> {
+    const rule = (await this.getAdminSnapshot()).automationRules.find((item) => item.id === id);
+    if (!rule) return [];
+    return [{ id: `demo-version-${id}-1`, ruleId: id, versionNumber: 1, lifecycleStatus: 'published', name: rule.name, description: rule.description, triggerEvent: rule.triggerEvent, conditions: rule.conditions, conditionMode: rule.conditionMode, actions: rule.actions, stopOnError: rule.stopOnError, stopProcessing: rule.stopProcessing, sortOrder: rule.sortOrder, maxAttempts: rule.maxAttempts, retryDelayMinutes: rule.retryDelayMinutes, createdByName: 'Administrador Demo', createdAt: new Date().toISOString(), publishedAt: new Date().toISOString() }];
+  },
+  async dryRunAutomationRule(ruleId: string, caseId: string): Promise<AutomationDryRunResult> {
+    const snapshot = await this.getAdminSnapshot();
+    const rule = snapshot.automationRules.find((item) => item.id === ruleId);
+    const caseItem = await this.getCaseByIdentifier(caseId);
+    if (!rule || !caseItem) throw new Error('Regla o caso no encontrado.');
+    return { ruleId, ruleVersion: rule.currentVersion, caseId: caseItem.databaseId ?? caseItem.id, caseRadicado: caseItem.radicado, matched: true, conditionMode: rule.conditionMode, conditionResults: rule.conditions.map((condition, index) => ({ index, field: condition.field, operator: condition.operator, expected: condition.value, actual: condition.value, matched: true })), actions: rule.actions.map((action, index) => ({ index, type: action.type, status: 'would_execute', description: `Se ejecutaría ${action.type}` })), diagnostics: snapshot.automationDiagnostics, generatedAt: new Date().toISOString() };
+  },
   async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
   async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {},
   async getAutomationRuntimeHealth(): Promise<AutomationRuntimeHealth> {
@@ -1047,13 +1099,29 @@ export const demoSigcRepository: SigcRepository = {
       organizationId: 'demo-org', generatedAt: new Date().toISOString(),
       summary: { openCases: open.length, closedCases: rows.length-open.length, overdueCases: overdue.length, dueSoonCases: open.filter((item) => item.sem === 'orange').length, createdToday: 0, criticalCases: open.filter((item) => item.priority === 'Crítica').length, slaCompliancePct: 92.4, avgResolutionHours: 34.2 },
       monthly, byArea: group(open,(item)=>item.area), byOwner: group(open,(item)=>item.owner), byType: group(rows,(item)=>item.type), byPriority: group(open,(item)=>item.priority),
+      avgResolutionByArea: group(rows.filter((item)=>terminal.has(item.state)), (item)=>item.area).map((item)=>({ ...item, value: 24 + item.value * 2 })),
+      productivityByArea: group(rows,(item)=>item.area).map((item)=>{ const created=item.value; const closed=rows.filter((row)=>row.area===item.label&&terminal.has(row.state)).length; return { label:item.label, value:closed, created, closed, closureRatePct:created?Math.round(closed/created*1000)/10:0 }; }),
       criticalCases: open.filter((item)=>item.priority==='Crítica'||item.sem==='red').slice(0,8).map((item)=>({ id:item.databaseId??item.id, radicado:item.radicado, subject:item.subject, priority:item.priority, owner:item.owner, dueAt:item.dueAt, overdue:item.sem==='red' })),
       myWork: readSubtasks().filter((item)=>item.state!=='completed'&&item.state!=='cancelled').slice(0,8).map((item)=>({ id:item.id,title:item.title,caseId:item.caseId,radicado:item.caseRadicado,dueAt:item.dueAt,state:item.state,progress:item.progress })),
       recentActivity: readJson<SigcTimelineEvent[]>(TIMELINE_KEY, []).slice(0,10).map((item,index)=>({ id:item.id??index,eventType:item.eventType,entityType:item.entityType,actor:item.actorName,createdAt:item.createdAt,caseId:item.caseId,radicado:rows.find((row)=>row.databaseId===item.caseId||row.id===item.caseId)?.radicado }))
     };
   },
 
-  async getReport(filters: SigcReportFilters): Promise<SigcReportResult> {
+  async getSidebarSummary(): Promise<SigcSidebarSummary> {
+    const dashboard = await this.getDashboardAnalytics();
+    return { slaCompliancePct: dashboard.summary.slaCompliancePct, criticalCases: dashboard.summary.criticalCases, overdueCases: dashboard.summary.overdueCases };
+  },
+
+  async getNotificationPage(page = 1, pageSize = 25): Promise<SigcNotificationPage> {
+    const currentPage = Math.max(1, page);
+    const size = Math.min(100, Math.max(5, pageSize));
+    const items = [
+      { id: 'demo-notification-1', recipientUserId: 'demo-user-admin', actorUserId: null, caseId: readCases()[0]?.databaseId ?? null, type: 'case_due_soon', title: 'Caso próximo a vencer', message: 'Un caso demo requiere seguimiento.', actionUrl: readCases()[0] ? `/cases/${readCases()[0]!.radicado}` : null, isRead: false, createdAt: new Date().toISOString() }
+    ];
+    return { items: items.slice((currentPage - 1) * size, currentPage * size), total: items.length, unreadTotal: items.filter((item) => !item.isRead).length, page: currentPage, pageSize: size };
+  },
+
+  async getReport(filters: SigcReportFilters, page = filters.page ?? 1, pageSize = filters.pageSize ?? 100): Promise<SigcReportResult> {
     const from = new Date(`${filters.from}T00:00:00`).getTime();
     const to = new Date(`${filters.to}T23:59:59`).getTime();
     const terminal = new Set(['Cerrado','Cancelado']);
@@ -1074,12 +1142,47 @@ export const demoSigcRepository: SigcRepository = {
       agingBuckets:[{label:'0–7 días',value:3},{label:'8–30 días',value:4},{label:'31–90 días',value:2},{label:'90+ días',value:1}],
       slaByArea:group((item)=>item.area).map((item)=>({...item,total:item.value,compliant:Math.max(0,item.value-1),value:item.value ? Math.round(Math.max(0,item.value-1)/item.value*1000)/10 : 0})),
       throughput:[{month:'2026-05',label:'May 26',created:6,closed:4},{month:'2026-06',label:'Jun 26',created:9,closed:7},{month:'2026-07',label:'Jul 26',created:5,closed:3}],
-      rows,isTruncated:false
+      rows: rows.slice((Math.max(1,page)-1)*Math.max(1,pageSize), Math.max(1,page)*Math.max(1,pageSize)), totalRows: rows.length, page: Math.max(1,page), pageSize: Math.max(1,pageSize), hasMore: Math.max(1,page)*Math.max(1,pageSize) < rows.length, isTruncated:false
     };
   },
 
+  async createReportExportJob(format: SigcReportExportFormat, filters: SigcReportFilters): Promise<SigcReportExportJob> {
+    const report = await this.getReport(filters, 1, 1);
+    const id = `demo-export-${crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    demoReportExportJobs.set(id, { format, filters: { ...filters, page: undefined, pageSize: undefined }, createdAt });
+    return { id, format, status: 'processing', totalRows: report.totalRows, processedRows: 0, progressPct: 0, createdAt, updatedAt: createdAt };
+  },
+  async getReportExportPage(jobId: string, page: number, pageSize: number): Promise<SigcReportExportPage> {
+    const saved = demoReportExportJobs.get(jobId);
+    if (!saved) throw new Error('El job de exportación demo no existe.');
+    const report = await this.getReport(saved.filters, page, pageSize);
+    const processed = Math.min(report.totalRows, page * pageSize);
+    return { job: { id: jobId, format: saved.format, status: report.hasMore ? 'processing' : 'completed', totalRows: report.totalRows, processedRows: processed, progressPct: report.totalRows ? Math.round(processed/report.totalRows*1000)/10 : 100, createdAt: saved.createdAt, updatedAt: new Date().toISOString() }, rows: report.rows, page, pageSize, hasMore: report.hasMore };
+  },
+  async completeReportExportJob(jobId: string, _status: 'completed' | 'failed' | 'cancelled', _errorMessage?: string): Promise<void> { demoReportExportJobs.delete(jobId); },
+
   async getSaasContext(): Promise<SigcSaasContext> {
     return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{publicIntake:{enabled:true,formTitle:'Radica tu solicitud',formDescription:'Cuéntanos qué necesitas y el SIGC generará tu radicado.',confirmationMessage:'Hemos recibido tu solicitud correctamente.',allowAttachments:true,maxFiles:5,maxFileSizeBytes:26214400}}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
+  },
+
+  async getSecurityHealth(): Promise<SigcSecurityHealth> {
+    return { organizationId: 'demo-org', rlsEnabledTables: 18, auditedTenantTables: 18, tablesWithoutRls: [], policyCount: 42, activeWorkspaceManagers: 1, rateLimitPerHour: 20, challengeMode: 'adaptive', requirePrivacyConsent: true, generatedAt: new Date().toISOString() };
+  },
+
+  async getClientPortal(page = 1, pageSize = 10, query = ''): Promise<ClientPortalSnapshot> {
+    const normalized = query.trim().toLowerCase();
+    const rows = readCases().filter((item) => !normalized || item.radicado.toLowerCase().includes(normalized) || item.subject.toLowerCase().includes(normalized));
+    const currentPage = Math.max(1, page);
+    const size = Math.min(50, Math.max(5, pageSize));
+    const visible = rows.slice((currentPage - 1) * size, currentPage * size).map((item) => ({
+      id: item.databaseId ?? item.id, radicado: item.radicado, subject: item.subject, type: item.type, state: item.state, stateColor: item.stateColor, priority: item.priority, priorityColor: item.priorityColor,
+      openedAt: item.openedAt ?? new Date().toISOString(), dueAt: item.dueAt, updatedAt: item.updatedAt ?? new Date().toISOString(), progress: item.progress,
+      documents: readDocuments().filter((document) => document.caseId === (item.databaseId ?? item.id) && document.clientVisible).map((document) => ({ id: document.id, caseId: document.caseId, name: document.name, currentVersion: document.currentVersion, currentFilename: document.currentFilename, currentStoragePath: document.currentStoragePath, currentMimeType: document.currentMimeType, currentSizeBytes: document.currentSizeBytes, updatedAt: document.updatedAt })),
+      deliveries: []
+    }));
+    const terminal = new Set(['Cerrado', 'Cancelado']);
+    return { organizationId: 'demo-org', organizationName: 'Organización SIGC Demo', email: 'cliente@sigc.demo', summary: { total: rows.length, open: rows.filter((item) => !terminal.has(item.state)).length, closed: rows.filter((item) => terminal.has(item.state)).length, overdue: rows.filter((item) => item.sem === 'red' && !terminal.has(item.state)).length }, items: visible, total: rows.length, page: currentPage, pageSize: size };
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
@@ -1122,6 +1225,8 @@ export const demoPublicSigcRepository: PublicSigcRepository = {
         confirmationMessage: 'Hemos recibido tu solicitud correctamente.',
         allowAttachments: true, maxFiles: 5, maxFileSizeBytes: 26214400
       },
+      security: { rateLimitPerHour: 20, challengeMode: 'adaptive', challengeRequired: false, challenge: null },
+      privacy: { requireConsent: true, noticeText: 'Autorizo el tratamiento de mis datos para gestionar esta solicitud.', policyUrl: null },
       caseTypes: catalogs.caseTypes.map((item) => ({
         id: item.id, name: item.name,
         slaLabel: item.name === 'Acción de Tutela' ? '24 horas' : '5 días calendario'

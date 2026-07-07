@@ -29,7 +29,7 @@ export function OrganizationSwitcher() {
           setChanging(true);
           try {
             await sigcService.setActiveOrganization(event.target.value);
-            window.location.assign('/dashboard');
+            window.location.assign('/');
           } finally {
             setChanging(false);
           }

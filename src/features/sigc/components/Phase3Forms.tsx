@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { FilePlus2, LoaderCircle, Paperclip, Upload, X } from 'lucide-react';
-import type { SigcCase, SigcDocument, SigcSubtask, SubtaskState } from '../domain/types';
-import { useCaseAssignments, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
+import type { SigcDocument, SigcSubtask, SubtaskState } from '../domain/types';
+import { useCaseAssignments, useDebouncedValue, useSigcCaseSearch, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
 
 function errorMessage(error: unknown): string {
@@ -38,8 +38,23 @@ function toLocalInput(iso: string | null | undefined): string {
   return local.toISOString().slice(0, 16);
 }
 
-function caseValue(item: SigcCase): string {
-  return item.databaseId ?? item.id;
+function RemoteCasePicker({ value, onChange, initialLabel }: { value: string; onChange: (value: string) => void; initialLabel?: string }) {
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, 350);
+  const { data, isLoading } = useSigcCaseSearch({ query: debouncedQuery, page: 1, pageSize: 20 });
+  const items = data.items;
+  const selectedInResults = items.some((item) => (item.databaseId ?? item.id) === value || item.id === value);
+  return (
+    <div className="phase11-remote-case-picker">
+      <div className="filter-search-field"><input className="field" placeholder="Buscar caso por radicado, asunto o solicitante" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
+      <select className="field" value={value} onChange={(event) => onChange(event.target.value)} required>
+        <option value="">Caso *</option>
+        {value && initialLabel && !selectedInResults ? <option value={value}>{initialLabel}</option> : null}
+        {items.map((item) => <option value={item.databaseId ?? item.id} key={item.id}>{item.radicado} · {item.subject}</option>)}
+      </select>
+      <small className="muted">{isLoading ? 'Buscando casos...' : `${data.total} coincidencia${data.total === 1 ? '' : 's'}`}</small>
+    </div>
+  );
 }
 
 function FilesSummary({ files }: { files: File[] }) {
@@ -49,20 +64,20 @@ function FilesSummary({ files }: { files: File[] }) {
 
 export function SubtaskFormModal({
   fixedCaseId,
-  cases,
+  fixedCaseLabel,
   initial,
   onClose,
   onSaved
 }: {
   fixedCaseId?: string;
-  cases: SigcCase[];
+  fixedCaseLabel?: string;
   initial?: SigcSubtask | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
   const { data: catalogs } = useSigcCatalogs();
   const { data: members } = useSigcMembers();
-  const [caseId, setCaseId] = useState(fixedCaseId ?? initial?.caseId ?? (cases[0] ? caseValue(cases[0]) : ''));
+  const [caseId, setCaseId] = useState(fixedCaseId ?? initial?.caseId ?? '');
   const { data: caseAssignments } = useCaseAssignments(caseId || undefined);
   const [assignmentId, setAssignmentId] = useState(initial?.assignmentId ?? '');
   const [areaId, setAreaId] = useState(initial?.areaId ?? '');
@@ -77,7 +92,6 @@ export function SubtaskFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const selectedCase = useMemo(() => cases.find((item) => caseValue(item) === caseId || item.id === caseId), [cases, caseId]);
   const activeAssignments = useMemo(() => caseAssignments.filter((item) => item.isActive), [caseAssignments]);
 
   useEffect(() => {
@@ -142,11 +156,8 @@ export function SubtaskFormModal({
         <header><h3>{initial ? 'Editar subtarea' : 'Nueva subtarea'}</h3><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <form className="modal-body form-stack" onSubmit={submit}>
           {!fixedCaseId ? (
-            <select className="field" value={caseId} onChange={(event) => setCaseId(event.target.value)} required>
-              <option value="">Caso *</option>
-              {cases.map((item) => <option value={caseValue(item)} key={item.id}>{item.radicado} · {item.subject}</option>)}
-            </select>
-          ) : <div className="phase3-context"><span>Caso</span><strong>{selectedCase?.radicado ?? 'Expediente actual'}</strong></div>}
+            <RemoteCasePicker value={caseId} onChange={setCaseId} initialLabel={initial ? `${initial.caseRadicado} · ${initial.caseSubject}` : undefined} />
+          ) : <div className="phase3-context"><span>Caso</span><strong>{fixedCaseLabel ?? initial?.caseRadicado ?? 'Expediente actual'}</strong></div>}
           <div className="phase3-form-grid two">
             <select className="field" value={assignmentId} onChange={(event) => selectAssignment(event.target.value)}>
               <option value="">Sin asignación específica</option>
@@ -249,20 +260,20 @@ export function CommentModal({
 
 export function DocumentUploadModal({
   fixedCaseId,
-  cases,
+  fixedCaseLabel,
   subtaskId,
   commentId,
   onClose,
   onSaved
 }: {
   fixedCaseId?: string;
-  cases: SigcCase[];
+  fixedCaseLabel?: string;
   subtaskId?: string;
   commentId?: string;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
-  const [caseId, setCaseId] = useState(fixedCaseId ?? (cases[0] ? caseValue(cases[0]) : ''));
+  const [caseId, setCaseId] = useState(fixedCaseId ?? '');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('General');
   const [state, setState] = useState('Cargado');
@@ -296,11 +307,8 @@ export function DocumentUploadModal({
         <header><h3>Cargar documento</h3><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <form className="modal-body form-stack" onSubmit={submit}>
           {!fixedCaseId ? (
-            <select className="field" value={caseId} onChange={(event) => setCaseId(event.target.value)} required>
-              <option value="">Caso *</option>
-              {cases.map((item) => <option value={caseValue(item)} key={item.id}>{item.radicado} · {item.subject}</option>)}
-            </select>
-          ) : null}
+            <RemoteCasePicker value={caseId} onChange={setCaseId} />
+          ) : <div className="phase3-context"><span>Caso</span><strong>{fixedCaseLabel ?? 'Expediente actual'}</strong></div>}
           <input className="field" placeholder="Nombre lógico del documento" value={name} onChange={(event) => setName(event.target.value)} />
           <div className="phase3-form-grid">
             <input className="field" placeholder="Categoría" value={category} onChange={(event) => setCategory(event.target.value)} />

@@ -60,7 +60,7 @@ export function loadState(): AppState {
   try {
     const parsed = JSON.parse(raw) as Partial<AppState>;
     if (!Array.isArray(parsed.users) || !Array.isArray(parsed.notifications) || !parsed.settings) {
-      throw new Error('Estado demo incompatible con la Fase 11.');
+      throw new Error('Estado demo incompatible con la versión actual.');
     }
     return {
       currentUserId: parsed.currentUserId ?? null,
