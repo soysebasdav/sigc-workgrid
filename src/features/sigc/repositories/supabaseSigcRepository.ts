@@ -1332,7 +1332,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_user_management_context_v4');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible cargar la gestión de usuarios.');
-    return data as SigcUserManagementSnapshot;
+    return data as unknown as SigcUserManagementSnapshot;
   },
 
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
@@ -1733,7 +1733,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('preview_automation_rule_v3', { p_rule_id: ruleId, p_case_id: resolvedCaseId });
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('La simulación no devolvió un resultado válido.');
-    return data as AutomationDryRunResult;
+    return data as unknown as AutomationDryRunResult;
   },
 
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> {
@@ -1772,21 +1772,21 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const { data, error } = await client.rpc('get_sigc_dashboard_v3');
     if (error) throw error;
-    return data as SigcDashboardAnalytics;
+    return data as unknown as SigcDashboardAnalytics;
   },
 
   async getSidebarSummary(): Promise<SigcSidebarSummary> {
     const client = requireClient();
     const { data, error } = await client.rpc('get_sigc_sidebar_summary_v4');
     if (error) throw error;
-    return data as SigcSidebarSummary;
+    return data as unknown as SigcSidebarSummary;
   },
 
   async getNotificationPage(page = 1, pageSize = 25): Promise<SigcNotificationPage> {
     const client = requireClient();
     const { data, error } = await client.rpc('get_notification_page_v4', { p_page: Math.max(1, page), p_page_size: Math.min(100, Math.max(5, pageSize)) });
     if (error) throw error;
-    return data as SigcNotificationPage;
+    return data as unknown as SigcNotificationPage;
   },
 
   async getAgenda(from: string, to: string): Promise<SigcAgendaSnapshot> {
@@ -1873,14 +1873,14 @@ export const supabaseSigcRepository: SigcRepository = {
       p_filters: { stateId: filters.stateId ?? '', areaId: filters.areaId ?? '', ownerId: filters.ownerId ?? '', caseTypeId: filters.caseTypeId ?? '', priorityId: filters.priorityId ?? '', overdueOnly: Boolean(filters.overdueOnly) }
     });
     if (error) throw error;
-    return data as SigcReportExportJob;
+    return data as unknown as SigcReportExportJob;
   },
 
   async getReportExportPage(jobId: string, page: number, pageSize: number): Promise<SigcReportExportPage> {
     const client = requireClient();
     const { data, error } = await client.rpc('get_report_export_page_v3', { p_job_id: jobId, p_page: page, p_page_size: pageSize });
     if (error) throw error;
-    return data as SigcReportExportPage;
+    return data as unknown as SigcReportExportPage;
   },
 
   async completeReportExportJob(jobId: string, status: 'completed' | 'failed' | 'cancelled', errorMessage?: string): Promise<void> {
@@ -1893,21 +1893,21 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const { data, error } = await client.rpc('get_saas_context');
     if (error) throw error;
-    return data as SigcSaasContext;
+    return data as unknown as SigcSaasContext;
   },
 
   async getSecurityHealth(): Promise<SigcSecurityHealth> {
     const client = requireClient();
     const { data, error } = await client.rpc('get_security_health_v4');
     if (error) throw error;
-    return data as SigcSecurityHealth;
+    return data as unknown as SigcSecurityHealth;
   },
 
   async getClientPortal(page = 1, pageSize = 10, query = ''): Promise<ClientPortalSnapshot> {
     const client = requireClient();
     const { data, error } = await client.rpc('get_client_portal_v4', { p_page: Math.max(1, page), p_page_size: Math.min(50, Math.max(5, pageSize)), p_query: query.trim() });
     if (error) throw error;
-    return data as ClientPortalSnapshot;
+    return data as unknown as ClientPortalSnapshot;
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
@@ -1915,7 +1915,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_authorization_context');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible resolver el contexto de autorización.');
-    return data as SigcAuthorizationContext;
+    return data as unknown as SigcAuthorizationContext;
   },
 
   async setActiveOrganization(organizationId: string): Promise<void> {
@@ -1980,7 +1980,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const { error } = await client.rpc('log_client_error', {
       p_message: input.message, p_stack: input.stack ?? null, p_route: input.route ?? null,
-      p_severity: input.severity ?? 'error', p_metadata: input.metadata ?? {}
+      p_severity: input.severity ?? 'error', p_metadata: (input.metadata ?? {}) as unknown as import('../../../types/supabase').Json
     });
     if (error) console.warn('No fue posible registrar el error de cliente:', error);
   },
@@ -1989,7 +1989,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const { data, error } = await client.rpc('get_sigc_quality_dashboard_v5');
     if (error) throw error;
-    return data as QualityDashboard;
+    return data as unknown as QualityDashboard;
   },
 
   async runQualitySuite(input: RunQualitySuiteInput): Promise<QualityRunRecord> {
@@ -1999,7 +1999,7 @@ export const supabaseSigcRepository: SigcRepository = {
       p_release_version: input.releaseVersion?.trim() || null
     });
     if (error) throw error;
-    return data as QualityRunRecord;
+    return data as unknown as QualityRunRecord;
   }
 };
 
@@ -2133,7 +2133,7 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
     if (error) throw error;
     const row = data?.[0];
     if (!row) return null;
-    return { organizationName: row.organization_name, organizationSlug: row.organization_slug, email: row.email, roleName: row.role_name, status: row.status, expiresAt: row.expires_at };
+    return { organizationName: row.organization_name, organizationSlug: row.organization_slug, email: row.email, roleName: row.role_name, status: row.status as PublicOrganizationInvitation['status'], expiresAt: row.expires_at };
   },
 
   async acceptOrganizationInvitation(token: string): Promise<string> {
