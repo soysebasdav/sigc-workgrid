@@ -139,7 +139,9 @@ export function createXlsxBlob(report: SigcReportResult, rows: SigcReportRow[]):
     { name: 'xl/worksheets/sheet2.xml', content: worksheetXml(distributionRows) },
     { name: 'xl/worksheets/sheet3.xml', content: worksheetXml(caseRows) }
   ];
-  return new Blob([zipStore(files)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const bytes = zipStore(files);
+  const payload = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new Blob([payload], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 function pdfEscape(value: unknown): string {

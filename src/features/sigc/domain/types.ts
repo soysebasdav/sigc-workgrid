@@ -1583,3 +1583,65 @@ export interface AutomationRuntimeHealth {
   oldestQueuedEmailAt?: string | null;
 }
 
+
+// SIGC Fase 12 · calidad, hardening y preparación para producción
+export type QualityCheckStatus = 'passed' | 'warning' | 'failed' | 'skipped';
+export type QualityRunStatus = 'passed' | 'warning' | 'failed';
+
+export interface QualityCheckResult {
+  code: string;
+  category: 'unit' | 'integration' | 'security' | 'data' | 'runtime' | 'infrastructure';
+  title: string;
+  status: QualityCheckStatus;
+  details: string;
+  durationMs?: number;
+  evidence?: Record<string, unknown>;
+  source: 'client' | 'server';
+}
+
+export interface QualityRunSummary {
+  total: number;
+  passed: number;
+  warnings: number;
+  failed: number;
+  skipped: number;
+}
+
+export interface QualityRunRecord {
+  id: string;
+  organizationId: string;
+  status: QualityRunStatus;
+  summary: QualityRunSummary;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  initiatedBy?: string | null;
+  releaseVersion?: string | null;
+  checks: QualityCheckResult[];
+}
+
+export interface QualityCapability {
+  code: string;
+  label: string;
+  available: boolean;
+  details: string;
+}
+
+export interface QualityDashboard {
+  organizationId: string;
+  generatedAt: string;
+  latestRun?: QualityRunRecord | null;
+  history: Array<Omit<QualityRunRecord, 'checks'>>;
+  capabilities: QualityCapability[];
+  readiness: {
+    status: QualityRunStatus | 'not_run';
+    scorePct: number;
+    blockingFailures: number;
+    lastRunAt?: string | null;
+  };
+}
+
+export interface RunQualitySuiteInput {
+  clientChecks: QualityCheckResult[];
+  releaseVersion?: string;
+}

@@ -88,7 +88,10 @@ import type {
   WorkflowBoardSnapshot,
   MoveWorkflowCaseInput,
   MoveWorkflowCaseResult,
-  AutomationRuntimeHealth
+  AutomationRuntimeHealth,
+  QualityDashboard,
+  RunQualitySuiteInput,
+  QualityRunRecord
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
@@ -437,5 +440,11 @@ export const sigcService = {
     return withSafeReadFallback(() => supabasePublicSigcRepository.getOrganizationInvitation(token), () => demoPublicSigcRepository.getOrganizationInvitation(token));
   },
   async acceptOrganizationInvitation(token: string): Promise<string> { const id = await publicMutationRepository().acceptOrganizationInvitation(token); emitSigcDataChanged(); return id; },
-  async logClientError(input: ClientErrorInput): Promise<void> { if (dataMode === 'supabase') await supabaseSigcRepository.logClientError(input); }
+  async logClientError(input: ClientErrorInput): Promise<void> { if (dataMode === 'supabase') await supabaseSigcRepository.logClientError(input); },
+  getQualityDashboard(): Promise<SigcRepositoryResult<QualityDashboard>> {
+    return withStrictRead(() => supabaseSigcRepository.getQualityDashboard(), () => demoSigcRepository.getQualityDashboard());
+  },
+  async runQualitySuite(input: RunQualitySuiteInput): Promise<QualityRunRecord> {
+    return mutationRepository().runQualitySuite(input);
+  }
 };

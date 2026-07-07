@@ -29,6 +29,7 @@ const AnalyticsReportsPage = lazy(() => import('./features/sigc/components/Phase
 const AdminConfigurationPage = lazy(() => import('./features/sigc/components/Phase56Admin').then((module) => ({ default: module.AdminConfigurationPage })));
 const SaasManagementPage = lazy(() => import('./features/sigc/components/Phase8Saas').then((module) => ({ default: module.SaasManagementPage })));
 const InvitationPage = lazy(() => import('./features/sigc/components/Phase8Saas').then((module) => ({ default: module.InvitationPage })));
+const QualityCenterPage = lazy(() => import('./features/quality/QualityCenterPage').then((module) => ({ default: module.QualityCenterPage })));
 
 function LazyRoute({ children }: { children: ReactNode }) {
   return (
@@ -48,6 +49,7 @@ function HomeRedirect() {
   if (can(PERMISSIONS.saasManageWorkspace)) return <Navigate to="/workspace" replace />;
   if (can(PERMISSIONS.adminManageUsers)) return <Navigate to="/users" replace />;
   if (can(PERMISSIONS.adminManageConfiguration)) return <Navigate to="/settings" replace />;
+  if (can(PERMISSIONS.qualityView)) return <Navigate to="/quality" replace />;
   return <Navigate to="/profile" replace />;
 }
 
@@ -97,6 +99,10 @@ const router = createBrowserRouter([
       {
         element: <PermissionRoute allOf={[PERMISSIONS.auditView]} />,
         children: [{ path: 'audit', element: <AuditPage /> }]
+      },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.qualityView]} />,
+        children: [{ path: 'quality', element: <LazyRoute><QualityCenterPage /></LazyRoute> }]
       },
 
       {

@@ -1098,3 +1098,25 @@ svg { flex-shrink: 0; }
 .client-document-row span,.client-delivery-row span { display:grid; gap:.2rem; }
 .pagination-bar,.pagination-row { display:flex; align-items:center; justify-content:center; gap:1rem; padding:1rem; flex-wrap:wrap; }
 @media (max-width: 720px) { .client-case-card > header { flex-direction:column; } }
+
+/* Fase 12 · Calidad y producción */
+.quality-readiness-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-bottom:20px; }
+.quality-readiness-grid article { padding:20px; display:grid; gap:6px; }
+.quality-readiness-grid span { color:var(--muted); font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+.quality-readiness-grid strong { font-size:2rem; letter-spacing:-.04em; }
+.quality-readiness-grid small { color:var(--muted); }
+.quality-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-top:16px; }
+.quality-summary-grid article { border:1px solid var(--line); border-radius:14px; padding:14px; background:#f8fafc; }
+.quality-summary-grid span,.quality-summary-grid strong { display:block; }
+.quality-summary-grid span { color:var(--muted); font-size:.74rem; font-weight:800; text-transform:uppercase; }
+.quality-summary-grid strong { font-size:1.55rem; margin-top:4px; }
+.quality-capabilities { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.quality-capabilities article { display:grid; grid-template-columns:auto 1fr; gap:10px; padding:14px; border:1px solid var(--line); border-radius:14px; background:#f8fafc; }
+.quality-capabilities strong,.quality-capabilities span { display:block; }
+.quality-capabilities span { color:var(--muted); font-size:.82rem; margin-top:3px; }
+.quality-table code { font-size:.75rem; font-weight:800; color:#4338ca; }
+.quality-table .chip { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+.quality-evidence { margin-top:8px; }
+.quality-evidence summary { cursor:pointer; color:#4f46e5; font-size:.78rem; font-weight:800; }
+.quality-evidence pre { max-width:520px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; padding:10px; border-radius:10px; background:#0f172a; color:#e2e8f0; font-size:.72rem; }
+@media (max-width: 900px) { .quality-readiness-grid,.quality-summary-grid,.quality-capabilities { grid-template-columns:1fr; } }

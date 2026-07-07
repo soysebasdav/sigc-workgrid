@@ -553,6 +553,39 @@ export interface Database {
         completed_at: string | null;
       }>;
 
+      sigc_quality_runs: TableDef<{
+        id: string;
+        organization_id: string;
+        initiated_by: string | null;
+        status: 'passed' | 'warning' | 'failed';
+        release_version: string | null;
+        started_at: string;
+        finished_at: string | null;
+        duration_ms: number;
+        total_checks: number;
+        passed_checks: number;
+        warning_checks: number;
+        failed_checks: number;
+        skipped_checks: number;
+        metadata: Json;
+        created_at: string;
+      }>;
+
+      sigc_quality_results: TableDef<{
+        id: number;
+        run_id: string;
+        organization_id: string;
+        code: string;
+        category: 'unit' | 'integration' | 'security' | 'data' | 'runtime' | 'infrastructure';
+        title: string;
+        status: 'passed' | 'warning' | 'failed' | 'skipped';
+        details: string;
+        duration_ms: number | null;
+        evidence: Json;
+        source: 'client' | 'server';
+        created_at: string;
+      }>;
+
       automation_executions: TableDef<{
         id: string;
         organization_id: string;
@@ -953,6 +986,9 @@ export interface Database {
       get_notification_page_v4: { Args: { p_page?: number; p_page_size?: number }; Returns: Json };
       get_sigc_sidebar_summary_v4: { Args: Record<PropertyKey, never>; Returns: Json };
       get_security_health_v4: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_sigc_quality_dashboard_v5: { Args: Record<PropertyKey, never>; Returns: Json };
+      run_sigc_quality_suite_v5: { Args: { p_client_checks?: Json; p_release_version?: string | null }; Returns: Json };
+      cleanup_sigc_quality_history_v5: { Args: { p_keep_days?: number }; Returns: number };
 
       calculate_sla_due_at: {
         Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };

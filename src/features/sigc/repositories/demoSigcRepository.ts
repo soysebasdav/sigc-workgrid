@@ -88,7 +88,10 @@ import type {
   WorkflowBoardSnapshot,
   MoveWorkflowCaseInput,
   MoveWorkflowCaseResult,
-  AutomationRuntimeHealth
+  AutomationRuntimeHealth,
+  QualityDashboard,
+  RunQualitySuiteInput,
+  QualityRunRecord
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -104,6 +107,7 @@ const REVIEWS_KEY = 'sigc_phase4_demo_reviews';
 const DELIVERIES_KEY = 'sigc_phase4_demo_deliveries';
 const REMINDERS_KEY = 'sigc_phase4_demo_reminders';
 const demoReportExportJobs = new Map<string, { format: SigcReportExportFormat; filters: SigcReportFilters; createdAt: string }>();
+const QUALITY_RUNS_KEY = 'sigc_phase12_demo_quality_runs';
 
 const catalogs: SigcCatalogs = {
   organizationId: null,
@@ -1196,7 +1200,7 @@ export const demoSigcRepository: SigcRepository = {
         'case.create','case.read_all','case.read_assigned','case.assign','case.change_state','case.override_sla','case.approve','case.close',
         'case.comment','case.manage_subtasks','case.send_reminder','case.review','case.register_delivery',
         'document.upload','document.delete','admin.manage_users','admin.manage_configuration','automation.view','automation.manage',
-        'reports.view','reports.export','saas.manage_workspace'
+        'reports.view','reports.export','saas.manage_workspace','quality.view','quality.run'
       ]
     };
   },
@@ -1206,7 +1210,41 @@ export const demoSigcRepository: SigcRepository = {
   async createSaasOrganization(_input: CreateSaasOrganizationInput): Promise<string> { return `demo-org-${crypto.randomUUID()}`; },
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { return { invitationId:`demo-invite-${crypto.randomUUID()}`,token:crypto.randomUUID(),expiresAt:new Date(Date.now()+(input.expiresDays??7)*86400000).toISOString() }; },
   async revokeOrganizationInvitation(_invitationId: string): Promise<void> {},
-  async logClientError(_input: ClientErrorInput): Promise<void> {}
+  async logClientError(_input: ClientErrorInput): Promise<void> {},
+  async getQualityDashboard(): Promise<QualityDashboard> {
+    const history = readJson<QualityRunRecord[]>(QUALITY_RUNS_KEY, []);
+    const latestRun = history[0] ?? null;
+    const summary = latestRun?.summary;
+    const scorePct = summary?.total ? Math.round((summary.passed / summary.total) * 1000) / 10 : 0;
+    return {
+      organizationId: 'demo-org', generatedAt: new Date().toISOString(), latestRun,
+      history: history.slice(0, 20).map(({ checks: _checks, ...run }) => run),
+      capabilities: [
+        { code:'database',label:'Base de datos',available:true,details:'Repositorio demo disponible.' },
+        { code:'realtime',label:'Realtime',available:false,details:'No aplica al modo demo.' },
+        { code:'scheduler',label:'Scheduler',available:false,details:'No aplica al modo demo.' },
+        { code:'email',label:'Transporte de correo',available:false,details:'No aplica al modo demo.' }
+      ],
+      readiness: { status: latestRun?.status ?? 'not_run', scorePct, blockingFailures: summary?.failed ?? 0, lastRunAt: latestRun?.finishedAt ?? null }
+    };
+  },
+  async runQualitySuite(input: RunQualitySuiteInput): Promise<QualityRunRecord> {
+    const startedAt = new Date();
+    const checks = input.clientChecks;
+    const summary = {
+      total: checks.length,
+      passed: checks.filter((item)=>item.status==='passed').length,
+      warnings: checks.filter((item)=>item.status==='warning').length,
+      failed: checks.filter((item)=>item.status==='failed').length,
+      skipped: checks.filter((item)=>item.status==='skipped').length
+    };
+    const status = summary.failed ? 'failed' : summary.warnings ? 'warning' : 'passed';
+    const finishedAt = new Date();
+    const run: QualityRunRecord = { id:`demo-quality-${crypto.randomUUID()}`,organizationId:'demo-org',status,summary,startedAt:startedAt.toISOString(),finishedAt:finishedAt.toISOString(),durationMs:Math.max(0,finishedAt.getTime()-startedAt.getTime()),initiatedBy:'demo-user-admin',releaseVersion:input.releaseVersion ?? null,checks };
+    const history = readJson<QualityRunRecord[]>(QUALITY_RUNS_KEY, []);
+    localStorage.setItem(QUALITY_RUNS_KEY, JSON.stringify([run, ...history].slice(0, 20)));
+    return run;
+  }
 };
 
 export const demoPublicSigcRepository: PublicSigcRepository = {

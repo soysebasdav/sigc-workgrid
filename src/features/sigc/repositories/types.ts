@@ -85,7 +85,10 @@ import type {
   WorkflowBoardSnapshot,
   MoveWorkflowCaseInput,
   MoveWorkflowCaseResult,
-  AutomationRuntimeHealth
+  AutomationRuntimeHealth,
+  QualityDashboard,
+  RunQualitySuiteInput,
+  QualityRunRecord
 } from '../domain/types';
 
 export interface SigcRepository {
@@ -189,6 +192,8 @@ export interface SigcRepository {
   createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation>;
   revokeOrganizationInvitation(invitationId: string): Promise<void>;
   logClientError(input: ClientErrorInput): Promise<void>;
+  getQualityDashboard(): Promise<QualityDashboard>;
+  runQualitySuite(input: RunQualitySuiteInput): Promise<QualityRunRecord>;
 }
 
 export interface PublicSigcRepository {

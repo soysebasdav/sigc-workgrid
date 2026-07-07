@@ -98,7 +98,10 @@ import type {
   WorkflowBoardTransition,
   MoveWorkflowCaseInput,
   MoveWorkflowCaseResult,
-  AutomationRuntimeHealth
+  AutomationRuntimeHealth,
+  QualityDashboard,
+  RunQualitySuiteInput,
+  QualityRunRecord
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 
@@ -1980,6 +1983,23 @@ export const supabaseSigcRepository: SigcRepository = {
       p_severity: input.severity ?? 'error', p_metadata: input.metadata ?? {}
     });
     if (error) console.warn('No fue posible registrar el error de cliente:', error);
+  },
+
+  async getQualityDashboard(): Promise<QualityDashboard> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_sigc_quality_dashboard_v5');
+    if (error) throw error;
+    return data as QualityDashboard;
+  },
+
+  async runQualitySuite(input: RunQualitySuiteInput): Promise<QualityRunRecord> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('run_sigc_quality_suite_v5', {
+      p_client_checks: input.clientChecks as unknown as import('../../../types/supabase').Json,
+      p_release_version: input.releaseVersion?.trim() || null
+    });
+    if (error) throw error;
+    return data as QualityRunRecord;
   }
 };
 
