@@ -24,6 +24,15 @@ import type {
   SigcCatalogs,
   SigcComment,
   SigcDocument,
+  SigcDocumentVersion,
+  UpdateDocumentRetentionInput,
+  SigcAuditFilters,
+  SigcAuditPage,
+  SigcTimelinePage,
+  EmailTemplatePreviewInput,
+  EmailTemplatePreview,
+  SendTestEmailInput,
+  RuntimeExecutionResult,
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
@@ -241,6 +250,15 @@ export const sigcService = {
     return withSafeReadFallback(() => supabaseSigcRepository.listDocuments(caseId), () => demoSigcRepository.listDocuments(caseId));
   },
 
+  getDocumentVersions(documentId: string): Promise<SigcRepositoryResult<SigcDocumentVersion[]>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listDocumentVersions(documentId), () => demoSigcRepository.listDocumentVersions(documentId));
+  },
+
+  async updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void> {
+    await mutationRepository().updateDocumentRetention(input);
+    emitSigcDataChanged();
+  },
+
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
     const document = await mutationRepository().uploadDocument(input);
     emitSigcDataChanged();
@@ -261,8 +279,12 @@ export const sigcService = {
     return mutationRepository().getDocumentSignedUrl(storagePath);
   },
 
-  getCaseTimeline(caseId: string): Promise<SigcRepositoryResult<SigcTimelineEvent[]>> {
-    return withSafeReadFallback(() => supabaseSigcRepository.listCaseTimeline(caseId), () => demoSigcRepository.listCaseTimeline(caseId));
+  getCaseTimeline(caseId: string, page = 1, pageSize = 100): Promise<SigcRepositoryResult<SigcTimelinePage>> {
+    return withSafeReadFallback(() => supabaseSigcRepository.listCaseTimeline(caseId, page, pageSize), () => demoSigcRepository.listCaseTimeline(caseId, page, pageSize));
+  },
+
+  getAuditEvents(filters: SigcAuditFilters): Promise<SigcRepositoryResult<SigcAuditPage>> {
+    return withStrictRead(() => supabaseSigcRepository.getAuditEvents(filters), () => demoSigcRepository.getAuditEvents(filters));
   },
 
   getCaseSlaOverrides(caseId: string): Promise<SigcRepositoryResult<SigcSlaOverride[]>> {
@@ -330,6 +352,9 @@ export const sigcService = {
   async deleteTransition(id: string): Promise<void> { await mutationRepository().deleteTransition(id); emitSigcDataChanged(); },
   async saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void> { await mutationRepository().saveEmailTemplate(input); emitSigcDataChanged(); },
   async saveReminderRule(input: SaveReminderRuleInput): Promise<void> { await mutationRepository().saveReminderRule(input); emitSigcDataChanged(); },
+  previewEmailTemplate(input: EmailTemplatePreviewInput): Promise<EmailTemplatePreview> { return mutationRepository().previewEmailTemplate(input); },
+  async sendTestEmail(input: SendTestEmailInput): Promise<void> { await mutationRepository().sendTestEmail(input); emitSigcDataChanged(); },
+  async runRuntimeNow(): Promise<RuntimeExecutionResult> { const result = await mutationRepository().runRuntimeNow(); emitSigcDataChanged(); return result; },
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> { await mutationRepository().saveAutomationRule(input); emitSigcDataChanged(); },
   async toggleAutomationRule(id: string, isActive: boolean): Promise<void> { await mutationRepository().toggleAutomationRule(id, isActive); emitSigcDataChanged(); },
   async runAutomationRule(ruleId: string, caseId: string): Promise<void> { await mutationRepository().runAutomationRule(ruleId, caseId); emitSigcDataChanged(); },

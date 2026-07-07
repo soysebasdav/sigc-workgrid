@@ -22,7 +22,6 @@ import {
   Users,
   Workflow
 } from 'lucide-react';
-import type { CasePriorityName, CaseStateName } from './domain/types';
 import { CASE_READ_PERMISSIONS, PERMISSIONS, type PermissionCode } from '../authz/permissions';
 
 export type SigcNavItem = {
@@ -44,6 +43,7 @@ export const navItems: SigcNavItem[] = [
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, anyOf: CASE_READ_PERMISSIONS },
   { to: '/documents', label: 'Gestión documental', icon: FolderKanban, anyOf: CASE_READ_PERMISSIONS },
   { to: '/reports', label: 'Reportes', icon: BarChart3, allOf: [PERMISSIONS.reportsView] },
+  { to: '/audit', label: 'Auditoría', icon: Shield, allOf: [PERMISSIONS.auditView] },
   { to: '/workspace', label: 'Espacio SaaS', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/notifications', label: 'Notificaciones', icon: BellRing },
   { to: '/users', label: 'Usuarios', icon: Users, allOf: [PERMISSIONS.adminManageUsers] },
@@ -63,7 +63,7 @@ export const areaTones: Record<string, string> = {
   SDG: 'tone-cyan'
 };
 
-export const stateTones: Record<CaseStateName | string, string> = {
+export const stateTones: Record<string, string> = {
   'Pendiente de Clasificación': 'tone-slate',
   Clasificado: 'tone-indigo',
   Asignado: 'tone-blue',
@@ -83,12 +83,28 @@ export const stateTones: Record<CaseStateName | string, string> = {
   Cargado: 'tone-cyan'
 };
 
-export const priorityTones: Record<CasePriorityName, string> = {
+export const priorityTones: Record<string, string> = {
   Crítica: 'tone-red',
   Alta: 'tone-orange',
   Media: 'tone-yellow',
   Baja: 'tone-emerald'
 };
+
+
+const fallbackTonePalette = ['tone-blue', 'tone-purple', 'tone-emerald', 'tone-orange', 'tone-cyan', 'tone-amber', 'tone-rose', 'tone-indigo'];
+
+export function toneFromCatalog(color: string | null | undefined, name: string, fallback = 'tone-slate'): string {
+  if (color?.startsWith('tone-')) return color;
+  const predefined = stateTones[name] ?? priorityTones[name] ?? areaTones[name];
+  if (predefined) return predefined;
+  if (!name) return fallback;
+  const hash = [...name].reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0);
+  return fallbackTonePalette[hash % fallbackTonePalette.length] ?? fallback;
+}
+
+export function isStateCode(code: string | null | undefined, expected: string): boolean {
+  return String(code ?? '').trim().toUpperCase() === expected.trim().toUpperCase();
+}
 
 export const reportMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 export const reportValues = [46, 52, 38, 60, 72, 66, 81, 75, 96, 88, 104, 93];

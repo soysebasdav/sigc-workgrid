@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { CheckCircle2, LoaderCircle, Mail, RotateCcw, Send, TimerReset, X } from 'lucide-react';
 import type { SigcAssignment, SigcCaseReview, SigcMember } from '../domain/types';
 import { sigcService } from '../services/sigcService';
+import { PERMISSIONS } from '../../authz/permissions';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
@@ -66,6 +67,7 @@ export function ManualReminderModal({ caseId, members, assignments, onClose, onS
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError('');
     try {
+      if (!recipientIds.length) throw new Error('Selecciona al menos un destinatario.');
       const count = await sigcService.sendManualReminder({ caseId, message, recipientUserIds: recipientIds });
       onSaved(`Recordatorio enviado a ${count} destinatario${count === 1 ? '' : 's'}.`);
     } catch (error) { setError(errorMessage(error)); } finally { setSaving(false); }
@@ -79,13 +81,13 @@ export function ManualReminderModal({ caseId, members, assignments, onClose, onS
       <textarea className="field textarea" placeholder="Mensaje del recordatorio" value={message} onChange={(event) => setMessage(event.target.value)} required minLength={3} />
       <div className="phase-note"><Mail size={15} /> Se crea notificación interna y se encola el correo del destinatario.</div>
       {error ? <div className="alert danger">{error}</div> : null}
-      <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Enviando...' : 'Enviar recordatorio'}</button></div>
+      <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving || !recipientIds.length}>{saving ? 'Enviando...' : 'Enviar recordatorio'}</button></div>
     </form>
   </ModalFrame>;
 }
 
 export function SubmitReviewModal({ caseId, members, onClose, onSaved }: { caseId: string; members: SigcMember[]; onClose: () => void; onSaved: (message: string) => void }) {
-  const reviewers = members.filter((member) => ['Administrador', 'Director', 'Coordinador'].includes(member.roleName));
+  const reviewers = members.filter((member) => member.permissionCodes.includes(PERMISSIONS.caseApprove));
   const [reviewerUserId, setReviewerUserId] = useState('');
   const [note, setNote] = useState('La respuesta está lista para revisión y aprobación.');
   const [saving, setSaving] = useState(false);

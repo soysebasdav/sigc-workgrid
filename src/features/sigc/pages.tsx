@@ -41,6 +41,7 @@ import type { SigcAssignment, SigcCase, SigcCaseFilters, SigcDocument, SigcSubta
 import { AssignCaseModal, ChangeCaseStateModal, ClassificationModal, DeactivateAssignmentModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
+import { DocumentHistoryModal } from './components/DocumentHistoryModal';
 import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
 import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useSigcCase, useSigcCaseSearch, useSigcCases, useSigcCatalogs, useSigcDocuments, useSigcMembers, useSigcSubtasks, useSigcDashboard, usePublicIntakeContext, useWorkflowBoard } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
@@ -49,7 +50,9 @@ import {
   areaTones,
   navItems,
   priorityTones,
-  stateTones
+  stateTones,
+  toneFromCatalog,
+  isStateCode
 } from './ui';
 
 type ToastState = {
@@ -302,7 +305,9 @@ export function CaseDetailPage() {
   const { data: caseSubtasks } = useSigcSubtasks({ caseId: resolvedCaseId });
   const { data: comments } = useCaseComments(resolvedCaseId);
   const { data: caseDocuments } = useSigcDocuments(resolvedCaseId);
-  const { data: timelineEvents } = useCaseTimeline(resolvedCaseId);
+  const [timelinePageNumber, setTimelinePageNumber] = useState(1);
+  const { data: timelinePage } = useCaseTimeline(resolvedCaseId, timelinePageNumber, 100);
+  const timelineEvents = timelinePage.items;
   const { data: slaOverrides } = useCaseSlaOverrides(resolvedCaseId);
   const { data: reviews } = useCaseReviews(resolvedCaseId);
   const { data: deliveries } = useCaseDeliveries(resolvedCaseId);
@@ -314,6 +319,7 @@ export function CaseDetailPage() {
   const [deactivatingAssignment, setDeactivatingAssignment] = useState<SigcAssignment | null>(null);
   const [traceTab, setTraceTab] = useState<'timeline' | 'comments'>('timeline');
   const [versionDocument, setVersionDocument] = useState<SigcDocument | null>(null);
+  const [historyDocument, setHistoryDocument] = useState<SigcDocument | null>(null);
   const [reviewDecision, setReviewDecision] = useState<{ review: SigcCaseReview; decision: 'approved' | 'returned' } | null>(null);
   const pendingReview = reviews.find((review) => review.status === 'pending') ?? null;
 
@@ -351,7 +357,7 @@ export function CaseDetailPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       <section className="card case-hero">
         <div>
-          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone="tone-purple">{item.type}</Badge><Badge tone={stateTones[item.state] ?? 'tone-slate'}>{item.state}</Badge><Badge tone={priorityTones[item.priority] ?? 'tone-slate'}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
+          <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone={toneFromCatalog(item.typeColor, item.type, 'tone-purple')} color={item.typeColor}>{item.type}</Badge><Badge tone={toneFromCatalog(item.stateColor, item.state, stateTones[item.state] ?? 'tone-slate')} color={item.stateColor}>{item.state}</Badge><Badge tone={toneFromCatalog(item.priorityColor, item.priority, priorityTones[item.priority] ?? 'tone-slate')} color={item.priorityColor}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
           <h2>{item.subject}</h2>
           <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo: {item.requesterEmail}</> : null}</p>
         </div>
@@ -362,8 +368,8 @@ export function CaseDetailPage() {
             {can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft" onClick={() => setDetailModal('document')}><Upload size={17} /> Cargar doc.</button> : null}
             {can(PERMISSIONS.caseOverrideSla) ? <button className="btn btn-white" onClick={() => setDetailModal('sla')}><TimerResetIcon /> Modificar SLA</button> : null}
             {can(PERMISSIONS.caseSendReminder) ? <button className="btn btn-white" onClick={() => setDetailModal('reminder')}><MailCheck size={17} /> Recordatorio</button> : null}
-            {item.state === 'Respuesta Elaborada' && can(PERMISSIONS.caseReview) ? <button className="btn btn-primary" onClick={() => setDetailModal('review')}><CheckCircle2 size={17} /> Enviar a revisión</button> : null}
-            {item.state === 'Aprobado' && can(PERMISSIONS.caseRegisterDelivery) ? <button className="btn btn-primary" onClick={() => setDetailModal('delivery')}><MailCheck size={17} /> Registrar envío</button> : null}
+            {isStateCode(item.stateCode, 'RESPONSE_READY') && can(PERMISSIONS.caseReview) ? <button className="btn btn-primary" onClick={() => setDetailModal('review')}><CheckCircle2 size={17} /> Enviar a revisión</button> : null}
+            {isStateCode(item.stateCode, 'APPROVED') && can(PERMISSIONS.caseRegisterDelivery) ? <button className="btn btn-primary" onClick={() => setDetailModal('delivery')}><MailCheck size={17} /> Registrar envío</button> : null}
           </div>
         </div>
       </section>
@@ -379,6 +385,7 @@ export function CaseDetailPage() {
                     <div><div className="timeline-title"><strong>{event.title}</strong><div className="kpi-icon small"><ActivityIcon eventType={event.eventType} /></div></div><p>{event.description}</p><small>{event.actorName} · {event.date}</small></div>
                   </article>
                 )) : <div className="empty-inline">Aún no hay eventos registrados en la trazabilidad.</div>}
+                {timelinePage.total > timelinePage.pageSize ? <div className="timeline-pagination"><button className="btn btn-white small" disabled={timelinePage.page <= 1} onClick={() => setTimelinePageNumber((page) => Math.max(1, page - 1))}>Anterior</button><span>Página {timelinePage.page} de {Math.max(1, Math.ceil(timelinePage.total / timelinePage.pageSize))} · {timelinePage.total} eventos</span><button className="btn btn-white small" disabled={timelinePage.page * timelinePage.pageSize >= timelinePage.total} onClick={() => setTimelinePageNumber((page) => page + 1)}>Siguiente</button></div> : null}
               </div>
             ) : (
               <div className="comments-list">
@@ -426,9 +433,9 @@ export function CaseDetailPage() {
               </div>
             </CardBlock>
             <CardBlock title="Revisión, aprobación y envío" description="Flujo formal de revisión antes de remitir la respuesta." icon={<CheckCircle2 />}>
-              {item.state === 'Respuesta Elaborada' && can(PERMISSIONS.caseReview) ? <div className="phase4-callout"><strong>Respuesta lista para revisión</strong><span>Selecciona un aprobador o envíala a la cola general de revisión.</span><button className="btn btn-primary small" onClick={() => setDetailModal('review')}>Enviar a revisión</button></div> : null}
+              {isStateCode(item.stateCode, 'RESPONSE_READY') && can(PERMISSIONS.caseReview) ? <div className="phase4-callout"><strong>Respuesta lista para revisión</strong><span>Selecciona un aprobador o envíala a la cola general de revisión.</span><button className="btn btn-primary small" onClick={() => setDetailModal('review')}>Enviar a revisión</button></div> : null}
               {pendingReview ? <div className="phase4-callout review-pending"><strong>Revisión #{pendingReview.reviewRound} pendiente</strong><span>Revisor: {pendingReview.reviewerName}</span>{pendingReview.requestNote ? <p>{pendingReview.requestNote}</p> : null}{can(PERMISSIONS.caseApprove) ? <div className="button-grid two"><button className="btn btn-primary small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'approved' })}>Aprobar</button><button className="btn btn-white small" onClick={() => setReviewDecision({ review: pendingReview, decision: 'returned' })}>Devolver</button></div> : null}</div> : null}
-              {item.state === 'Aprobado' && can(PERMISSIONS.caseRegisterDelivery) ? <div className="phase4-callout"><strong>Respuesta aprobada</strong><span>Registra el canal y destinatario para pasar el caso a Enviado.</span><button className="btn btn-primary small" onClick={() => setDetailModal('delivery')}>Registrar envío</button></div> : null}
+              {isStateCode(item.stateCode, 'APPROVED') && can(PERMISSIONS.caseRegisterDelivery) ? <div className="phase4-callout"><strong>Respuesta aprobada</strong><span>Registra el canal y destinatario para pasar el caso a Enviado.</span><button className="btn btn-primary small" onClick={() => setDetailModal('delivery')}>Registrar envío</button></div> : null}
               <div className="phase4-history-list">
                 {reviews.slice(0, 4).map((review) => <div className="phase4-history-row" key={review.id}><div><strong>Revisión #{review.reviewRound} · {review.status === 'pending' ? 'Pendiente' : review.status === 'approved' ? 'Aprobada' : review.status === 'returned' ? 'Devuelta' : 'Cancelada'}</strong><span>{review.reviewerName}{review.decisionComments ? ` · ${review.decisionComments}` : ''}</span></div><small>{review.requestedLabel}</small></div>)}
                 {deliveries.slice(0, 3).map((delivery) => <div className="phase4-history-row" key={delivery.id}><div><strong>Envío · {delivery.channel}</strong><span>{delivery.recipient}{delivery.reference ? ` · Ref. ${delivery.reference}` : ''}</span></div><small>{delivery.deliveredByName} · {delivery.deliveredLabel}</small></div>)}
@@ -443,7 +450,7 @@ export function CaseDetailPage() {
             </CardBlock>
             <CardBlock title="Documentos adjuntos" description={`${caseDocuments.length} documento${caseDocuments.length === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
               {can(PERMISSIONS.documentUpload) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div> : null}
-              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
+              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-white icon-only small" onClick={() => setHistoryDocument(doc)} title="Historial de versiones"><Archive size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
             </CardBlock>
           </section>
         </div>
@@ -472,6 +479,7 @@ export function CaseDetailPage() {
       {detailModal === 'review' && can(PERMISSIONS.caseReview) ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'delivery' && can(PERMISSIONS.caseRegisterDelivery) ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {reviewDecision && can(PERMISSIONS.caseApprove) ? <ReviewDecisionModal review={reviewDecision.review} decision={reviewDecision.decision} onClose={() => setReviewDecision(null)} onSaved={(message) => { setReviewDecision(null); showToast(message); }} /> : null}
+      {historyDocument ? <DocumentHistoryModal document={historyDocument} canManageRetention={can(PERMISSIONS.documentUpload)} onClose={() => setHistoryDocument(null)} onSaved={(message) => showToast(message)} /> : null}
       {versionDocument && can(PERMISSIONS.documentUpload) ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}
     </Page>
   );
@@ -791,6 +799,7 @@ export function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [versioning, setVersioning] = useState<SigcDocument | null>(null);
   const [editingDocument, setEditingDocument] = useState<SigcDocument | null>(null);
+  const [historyDocument, setHistoryDocument] = useState<SigcDocument | null>(null);
 
   const filtered = documents.filter((document) => {
     const value = query.trim().toLowerCase();
@@ -828,9 +837,10 @@ export function DocumentsPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       <div className="case-list-meta"><span>{isLoading ? 'Consultando Storage y metadatos...' : 'Versionamiento y eliminación lógica activos'}</span><strong>{filtered.length} documento{filtered.length === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
+      <section className="card table-card"><DocumentsTable rows={filtered} onOpen={(document) => void openDocument(document)} onHistory={setHistoryDocument} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
       {uploading && canUploadDocuments ? <DocumentUploadModal cases={cases} onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
       {versioning && canUploadDocuments ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
+      {historyDocument ? <DocumentHistoryModal document={historyDocument} canManageRetention={canUploadDocuments} onClose={() => setHistoryDocument(null)} onSaved={(message) => showToast(message)} /> : null}
       {editingDocument && canUploadDocuments ? <TextDocumentEditorModal document={editingDocument} onClose={() => setEditingDocument(null)} onSaved={(message) => { setEditingDocument(null); showToast(message); }} /> : null}
     </Page>
   );
@@ -912,8 +922,10 @@ function CardBlock({ title, description, icon, children, className = '' }: { tit
   );
 }
 
-function Badge({ children, tone = 'tone-slate' }: { children: ReactNode; tone?: string }) {
-  return <span className={`chip ${tone}`}>{children}</span>;
+function Badge({ children, tone = 'tone-slate', color }: { children: ReactNode; tone?: string; color?: string | null }) {
+  const normalized = color?.trim();
+  const style: CSSProperties | undefined = normalized && /^#[0-9a-f]{6}$/i.test(normalized) ? { color: normalized, backgroundColor: `${normalized}18`, borderColor: `${normalized}55` } : undefined;
+  return <span className={`chip ${tone}`} style={style}>{children}</span>;
 }
 
 function SemDot({ color }: { color: string }) {
@@ -937,10 +949,10 @@ function CasesTable({ rows, compact = false }: { rows: SigcCase[]; compact?: boo
               <td>{item.type}</td>
               <td><strong className="truncate">{item.subject}</strong><small>{item.risk}</small></td>
               <td><strong>{item.company}</strong><small>{item.requester}</small></td>
-              <td><Badge tone={areaTones[item.area]}>{item.area}</Badge></td>
+              <td><Badge tone={toneFromCatalog(item.areaColor, item.area, areaTones[item.area] ?? 'tone-blue')} color={item.areaColor}>{item.area}</Badge></td>
               <td>{item.owner}</td>
-              <td><Badge tone={stateTones[item.state]}>{item.state}</Badge></td>
-              <td><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge></td>
+              <td><Badge tone={toneFromCatalog(item.stateColor, item.state, stateTones[item.state] ?? 'tone-slate')} color={item.stateColor}>{item.state}</Badge></td>
+              <td><Badge tone={toneFromCatalog(item.priorityColor, item.priority, priorityTones[item.priority] ?? 'tone-slate')} color={item.priorityColor}>{item.priority}</Badge></td>
               <td><strong>{item.sla}</strong><small>{item.due}</small></td>
               <td><span className="sem-cell"><SemDot color={item.sem} /> {item.sem}</span></td>
               <td><div className="progress-cell"><Progress value={item.progress} /><b>{item.progress}%</b></div></td>
@@ -964,12 +976,12 @@ function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit
   );
 }
 
-function DocumentsTable({ rows, onOpen, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
+function DocumentsTable({ rows, onOpen, onHistory, onEdit, onVersion, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onHistory: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
         <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-white small" onClick={() => onHistory(doc)}><Archive size={14} /> Historial</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={8}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );
@@ -993,7 +1005,7 @@ function CaseCard({ item }: { item: SigcCase }) {
     <article className="case-card" draggable>
       <div><strong>{item.radicado}</strong><SemDot color={item.sem} /></div>
       <p>{item.subject}</p>
-      <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={priorityTones[item.priority]}>{item.priority}</Badge></div>
+      <div className="chip-row"><Badge tone={toneFromCatalog(item.areaColor, item.area, areaTones[item.area] ?? 'tone-blue')} color={item.areaColor}>{item.area}</Badge><Badge tone={toneFromCatalog(item.priorityColor, item.priority, priorityTones[item.priority] ?? 'tone-slate')} color={item.priorityColor}>{item.priority}</Badge></div>
       <small>{item.owner}<span>{item.due}</span></small>
       <Progress value={item.progress} />
     </article>
@@ -1005,7 +1017,7 @@ function CaseDrawer({ item, onClose }: { item: SigcCase; onClose: () => void }) 
     <aside className="drawer open">
       <header><div><Badge tone="tone-dark">{item.radicado}</Badge><h2>{item.subject}</h2><p>{item.company} · {item.requester}</p></div><button className="btn btn-white icon-only" onClick={onClose}><X size={17} /></button></header>
       <div className="drawer-body">
-        <div className="chip-row"><Badge tone={areaTones[item.area]}>{item.area}</Badge><Badge tone={stateTones[item.state] ?? 'tone-slate'}>{item.state}</Badge><Badge tone={priorityTones[item.priority] ?? 'tone-slate'}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {item.risk}</Badge></div>
+        <div className="chip-row"><Badge tone={toneFromCatalog(item.areaColor, item.area, areaTones[item.area] ?? 'tone-blue')} color={item.areaColor}>{item.area}</Badge><Badge tone={toneFromCatalog(item.stateColor, item.state, stateTones[item.state] ?? 'tone-slate')} color={item.stateColor}>{item.state}</Badge><Badge tone={toneFromCatalog(item.priorityColor, item.priority, priorityTones[item.priority] ?? 'tone-slate')} color={item.priorityColor}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {item.risk}</Badge></div>
         <section className="card drawer-progress"><div className="bar-caption"><strong>Avance</strong><span>{item.progress}%</span></div><Progress value={item.progress} /></section>
         <dl className="definition-list drawer-defs">{[['Responsable', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Última actualización', item.updated], ['Tipo', item.type]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <Link className="btn btn-primary full" onClick={onClose} to={`/cases/${encodeURIComponent(item.id)}`}>Abrir expediente completo</Link>

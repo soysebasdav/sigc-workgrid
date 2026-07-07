@@ -24,6 +24,15 @@ import type {
   SigcCatalogs,
   SigcComment,
   SigcDocument,
+  SigcDocumentVersion,
+  UpdateDocumentRetentionInput,
+  SigcAuditFilters,
+  SigcAuditPage,
+  SigcTimelinePage,
+  EmailTemplatePreviewInput,
+  EmailTemplatePreview,
+  SendTestEmailInput,
+  RuntimeExecutionResult,
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
@@ -77,6 +86,7 @@ const SUBTASKS_KEY = 'sigc_phase3_demo_subtasks';
 const COMMENTS_KEY = 'sigc_phase3_demo_comments';
 const DOCUMENTS_KEY = 'sigc_phase3_demo_documents';
 const TIMELINE_KEY = 'sigc_phase3_demo_timeline';
+const DOCUMENT_VERSIONS_KEY = 'sigc_phase6_demo_document_versions';
 const SLA_OVERRIDES_KEY = 'sigc_phase4_demo_sla_overrides';
 const REVIEWS_KEY = 'sigc_phase4_demo_reviews';
 const DELIVERIES_KEY = 'sigc_phase4_demo_deliveries';
@@ -85,23 +95,23 @@ const REMINDERS_KEY = 'sigc_phase4_demo_reminders';
 const catalogs: SigcCatalogs = {
   organizationId: null,
   areas: ['Gerencia', 'Nómina', 'Talento Humano', 'Operaciones', 'SDG', 'Comercial', 'Administrativa y Financiera', 'Tecnología', 'Marketing y Telecomunicaciones', 'Jurídica']
-    .map((name, index) => ({ id: `demo-area-${index + 1}`, name, isActive: true })),
+    .map((name, index) => ({ id: `demo-area-${index + 1}`, name, code: `AREA_${index + 1}`, color: ['#5b21b6','#db2777','#2563eb','#ea580c','#0891b2','#059669','#d97706','#e11d48','#0f766e','#7c3aed'][index] ?? '#64748b', isActive: true })),
   caseTypes: ['Petición', 'Contrato', 'Reclamo', 'Acción de Tutela', 'Requerimiento Interno', 'Requerimiento Externo', 'Proceso Judicial', 'Revisión de Procesos', 'Hallazgo de auditoría', 'Otros']
-    .map((name, index) => ({ id: `demo-type-${index + 1}`, name, isActive: true })),
+    .map((name, index) => ({ id: `demo-type-${index + 1}`, name, code: `TYPE_${index + 1}`, color: '#6366f1', isActive: true })),
   states: ['Pendiente de Clasificación', 'Clasificado', 'Asignado', 'En Gestión', 'Pendiente de Información', 'Respuesta Elaborada', 'En Revisión / Aprobación', 'Devuelto para Ajustes', 'Aprobado', 'Enviado', 'Cerrado', 'Cancelado']
-    .map((name, index) => ({ id: `demo-state-${index + 1}`, name, isActive: true })),
+    .map((name, index) => ({ id: `demo-state-${index + 1}`, name, code: ['PENDING_CLASSIFICATION','CLASSIFIED','ASSIGNED','IN_PROGRESS','PENDING_INFORMATION','RESPONSE_READY','IN_REVIEW','RETURNED_FOR_ADJUSTMENTS','APPROVED','SENT','CLOSED','CANCELLED'][index] ?? `STATE_${index + 1}`, color: ['#64748b','#4f46e5','#2563eb','#0891b2','#ca8a04','#7c3aed','#9333ea','#ea580c','#059669','#0f766e','#16a34a','#dc2626'][index] ?? '#64748b', isActive: true })),
   priorities: ['Crítica', 'Alta', 'Media', 'Baja']
-    .map((name, index) => ({ id: `demo-priority-${index + 1}`, name, isActive: true })),
+    .map((name, index) => ({ id: `demo-priority-${index + 1}`, name, code: `PRIORITY_${index + 1}`, color: ['#dc2626','#ea580c','#ca8a04','#059669'][index] ?? '#64748b', isActive: true })),
   roles: ['Administrador', 'Director', 'Coordinador', 'Analista', 'Consulta', 'Cliente Externo']
     .map((name, index) => ({ id: `demo-role-${index + 1}`, name, isActive: true }))
 };
 
 const members: SigcMember[] = [
-  { userId: 'demo-user-1', name: 'Laura Méndez', email: 'laura@sigc.demo', roleName: 'Coordinador' },
-  { userId: 'demo-user-2', name: 'Felipe Vargas', email: 'felipe@sigc.demo', roleName: 'Analista' },
-  { userId: 'demo-user-3', name: 'Mónica Díaz', email: 'monica@sigc.demo', roleName: 'Analista' },
-  { userId: 'demo-user-4', name: 'Natalia Bernal', email: 'natalia@sigc.demo', roleName: 'Analista' },
-  { userId: 'demo-user-5', name: 'Julián Pérez', email: 'julian@sigc.demo', roleName: 'Analista' }
+  { userId: 'demo-user-1', name: 'Laura Méndez', email: 'laura@sigc.demo', roleName: 'Coordinador', permissionCodes: ['case.approve','case.review'] },
+  { userId: 'demo-user-2', name: 'Felipe Vargas', email: 'felipe@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
+  { userId: 'demo-user-3', name: 'Mónica Díaz', email: 'monica@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
+  { userId: 'demo-user-4', name: 'Natalia Bernal', email: 'natalia@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
+  { userId: 'demo-user-5', name: 'Julián Pérez', email: 'julian@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] }
 ];
 
 function readCases(): SigcCase[] {
@@ -191,7 +201,7 @@ function readDocuments(): SigcDocument[] {
     return {
       id: `demo-document-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? doc.caseId, caseSubject: caseItem?.subject ?? '',
       name: doc.name, category: doc.type, state: doc.state, currentVersion: Number(doc.version.replace(/\D/g, '')) || 1, ownerName: doc.owner, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0
+      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0, retentionUntil: null, legalHold: false
     } satisfies SigcDocument;
   });
   writeJson(DOCUMENTS_KEY, seeded);
@@ -227,9 +237,15 @@ function enrichDemoCase(item: SigcCase, index: number): SigcCase {
     ...item,
     databaseId: item.databaseId ?? `demo-case-${index + 1}`,
     typeId: type.id,
+    typeColor: type.color ?? null,
     priorityId: priority.id,
+    priorityCode: priority.code,
+    priorityColor: priority.color ?? null,
     stateId: state.id,
+    stateCode: state.code,
+    stateColor: state.color ?? null,
     areaId: area.id,
+    areaColor: area.color ?? null,
     ownerId: owner?.userId,
     description: item.description ?? item.subject,
     openedAt,
@@ -707,11 +723,39 @@ export const demoSigcRepository: SigcRepository = {
     return rows;
   },
 
+  async listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]> {
+    return readJson<SigcDocumentVersion[]>(DOCUMENT_VERSIONS_KEY, [])
+      .filter((version) => version.documentId === documentId)
+      .sort((a, b) => b.versionNumber - a.versionNumber);
+  },
+
+  async updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void> {
+    writeJson(DOCUMENTS_KEY, readDocuments().map((document) => document.id === input.documentId
+      ? { ...document, retentionUntil: input.retentionUntil || null, legalHold: input.legalHold, updatedAt: new Date().toISOString(), date: 'Ahora' }
+      : document));
+  },
+
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
     const item = await this.getCaseByIdentifier(input.caseId);
     if (!item) throw new Error('Caso no encontrado.');
-    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size };
+    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size, retentionUntil: null, legalHold: false };
     writeJson(DOCUMENTS_KEY, [document, ...readDocuments()]);
+    const version: SigcDocumentVersion = {
+      id: `demo-version-${crypto.randomUUID()}`,
+      documentId: document.id,
+      versionNumber: 1,
+      originalFilename: input.file.name,
+      storagePath: '',
+      mimeType: input.file.type,
+      sizeBytes: input.file.size,
+      checksum: null,
+      changeNotes: input.changeNotes,
+      uploadedBy: 'demo-user-1',
+      uploadedByName: 'Usuario Demo',
+      createdAt: new Date().toISOString(),
+      createdLabel: 'Ahora'
+    };
+    writeJson(DOCUMENT_VERSIONS_KEY, [version, ...readJson<SigcDocumentVersion[]>(DOCUMENT_VERSIONS_KEY, [])]);
     pushTimeline(document.caseId, 'document.created', 'Documento cargado', document.name);
     return document;
   },
@@ -720,6 +764,22 @@ export const demoSigcRepository: SigcRepository = {
     const rows = readDocuments();
     const document = rows.find((entry) => entry.id === input.documentId);
     writeJson(DOCUMENTS_KEY, rows.map((entry) => entry.id === input.documentId ? { ...entry, currentVersion: entry.currentVersion + 1, currentFilename: input.file.name, currentMimeType: input.file.type, currentSizeBytes: input.file.size, updatedAt: new Date().toISOString(), date: 'Ahora' } : entry));
+    const version: SigcDocumentVersion = {
+      id: `demo-version-${crypto.randomUUID()}`,
+      documentId: input.documentId,
+      versionNumber: input.currentVersion + 1,
+      originalFilename: input.file.name,
+      storagePath: '',
+      mimeType: input.file.type,
+      sizeBytes: input.file.size,
+      checksum: null,
+      changeNotes: input.changeNotes,
+      uploadedBy: 'demo-user-1',
+      uploadedByName: 'Usuario Demo',
+      createdAt: new Date().toISOString(),
+      createdLabel: 'Ahora'
+    };
+    writeJson(DOCUMENT_VERSIONS_KEY, [version, ...readJson<SigcDocumentVersion[]>(DOCUMENT_VERSIONS_KEY, [])]);
     if (document) pushTimeline(document.caseId, 'document.version_created', 'Nueva versión documental', `${input.file.name} · v${input.currentVersion + 1}`);
   },
 
@@ -734,10 +794,43 @@ export const demoSigcRepository: SigcRepository = {
     throw new Error('La vista de archivos requiere Supabase Storage.');
   },
 
-  async listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]> {
+  async listCaseTimeline(caseId: string, page = 1, pageSize = 100): Promise<SigcTimelinePage> {
     const item = await this.getCaseByIdentifier(caseId);
     const resolved = item?.databaseId ?? caseId;
-    return readTimeline().filter((event) => event.caseId === resolved || event.caseId === '');
+    const all = readTimeline().filter((event) => event.caseId === resolved || event.caseId === '');
+    const start = (Math.max(1, page) - 1) * pageSize;
+    return { items: all.slice(start, start + pageSize), total: all.length, page, pageSize, hasMore: start + pageSize < all.length };
+  },
+
+  async getAuditEvents(filters: SigcAuditFilters): Promise<SigcAuditPage> {
+    const query = filters.query?.trim().toLowerCase() ?? '';
+    const all = readTimeline().filter((event) => !query || `${event.title} ${event.description} ${event.actorName} ${event.eventType}`.toLowerCase().includes(query));
+    const page = Math.max(1, filters.page ?? 1);
+    const pageSize = Math.max(20, filters.pageSize ?? 50);
+    const start = (page - 1) * pageSize;
+    return {
+      items: all.slice(start, start + pageSize).map((event, index) => ({
+        id: Number(String(event.id).replace(/\D/g, '')) || start + index + 1,
+        organizationId: 'demo-org',
+        caseId: event.caseId || undefined,
+        caseRadicado: readCases().find((item) => (item.databaseId ?? item.id) === event.caseId)?.radicado,
+        actorUserId: event.actorId,
+        actorName: event.actorName,
+        eventType: event.eventType,
+        entityType: event.entityType,
+        entityId: event.id,
+        beforeData: null,
+        afterData: null,
+        metadata: {},
+        ipAddress: '127.0.0.1',
+        userAgent: 'Demo SIGC',
+        createdAt: event.createdAt,
+        createdLabel: event.date
+      })),
+      total: all.length,
+      page,
+      pageSize
+    };
   },
 
   async listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]> {
@@ -825,7 +918,7 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
-    const states = catalogs.states.map((item, index) => ({ id: item.id, code: `STATE_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true, isInitial: index === 0, isTerminal: ['Cerrado', 'Cancelado'].includes(item.name) }));
+    const states = catalogs.states.map((item, index) => ({ id: item.id, code: item.code ?? `STATE_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: index * 10, isActive: true, isInitial: index === 0, isTerminal: ['CLOSED', 'CANCELLED'].includes(item.code ?? '') }));
     return {
       organizationId: 'demo-org',
       areas: catalogs.areas.map((item, index) => ({ id: item.id, code: `AREA_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
@@ -834,12 +927,24 @@ export const demoSigcRepository: SigcRepository = {
       states,
       slaPolicies: catalogs.caseTypes.map((item, index) => ({ id: `demo-sla-${index}`, caseTypeId: item.id, caseTypeName: item.name, name: `SLA ${item.name}`, durationValue: item.name === 'Acción de Tutela' ? 24 : 5, durationUnit: item.name === 'Acción de Tutela' ? 'hours' : 'calendar_days', timezone: 'America/Bogota', pauseOnPendingInformation: true, isDefault: true, isActive: true })),
       holidays: [],
-      permissions: [{ id: 'p1', code: 'admin.manage_configuration', name: 'Administrar configuración' }, { id: 'p2', code: 'automation.manage', name: 'Administrar automatizaciones' }],
+      permissions: [
+        { id: 'p1', code: 'admin.manage_configuration', name: 'Administrar configuración' },
+        { id: 'p2', code: 'automation.manage', name: 'Administrar automatizaciones' },
+        { id: 'p3', code: 'audit.view', name: 'Ver auditoría' },
+        { id: 'p4', code: 'audit.export', name: 'Exportar auditoría' }
+      ],
       roles: catalogs.roles.map((item, index) => ({ id: item.id, code: `role_${index}`, name: item.name, isSystem: true, isActive: true, permissionIds: index === 0 ? ['p1', 'p2'] : [] })),
       members: members.map((member, index) => ({ membershipId: `demo-membership-${index}`, userId: member.userId, name: member.name, email: member.email, roleId: catalogs.roles[index % catalogs.roles.length]?.id, roleName: member.roleName, isActive: true })),
-      workflows: catalogs.caseTypes.map((item) => ({ caseTypeId: item.id, caseTypeName: item.name, states: states.map((state, index) => ({ stateId: state.id, stateName: state.name, sortOrder: index * 10, isRequired: true })), transitions: [] })),
-      emailTemplates: [{ id: 'template-1', code: 'CASE_CREATED', name: 'Confirmación de radicación', eventType: 'case_created', subject: 'Confirmación {{radicado}}', bodyText: 'Tu solicitud {{radicado}} fue registrada.', isActive: true }],
-      reminderRules: [{ id: 'reminder-1', code: 'BEFORE_24H', name: '24 horas antes', triggerKind: 'before_due', offsetMinutes: 1440, includeManagers: false, isActive: true }],
+      workflows: catalogs.caseTypes.map((item) => ({
+        caseTypeId: item.id,
+        caseTypeName: item.name,
+        states: states.map((state, index) => ({ stateId: state.id, stateName: state.name, stateCode: state.code, stateColor: state.color ?? null, isInitial: state.isInitial, isTerminal: state.isTerminal, sortOrder: index * 10, isRequired: true })),
+        transitions: [],
+        isValid: true,
+        validationMessages: []
+      })),
+      emailTemplates: [{ id: 'template-1', code: 'CASE_CREATED', name: 'Confirmación de radicación', eventType: 'case.created', subject: 'Confirmación {{radicado}}', bodyText: 'Tu solicitud {{radicado}} fue registrada.', bodyHtml: null, variableCodes: ['radicado'], isActive: true }],
+      reminderRules: [{ id: 'reminder-1', code: 'BEFORE_24H', name: '24 horas antes', triggerKind: 'before_due', offsetMinutes: 1440, includeManagers: false, messageTemplate: 'El caso {{radicado}} vence el {{fecha_limite}}.', emailTemplateCode: 'CASE_DUE_SOON', isActive: true }],
       automationRules: [{ id: 'automation-1', code: 'AUTO_TUTELA_JURIDICA', name: 'Asignar tutelas a Jurídica', triggerEvent: 'case.created', conditions: [], actions: [{ type: 'assign_area', areaId: catalogs.areas[0]?.id ?? '' }], stopOnError: true, sortOrder: 10, isActive: true, runCount: 0, maxAttempts: 3, retryDelayMinutes: 10 }],
       automationExecutions: []
     };
@@ -858,6 +963,20 @@ export const demoSigcRepository: SigcRepository = {
   async deleteTransition(_id: string): Promise<void> {},
   async saveEmailTemplate(_input: SaveEmailTemplateInput): Promise<void> {},
   async saveReminderRule(_input: SaveReminderRuleInput): Promise<void> {},
+  async previewEmailTemplate(input: EmailTemplatePreviewInput): Promise<EmailTemplatePreview> {
+    const replacements: Record<string, string> = { radicado: 'SIG-2026-000001', asunto: 'Caso de prueba', fecha_limite: '31/12/2026 17:00', solicitante: 'Solicitante Demo' };
+    const render = (value: string) => value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, key: string) => replacements[key] ?? `{{${key}}}`);
+    const subject = render(input.subject);
+    const bodyText = render(input.bodyText);
+    const bodyHtml = input.bodyHtml ? render(input.bodyHtml) : null;
+    const unresolvedVariables = [...`${subject} ${bodyText} ${bodyHtml ?? ''}`.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match) => match[1]).filter(Boolean);
+    return { subject, bodyText, bodyHtml, unresolvedVariables: [...new Set(unresolvedVariables)] };
+  },
+  async sendTestEmail(_input: SendTestEmailInput): Promise<void> {},
+  async runRuntimeNow(): Promise<RuntimeExecutionResult> {
+    return { generatedAt: new Date().toISOString(), remindersCreated: 1, overdueNotificationsCreated: 0, emailsQueued: 1, emailsDispatched: 1, emailsFailed: 0 };
+  },
+
   async saveAutomationRule(_input: SaveAutomationRuleInput): Promise<void> {},
   async toggleAutomationRule(_id: string, _isActive: boolean): Promise<void> {},
   async runAutomationRule(_ruleId: string, _caseId: string): Promise<void> {},

@@ -23,6 +23,15 @@ import type {
   SigcCatalogs,
   SigcComment,
   SigcDocument,
+  SigcDocumentVersion,
+  UpdateDocumentRetentionInput,
+  SigcAuditFilters,
+  SigcAuditPage,
+  SigcTimelinePage,
+  EmailTemplatePreviewInput,
+  EmailTemplatePreview,
+  SendTestEmailInput,
+  RuntimeExecutionResult,
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
@@ -93,12 +102,15 @@ export interface SigcRepository {
   addComment(input: AddCommentInput): Promise<CreatedCommentResult>;
 
   listDocuments(caseId?: string): Promise<SigcDocument[]>;
+  listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]>;
+  updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void>;
   uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument>;
   addDocumentVersion(input: AddDocumentVersionInput): Promise<void>;
   deleteDocument(documentId: string): Promise<void>;
   getDocumentSignedUrl(storagePath: string): Promise<string>;
 
-  listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]>;
+  listCaseTimeline(caseId: string, page?: number, pageSize?: number): Promise<SigcTimelinePage>;
+  getAuditEvents(filters: SigcAuditFilters): Promise<SigcAuditPage>;
 
   listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]>;
   overrideCaseSla(input: OverrideCaseSlaInput): Promise<void>;
@@ -128,6 +140,9 @@ export interface SigcRepository {
   deleteTransition(id: string): Promise<void>;
   saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void>;
   saveReminderRule(input: SaveReminderRuleInput): Promise<void>;
+  previewEmailTemplate(input: EmailTemplatePreviewInput): Promise<EmailTemplatePreview>;
+  sendTestEmail(input: SendTestEmailInput): Promise<void>;
+  runRuntimeNow(): Promise<RuntimeExecutionResult>;
   saveAutomationRule(input: SaveAutomationRuleInput): Promise<void>;
   toggleAutomationRule(id: string, isActive: boolean): Promise<void>;
   runAutomationRule(ruleId: string, caseId: string): Promise<void>;

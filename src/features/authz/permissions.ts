@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   adminManageConfiguration: 'admin.manage_configuration',
   automationView: 'automation.view',
   automationManage: 'automation.manage',
+  auditView: 'audit.view',
+  auditExport: 'audit.export',
   reportsView: 'reports.view',
   reportsExport: 'reports.export',
   saasManageWorkspace: 'saas.manage_workspace'

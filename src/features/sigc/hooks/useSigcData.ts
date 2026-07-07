@@ -11,10 +11,13 @@ import type {
   SigcComment,
   SigcDataSource,
   SigcDocument,
+  SigcDocumentVersion,
+  SigcAuditFilters,
+  SigcAuditPage,
+  SigcTimelinePage,
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
-  SigcTimelineEvent,
   SigcSlaOverride,
   SigcCaseReview,
   SigcCaseDelivery,
@@ -158,12 +161,25 @@ export function useSigcDocuments(caseId?: string): AsyncState<SigcDocument[]> {
   return useSigcQuery(`documents:${caseId ?? 'all'}`, [], () => sigcService.getDocuments(caseId));
 }
 
-export function useCaseTimeline(caseId: string | undefined): AsyncState<SigcTimelineEvent[]> {
+export function useDocumentVersions(documentId?: string): AsyncState<SigcDocumentVersion[]> {
   return useSigcQuery(
-    `timeline:${caseId ?? 'missing'}`,
+    `document-versions:${documentId ?? 'missing'}`,
     [],
-    () => caseId ? sigcService.getCaseTimeline(caseId) : Promise.resolve({ data: [], source: 'demo' as const })
+    () => documentId ? sigcService.getDocumentVersions(documentId) : Promise.resolve({ data: [], source: 'demo' as const })
   );
+}
+
+export function useCaseTimeline(caseId: string | undefined, page = 1, pageSize = 100): AsyncState<SigcTimelinePage> {
+  return useSigcQuery(
+    `timeline:${caseId ?? 'missing'}:${page}:${pageSize}`,
+    { items: [], total: 0, page, pageSize, hasMore: false },
+    () => caseId ? sigcService.getCaseTimeline(caseId, page, pageSize) : Promise.resolve({ data: { items: [], total: 0, page, pageSize, hasMore: false }, source: 'demo' as const })
+  );
+}
+
+export function useSigcAudit(filters: SigcAuditFilters): AsyncState<SigcAuditPage> {
+  const key = useMemo(() => `audit:${JSON.stringify(filters)}`, [filters]);
+  return useSigcQuery(key, { items: [], total: 0, page: filters.page ?? 1, pageSize: filters.pageSize ?? 50 }, () => sigcService.getAuditEvents(filters));
 }
 
 

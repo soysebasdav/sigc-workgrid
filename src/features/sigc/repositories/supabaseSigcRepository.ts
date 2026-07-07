@@ -27,6 +27,15 @@ import type {
   SigcCatalogs,
   SigcComment,
   SigcDocument,
+  SigcDocumentVersion,
+  UpdateDocumentRetentionInput,
+  SigcAuditFilters,
+  SigcAuditPage,
+  SigcTimelinePage,
+  EmailTemplatePreviewInput,
+  EmailTemplatePreview,
+  SendTestEmailInput,
+  RuntimeExecutionResult,
   SigcMember,
   SigcSubtask,
   SigcSubtaskFilters,
@@ -161,10 +170,10 @@ type CaseQueryRow = {
   sla_policy_id: string | null;
   primary_area_id: string | null;
   primary_owner_id: string | null;
-  case_type: { name: string } | null;
-  priority: { name: string } | null;
-  state: { name: string; is_terminal: boolean } | null;
-  area: { name: string } | null;
+  case_type: { name: string; color: string | null } | null;
+  priority: { name: string; code: string; color: string | null } | null;
+  state: { name: string; code: string; color: string | null; is_terminal: boolean } | null;
+  area: { name: string; color: string | null } | null;
   owner: { name: string } | null;
   sla_policy: { duration_value: number; duration_unit: string } | null;
 };
@@ -174,10 +183,10 @@ const CASE_SELECT = `
   requester_name, requester_company, requester_document, requester_email, requester_phone,
   source, risk_level, classification_observations, classified_at, opened_at, due_at, progress, updated_at,
   case_type_id, priority_id, state_id, sla_policy_id, primary_area_id, primary_owner_id,
-  case_type:case_types(name),
-  priority:priorities(name),
-  state:case_states(name,is_terminal),
-  area:areas(name),
+  case_type:case_types(name,color),
+  priority:priorities(name,code,color),
+  state:case_states(name,code,color,is_terminal),
+  area:areas(name,color),
   owner:profiles(name),
   sla_policy:sla_policies(duration_value,duration_unit)
 `;
@@ -248,7 +257,7 @@ function riskLabel(risk: string | null, sem: SemColor): string {
 }
 
 function mapCase(row: CaseQueryRow): SigcCase {
-  const priorityName = (row.priority?.name ?? 'Media') as CasePriorityName;
+  const priorityName = row.priority?.name ?? 'Sin prioridad';
   const isTerminal = row.state?.is_terminal ?? false;
   const sem = isTerminal ? 'green' : semFromTimeline(row.opened_at, row.due_at);
   return {
@@ -258,6 +267,7 @@ function mapCase(row: CaseQueryRow): SigcCase {
     organizationId: row.organization_id,
     typeId: row.case_type_id ?? undefined,
     type: row.case_type?.name ?? 'Sin clasificar',
+    typeColor: row.case_type?.color ?? null,
     subject: row.subject,
     description: row.description,
     company: row.requester_company ?? 'Sin empresa',
@@ -267,12 +277,17 @@ function mapCase(row: CaseQueryRow): SigcCase {
     requesterPhone: row.requester_phone ?? undefined,
     areaId: row.primary_area_id ?? undefined,
     area: row.area?.name ?? 'Sin área',
+    areaColor: row.area?.color ?? null,
     ownerId: row.primary_owner_id ?? undefined,
     owner: row.owner?.name ?? 'Sin responsable',
     stateId: row.state_id ?? undefined,
+    stateCode: row.state?.code ?? undefined,
     state: row.state?.name ?? 'Pendiente de Clasificación',
+    stateColor: row.state?.color ?? null,
     priorityId: row.priority_id ?? undefined,
+    priorityCode: row.priority?.code ?? undefined,
     priority: priorityName,
+    priorityColor: row.priority?.color ?? null,
     slaPolicyId: row.sla_policy_id ?? undefined,
     sla: durationLabel(row.sla_policy),
     openedAt: row.opened_at,
@@ -370,10 +385,23 @@ function validateInternalFile(file: File): void {
   }
 }
 
+async function sha256File(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
 async function removeStoragePathQuietly(path: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.storage.from('case-documents').remove([path]);
   if (error) console.warn(`SIGC: no fue posible limpiar el archivo huérfano ${path}.`, error);
+}
+
+function extractTemplateVariables(...values: Array<string | null | undefined>): string[] {
+  const found = new Set<string>();
+  for (const value of values) {
+    for (const match of String(value ?? '').matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) found.add(match[1].trim());
+  }
+  return [...found].sort();
 }
 
 function eventPresentation(eventType: string, metadata: Record<string, unknown>, afterData: Record<string, unknown> | null): { title: string; description: string } {
@@ -519,15 +547,24 @@ export const supabaseSigcRepository: SigcRepository = {
     const roleIds = [...new Set((memberships ?? []).map((item) => item.role_id).filter((id): id is string => Boolean(id)))];
     if (!userIds.length) return [];
 
-    const [profiles, roles] = await Promise.all([
+    const [profiles, roles, rolePermissions, permissions] = await Promise.all([
       client.from('profiles').select('id,name,email').in('id', userIds),
-      roleIds.length ? client.from('roles').select('id,name').in('id', roleIds) : Promise.resolve({ data: [], error: null })
+      roleIds.length ? client.from('roles').select('id,name').in('id', roleIds) : Promise.resolve({ data: [], error: null }),
+      roleIds.length ? client.from('role_permissions').select('role_id,permission_id').in('role_id', roleIds) : Promise.resolve({ data: [], error: null }),
+      client.from('permissions').select('id,code')
     ]);
-    if (profiles.error) throw profiles.error;
-    if (roles.error) throw roles.error;
+    const relatedError = profiles.error ?? roles.error ?? rolePermissions.error ?? permissions.error;
+    if (relatedError) throw relatedError;
 
     const profileMap = new Map<string, { id: string; name: string; email: string }>((profiles.data ?? []).map((item) => [item.id, item as { id: string; name: string; email: string }]));
     const roleMap = new Map<string, string>((roles.data ?? []).map((item) => [String(item.id), String(item.name)]));
+    const permissionCodeMap = new Map<string, string>((permissions.data ?? []).map((item) => [String(item.id), String(item.code)]));
+    const permissionsByRole = new Map<string, string[]>();
+    for (const row of rolePermissions.data ?? []) {
+      const code = permissionCodeMap.get(String(row.permission_id));
+      if (!code) continue;
+      permissionsByRole.set(String(row.role_id), [...(permissionsByRole.get(String(row.role_id)) ?? []), code]);
+    }
 
     return (memberships ?? [])
       .map((membership) => {
@@ -537,7 +574,8 @@ export const supabaseSigcRepository: SigcRepository = {
           userId: profile.id,
           name: profile.name,
           email: profile.email,
-          roleName: membership.role_id ? roleMap.get(membership.role_id) ?? 'Sin rol' : 'Sin rol'
+          roleName: membership.role_id ? roleMap.get(membership.role_id) ?? 'Sin rol' : 'Sin rol',
+          permissionCodes: membership.role_id ? permissionsByRole.get(membership.role_id) ?? [] : []
         } satisfies SigcMember;
       })
       .filter((item): item is SigcMember => Boolean(item))
@@ -960,7 +998,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     let query = client
       .from('case_documents')
-      .select('id,case_id,subtask_id,comment_id,name,category,state,current_version,created_by,created_at,updated_at')
+      .select('id,case_id,subtask_id,comment_id,name,category,state,current_version,created_by,created_at,updated_at,retention_until,legal_hold')
       .is('deleted_at', null)
       .order('updated_at', { ascending: false });
     if (caseId) query = query.eq('case_id', await resolveCaseDatabaseId(caseId));
@@ -1007,9 +1045,51 @@ export const supabaseSigcRepository: SigcRepository = {
         currentFilename: version?.original_filename ?? row.name,
         currentStoragePath: version?.storage_path ?? '',
         currentMimeType: version?.mime_type ?? undefined,
-        currentSizeBytes: version?.size_bytes ?? 0
+        currentSizeBytes: version?.size_bytes ?? 0,
+        retentionUntil: row.retention_until ?? null,
+        legalHold: Boolean(row.legal_hold)
       };
     });
+  },
+
+  async listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]> {
+    const client = requireClient();
+    const { data, error } = await client
+      .from('document_versions')
+      .select('id,document_id,version_number,original_filename,storage_path,mime_type,size_bytes,checksum,change_notes,uploaded_by,created_at')
+      .eq('document_id', documentId)
+      .order('version_number', { ascending: false });
+    if (error) throw error;
+    const rows = data ?? [];
+    const uploaderIds = [...new Set(rows.map((row) => row.uploaded_by).filter((id): id is string => Boolean(id)))];
+    const profiles = uploaderIds.length ? await client.from('profiles').select('id,name').in('id', uploaderIds) : { data: [], error: null };
+    if (profiles.error) throw profiles.error;
+    const profileMap = new Map((profiles.data ?? []).map((row) => [row.id, row.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      documentId: row.document_id,
+      versionNumber: row.version_number,
+      originalFilename: row.original_filename,
+      storagePath: row.storage_path,
+      mimeType: row.mime_type,
+      sizeBytes: row.size_bytes,
+      checksum: row.checksum,
+      changeNotes: row.change_notes,
+      uploadedBy: row.uploaded_by ?? undefined,
+      uploadedByName: row.uploaded_by ? profileMap.get(row.uploaded_by) ?? 'Usuario' : 'Sistema',
+      createdAt: row.created_at,
+      createdLabel: formatDateTime(row.created_at)
+    }));
+  },
+
+  async updateDocumentRetention(input: UpdateDocumentRetentionInput): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('update_document_retention', {
+      p_document_id: input.documentId,
+      p_retention_until: input.retentionUntil || null,
+      p_legal_hold: input.legalHold
+    });
+    if (error) throw error;
   },
 
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
@@ -1018,11 +1098,12 @@ export const supabaseSigcRepository: SigcRepository = {
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const organizationId = await ensureOrganization();
     const documentId = crypto.randomUUID();
+    const checksum = await sha256File(input.file);
     const path = `${organizationId}/${resolvedCaseId}/${documentId}/v1/${sanitizeFilename(input.file.name)}`;
     const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: input.file.type || undefined });
     if (uploadError) throw uploadError;
 
-    const { error: registerError } = await client.rpc('register_case_document', {
+    const { error: registerError } = await client.rpc('register_case_document_v2', {
       p_document_id: documentId,
       p_case_id: resolvedCaseId,
       p_name: input.name,
@@ -1033,6 +1114,7 @@ export const supabaseSigcRepository: SigcRepository = {
       p_mime_type: input.file.type || '',
       p_size_bytes: input.file.size,
       p_change_notes: input.changeNotes ?? null,
+      p_checksum: checksum,
       p_subtask_id: input.subtaskId || null,
       p_comment_id: input.commentId || null
     });
@@ -1052,19 +1134,21 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
     const organizationId = await ensureOrganization();
+    const checksum = await sha256File(input.file);
     const nextVersion = input.currentVersion + 1;
     const path = `${organizationId}/${resolvedCaseId}/${input.documentId}/v${nextVersion}/${sanitizeFilename(input.file.name)}`;
     const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: input.file.type || undefined });
     if (uploadError) throw uploadError;
 
-    const { error } = await client.rpc('add_case_document_version', {
+    const { error } = await client.rpc('add_case_document_version_v2', {
       p_document_id: input.documentId,
       p_expected_current_version: input.currentVersion,
       p_original_filename: input.file.name,
       p_storage_path: path,
       p_mime_type: input.file.type || '',
       p_size_bytes: input.file.size,
-      p_change_notes: input.changeNotes ?? null
+      p_change_notes: input.changeNotes ?? null,
+      p_checksum: checksum
     });
     if (error) {
       await removeStoragePathQuietly(path);
@@ -1087,39 +1171,89 @@ export const supabaseSigcRepository: SigcRepository = {
     return data.signedUrl;
   },
 
-  async listCaseTimeline(caseId: string): Promise<SigcTimelineEvent[]> {
+  async listCaseTimeline(caseId: string, page = 1, pageSize = 100): Promise<SigcTimelinePage> {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(caseId);
-    const { data, error } = await client
-      .from('audit_events')
-      .select('id,case_id,actor_user_id,event_type,entity_type,after_data,metadata,created_at')
-      .eq('case_id', resolvedCaseId)
-      .order('created_at', { ascending: false })
-      .range(0, 299);
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.min(200, Math.max(20, pageSize));
+    const { data, error } = await client.rpc('get_case_timeline_v2', {
+      p_case_id: resolvedCaseId,
+      p_page: safePage,
+      p_page_size: safePageSize
+    });
     if (error) throw error;
-    const rows = data ?? [];
-    const actorIds = [...new Set(rows.map((row) => row.actor_user_id).filter((id): id is string => Boolean(id)))];
-    const profilesResult = actorIds.length ? await client.from('profiles').select('id,name').in('id', actorIds) : { data: [], error: null };
-    if (profilesResult.error) throw profilesResult.error;
-    const profileMap = new Map((profilesResult.data ?? []).map((item) => [item.id, item.name]));
-
-    return rows.map((row) => {
-      const metadata = (row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {}) as Record<string, unknown>;
-      const afterData = (row.after_data && typeof row.after_data === 'object' && !Array.isArray(row.after_data) ? row.after_data : null) as Record<string, unknown> | null;
-      const presentation = eventPresentation(row.event_type, metadata, afterData);
+    const raw = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    const rows = Array.isArray(raw.items) ? raw.items as Array<Record<string, unknown>> : [];
+    const items = rows.map((row) => {
+      const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+      const afterData = row.afterData && typeof row.afterData === 'object' && !Array.isArray(row.afterData) ? row.afterData as Record<string, unknown> : null;
+      const presentation = eventPresentation(String(row.eventType ?? ''), metadata, afterData);
       return {
-        id: String(row.id),
-        caseId: row.case_id ?? resolvedCaseId,
-        eventType: row.event_type,
-        entityType: row.entity_type,
+        id: String(row.id ?? ''),
+        caseId: String(row.caseId ?? resolvedCaseId),
+        eventType: String(row.eventType ?? ''),
+        entityType: String(row.entityType ?? ''),
         title: presentation.title,
         description: presentation.description,
-        actorId: row.actor_user_id ?? undefined,
-        actorName: row.actor_user_id ? profileMap.get(row.actor_user_id) ?? 'Usuario' : 'Sistema',
-        createdAt: row.created_at,
-        date: formatDateTime(row.created_at)
-      };
+        actorId: row.actorUserId ? String(row.actorUserId) : undefined,
+        actorName: String(row.actorName ?? 'Sistema'),
+        createdAt: String(row.createdAt ?? ''),
+        date: formatDateTime(String(row.createdAt ?? ''))
+      } satisfies SigcTimelineEvent;
     });
+    const total = Number(raw.total ?? items.length);
+    return {
+      items,
+      total,
+      page: Number(raw.page ?? safePage),
+      pageSize: Number(raw.pageSize ?? safePageSize),
+      hasMore: Boolean(raw.hasMore ?? (safePage * safePageSize < total))
+    };
+  },
+
+  async getAuditEvents(filters: SigcAuditFilters): Promise<SigcAuditPage> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('get_audit_events_v2', {
+      p_filters: {
+        query: filters.query?.trim() || null,
+        eventType: filters.eventType || null,
+        entityType: filters.entityType || null,
+        actorUserId: filters.actorUserId || null,
+        caseId: filters.caseId || null,
+        dateFrom: filters.dateFrom || null,
+        dateTo: filters.dateTo || null,
+        page: Math.max(1, filters.page ?? 1),
+        pageSize: Math.min(200, Math.max(20, filters.pageSize ?? 50)),
+        sortDirection: filters.sortDirection ?? 'desc'
+      }
+    });
+    if (error) throw error;
+    const raw = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    const rows = Array.isArray(raw.items) ? raw.items as Array<Record<string, unknown>> : [];
+    return {
+      items: rows.map((row) => ({
+        id: Number(row.id ?? 0),
+        organizationId: String(row.organizationId ?? ''),
+        caseId: row.caseId ? String(row.caseId) : undefined,
+        caseRadicado: row.caseRadicado ? String(row.caseRadicado) : undefined,
+        actorUserId: row.actorUserId ? String(row.actorUserId) : undefined,
+        actorName: String(row.actorName ?? 'Sistema'),
+        actorEmail: row.actorEmail ? String(row.actorEmail) : undefined,
+        eventType: String(row.eventType ?? ''),
+        entityType: String(row.entityType ?? ''),
+        entityId: String(row.entityId ?? ''),
+        beforeData: row.beforeData && typeof row.beforeData === 'object' && !Array.isArray(row.beforeData) ? row.beforeData as Record<string, unknown> : null,
+        afterData: row.afterData && typeof row.afterData === 'object' && !Array.isArray(row.afterData) ? row.afterData as Record<string, unknown> : null,
+        metadata: row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {},
+        ipAddress: row.ipAddress ? String(row.ipAddress) : null,
+        userAgent: row.userAgent ? String(row.userAgent) : null,
+        createdAt: String(row.createdAt ?? ''),
+        createdLabel: formatDateTime(String(row.createdAt ?? ''))
+      })),
+      total: Number(raw.total ?? rows.length),
+      page: Number(raw.page ?? filters.page ?? 1),
+      pageSize: Number(raw.pageSize ?? filters.pageSize ?? 50)
+    };
   },
 
   async listCaseSlaOverrides(caseId: string): Promise<SigcSlaOverride[]> {
@@ -1197,7 +1331,7 @@ export const supabaseSigcRepository: SigcRepository = {
   async submitCaseForReview(input: SubmitCaseReviewInput): Promise<void> {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
-    const { error } = await client.rpc('submit_case_for_review', {
+    const { error } = await client.rpc('submit_case_for_review_v2', {
       p_case_id: resolvedCaseId,
       p_reviewer_user_id: input.reviewerUserId || null,
       p_note: input.note || null
@@ -1207,7 +1341,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async decideCaseReview(input: DecideCaseReviewInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('decide_case_review', {
+    const { error } = await client.rpc('decide_case_review_v2', {
       p_review_id: input.reviewId,
       p_decision: input.decision,
       p_comments: input.comments || null
@@ -1246,7 +1380,7 @@ export const supabaseSigcRepository: SigcRepository = {
   async registerCaseDelivery(input: RegisterCaseDeliveryInput): Promise<void> {
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
-    const { error } = await client.rpc('register_case_delivery', {
+    const { error } = await client.rpc('register_case_delivery_v2', {
       p_case_id: resolvedCaseId,
       p_channel: input.channel,
       p_recipient: input.recipient,
@@ -1356,21 +1490,48 @@ export const supabaseSigcRepository: SigcRepository = {
     const profileMap = new Map<string, { name: string; email: string }>((profiles.data ?? []).map((row: any) => [row.id, { name: row.name, email: row.email }]));
     const roleMap = new Map<string, { name: string }>((roles.data ?? []).map((row: any) => [row.id, { name: row.name }]));
     const caseTypeMap = new Map((caseTypes.data ?? []).map((row: any) => [row.id, row.name]));
-    const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row.name]));
+    const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row]));
     const ruleMap = new Map((automationRules.data ?? []).map((row: any) => [row.id, row.name]));
     const caseMap = new Map((cases.data ?? []).map((row: any) => [row.id, row.radicado]));
 
-    const workflows = (caseTypes.data ?? []).map((caseType: any) => ({
-      caseTypeId: caseType.id,
-      caseTypeName: caseType.name,
-      states: (caseTypeStates.data ?? [])
+    const workflows = (caseTypes.data ?? []).map((caseType: any) => {
+      const workflowStates = (caseTypeStates.data ?? [])
         .filter((row: any) => row.case_type_id === caseType.id)
         .sort((a: any, b: any) => a.sort_order - b.sort_order)
-        .map((row: any) => ({ stateId: row.state_id, stateName: stateMap.get(row.state_id) ?? 'Estado', sortOrder: row.sort_order, isRequired: Boolean(row.is_required) })),
-      transitions: (transitions.data ?? [])
+        .map((row: any) => {
+          const state = stateMap.get(row.state_id) as any;
+          return {
+            stateId: row.state_id,
+            stateName: state?.name ?? 'Estado',
+            stateCode: state?.code ?? '',
+            stateColor: state?.color ?? null,
+            isInitial: Boolean(state?.is_initial),
+            isTerminal: Boolean(state?.is_terminal),
+            sortOrder: row.sort_order,
+            isRequired: Boolean(row.is_required)
+          };
+        });
+      const workflowTransitions = (transitions.data ?? [])
         .filter((row: any) => row.case_type_id === caseType.id)
-        .map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, fromStateId: row.from_state_id, toStateId: row.to_state_id, requiredPermissionCode: row.required_permission_code ?? undefined, requiresJustification: Boolean(row.requires_justification), isActive: Boolean(row.is_active) }))
-    }));
+        .map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, fromStateId: row.from_state_id, toStateId: row.to_state_id, requiredPermissionCode: row.required_permission_code ?? undefined, requiresJustification: Boolean(row.requires_justification), isActive: Boolean(row.is_active) }));
+      const stateIds = new Set(workflowStates.map((row: any) => row.stateId));
+      const validationMessages: string[] = [];
+      const initialCount = workflowStates.filter((row: any) => row.isInitial).length;
+      const terminalCount = workflowStates.filter((row: any) => row.isTerminal).length;
+      if (!workflowStates.length) validationMessages.push('El flujo debe contener al menos un estado.');
+      if (initialCount !== 1) validationMessages.push('El flujo debe contener exactamente un estado inicial.');
+      if (terminalCount < 1) validationMessages.push('El flujo debe contener al menos un estado terminal.');
+      if (workflowTransitions.some((row: any) => row.fromStateId === row.toStateId)) validationMessages.push('No se permiten transiciones de un estado hacia sí mismo.');
+      if (workflowTransitions.some((row: any) => !stateIds.has(row.fromStateId) || !stateIds.has(row.toStateId))) validationMessages.push('Existen transiciones que apuntan a estados fuera del flujo.');
+      return {
+        caseTypeId: caseType.id,
+        caseTypeName: caseType.name,
+        states: workflowStates,
+        transitions: workflowTransitions,
+        isValid: validationMessages.length === 0,
+        validationMessages
+      };
+    });
 
     return {
       organizationId,
@@ -1384,8 +1545,28 @@ export const supabaseSigcRepository: SigcRepository = {
       roles: (roles.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined, isSystem: Boolean(row.is_system), isActive: Boolean(row.is_active), permissionIds: rolePermissionMap.get(row.id) ?? [] })),
       members: (memberships.data ?? []).map((row: any) => { const profile = profileMap.get(row.user_id); const role = row.role_id ? roleMap.get(row.role_id) : null; return { membershipId: row.id, userId: row.user_id, name: profile?.name ?? 'Usuario', email: profile?.email ?? '', roleId: row.role_id ?? undefined, roleName: role?.name ?? 'Sin rol', isActive: Boolean(row.is_active) }; }),
       workflows,
-      emailTemplates: (templates.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, eventType: row.event_type ?? undefined, subject: row.subject, bodyText: row.body_text, isActive: Boolean(row.is_active) })),
-      reminderRules: (reminderRules.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, triggerKind: row.trigger_kind, offsetMinutes: row.offset_minutes, includeManagers: Boolean(row.include_managers), isActive: Boolean(row.is_active) })),
+      emailTemplates: (templates.data ?? []).map((row: any) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        eventType: row.event_type ?? undefined,
+        subject: row.subject,
+        bodyText: row.body_text,
+        bodyHtml: row.body_html ?? null,
+        variableCodes: extractTemplateVariables(row.subject, row.body_text, row.body_html),
+        isActive: Boolean(row.is_active)
+      })),
+      reminderRules: (reminderRules.data ?? []).map((row: any) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        triggerKind: row.trigger_kind,
+        offsetMinutes: row.offset_minutes,
+        includeManagers: Boolean(row.include_managers),
+        messageTemplate: row.message_template ?? 'El caso {{radicado}} requiere seguimiento.',
+        emailTemplateCode: row.email_template_code ?? undefined,
+        isActive: Boolean(row.is_active)
+      })),
       automationRules: (automationRules.data ?? []).map((row: any) => ({
         id: row.id, code: row.code, name: row.name, description: row.description ?? undefined,
         triggerEvent: row.trigger_event, conditions: (row.conditions ?? []) as AutomationCondition[],
@@ -1410,16 +1591,19 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
     const client = requireClient();
-    const organizationId = await ensureOrganization();
-    const tableMap = { areas: 'areas', priorities: 'priorities', caseTypes: 'case_types', states: 'case_states' } as const;
-    const payload: Record<string, unknown> = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), is_active: input.isActive ?? true };
-    if (input.kind !== 'priorities' && input.description !== undefined) payload.description = input.description || null;
-    if (input.color !== undefined) payload.color = input.color || null;
-    if (input.kind !== 'caseTypes') payload.sort_order = input.sortOrder ?? 0;
-    if (input.kind === 'states') { payload.is_initial = Boolean(input.isInitial); payload.is_terminal = Boolean(input.isTerminal); }
-    const table = tableMap[input.kind];
-    const result = input.id ? await client.from(table).update(payload).eq('id', input.id) : await client.from(table).insert(payload);
-    if (result.error) throw result.error;
+    const { error } = await client.rpc('save_admin_catalog_v2', {
+      p_kind: input.kind,
+      p_id: input.id || null,
+      p_code: input.code,
+      p_name: input.name,
+      p_description: input.description || null,
+      p_color: input.color || null,
+      p_sort_order: input.sortOrder ?? 0,
+      p_is_initial: Boolean(input.isInitial),
+      p_is_terminal: Boolean(input.isTerminal),
+      p_is_active: input.isActive ?? true
+    });
+    if (error) throw error;
   },
 
   async setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void> {
@@ -1479,13 +1663,13 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveWorkflowStates(caseTypeId: string, stateIds: string[]): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('set_case_type_workflow', { p_case_type_id: caseTypeId, p_state_ids: stateIds });
+    const { error } = await client.rpc('set_case_type_workflow_v2', { p_case_type_id: caseTypeId, p_state_ids: stateIds });
     if (error) throw error;
   },
 
   async saveTransition(input: SaveTransitionInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('save_case_state_transition', {
+    const { error } = await client.rpc('save_case_state_transition_v2', {
       p_transition_id: input.id || null,
       p_case_type_id: input.caseTypeId,
       p_from_state_id: input.fromStateId,
@@ -1506,23 +1690,83 @@ export const supabaseSigcRepository: SigcRepository = {
   async saveEmailTemplate(input: SaveEmailTemplateInput): Promise<void> {
     const client = requireClient();
     const organizationId = await ensureOrganization();
-    const payload = { organization_id: organizationId, code: input.code.trim().toUpperCase(), name: input.name.trim(), event_type: input.eventType || null, subject: input.subject, body_text: input.bodyText, is_active: input.isActive };
+    const payload = {
+      organization_id: organizationId,
+      code: input.code.trim().toUpperCase(),
+      name: input.name.trim(),
+      event_type: input.eventType || null,
+      subject: input.subject,
+      body_text: input.bodyText,
+      body_html: input.bodyHtml || null,
+      is_active: input.isActive
+    };
     const result = input.id ? await client.from('email_templates').update(payload).eq('id', input.id) : await client.from('email_templates').insert(payload);
     if (result.error) throw result.error;
   },
 
   async saveReminderRule(input: SaveReminderRuleInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('save_reminder_rule', {
+    const { error } = await client.rpc('save_reminder_rule_v2', {
       p_rule_id: input.id || null,
       p_code: input.code,
       p_name: input.name,
       p_trigger_kind: input.triggerKind,
       p_offset_minutes: input.offsetMinutes,
       p_include_managers: input.includeManagers,
+      p_message_template: input.messageTemplate,
+      p_email_template_code: input.emailTemplateCode || null,
       p_is_active: input.isActive
     });
     if (error) throw error;
+  },
+
+  async previewEmailTemplate(input: EmailTemplatePreviewInput): Promise<EmailTemplatePreview> {
+    const client = requireClient();
+    const resolvedCaseId = input.caseId ? await resolveCaseDatabaseId(input.caseId) : null;
+    const { data, error } = await client.rpc('preview_email_template_v2', {
+      p_template_id: input.templateId || null,
+      p_subject: input.subject,
+      p_body_text: input.bodyText,
+      p_body_html: input.bodyHtml || null,
+      p_case_id: resolvedCaseId
+    });
+    if (error) throw error;
+    const raw = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    return {
+      subject: String(raw.subject ?? input.subject),
+      bodyText: String(raw.bodyText ?? input.bodyText),
+      bodyHtml: raw.bodyHtml ? String(raw.bodyHtml) : null,
+      unresolvedVariables: Array.isArray(raw.unresolvedVariables) ? raw.unresolvedVariables.map(String) : []
+    };
+  },
+
+  async sendTestEmail(input: SendTestEmailInput): Promise<void> {
+    const client = requireClient();
+    const resolvedCaseId = input.caseId ? await resolveCaseDatabaseId(input.caseId) : null;
+    const { error } = await client.rpc('queue_test_email_v2', {
+      p_recipient_email: input.recipientEmail,
+      p_template_id: input.templateId || null,
+      p_subject: input.subject,
+      p_body_text: input.bodyText,
+      p_body_html: input.bodyHtml || null,
+      p_case_id: resolvedCaseId
+    });
+    if (error) throw error;
+  },
+
+  async runRuntimeNow(): Promise<RuntimeExecutionResult> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('process_sigc_runtime_v2', { p_batch_size: 100 });
+    if (error) throw error;
+    const raw = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    return {
+      generatedAt: String(raw.generatedAt ?? new Date().toISOString()),
+      remindersCreated: Number(raw.remindersCreated ?? 0),
+      overdueNotificationsCreated: Number(raw.overdueNotificationsCreated ?? 0),
+      emailsQueued: Number(raw.emailsQueued ?? 0),
+      emailsDispatched: Number(raw.emailsDispatched ?? 0),
+      emailsFailed: Number(raw.emailsFailed ?? 0)
+    };
   },
 
   async saveAutomationRule(input: SaveAutomationRuleInput): Promise<void> {

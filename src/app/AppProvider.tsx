@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { AppState, User } from '../types';
+import type { AppState, Notification, User } from '../types';
 import { loadState, resetState, saveState } from '../lib/storage';
 import { nowISO } from '../utils/dates';
 import { dataMode, isSupabaseConfigured, supabase } from '../lib/supabaseClient';
@@ -37,6 +37,22 @@ const EMPTY_REMOTE_STATE: AppState = {
   settings: { inactivityTimeoutMinutes: 10 },
   currentUserId: null
 };
+
+
+function mapRealtimeNotification(row: Record<string, unknown>): Notification {
+  return {
+    id: String(row.id ?? ''),
+    recipientUserId: String(row.recipient_user_id ?? ''),
+    actorUserId: row.actor_user_id ? String(row.actor_user_id) : null,
+    caseId: row.case_id ? String(row.case_id) : null,
+    type: String(row.type ?? 'case.updated') as Notification['type'],
+    title: String(row.title ?? 'Notificación SIGC'),
+    message: String(row.message ?? ''),
+    actionUrl: row.action_url ? String(row.action_url) : null,
+    isRead: Boolean(row.is_read),
+    createdAt: String(row.created_at ?? new Date().toISOString())
+  };
+}
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -108,8 +124,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const userId = currentUser.id;
     const channel = realtimeClient
       .channel(`sigc-notifications-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_user_id=eq.${userId}` }, () => {
-        void reloadSupabaseState(userId);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `recipient_user_id=eq.${userId}` }, (payload) => {
+        setState((previous) => {
+          if (payload.eventType === 'DELETE') {
+            const deletedId = String((payload.old as Record<string, unknown>)?.id ?? '');
+            return { ...previous, notifications: previous.notifications.filter((notification) => notification.id !== deletedId) };
+          }
+          const notification = mapRealtimeNotification(payload.new as Record<string, unknown>);
+          const withoutCurrent = previous.notifications.filter((item) => item.id !== notification.id);
+          return { ...previous, notifications: [notification, ...withoutCurrent].slice(0, 250) };
+        });
       })
       .subscribe();
     return () => { void realtimeClient.removeChannel(channel); };
@@ -195,7 +219,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('id', notificationId)
         .eq('recipient_user_id', currentUser?.id ?? '');
       if (error) throw error;
-      await reloadSupabaseState(currentUser?.id ?? null);
+      setState((previous) => ({ ...previous, notifications: previous.notifications.map((notification) => notification.id === notificationId ? { ...notification, isRead: true } : notification) }));
       return;
     }
 
@@ -219,7 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (state.settings.organizationId) query = query.eq('organization_id', state.settings.organizationId);
       const { error } = await query;
       if (error) throw error;
-      await reloadSupabaseState(currentUser.id);
+      setState((previous) => ({ ...previous, notifications: previous.notifications.map((notification) => notification.recipientUserId === currentUser.id ? { ...notification, isRead: true } : notification) }));
       return;
     }
 

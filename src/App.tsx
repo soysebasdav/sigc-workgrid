@@ -5,6 +5,7 @@ import { PermissionRoute } from './app/PermissionRoute';
 import { AuthorizationProvider, useAuthorization } from './features/authz/AuthorizationProvider';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from './features/authz/permissions';
 import { AgendaPage } from './features/agenda/AgendaPage';
+import { AuditPage } from './features/audit/AuditPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { SettingsPage } from './features/settings/SettingsPage';
@@ -85,6 +86,11 @@ const router = createBrowserRouter([
         element: <PermissionRoute allOf={[PERMISSIONS.reportsView]} />,
         children: [{ path: 'reports', element: <LazyRoute><AnalyticsReportsPage /></LazyRoute> }]
       },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.auditView]} />,
+        children: [{ path: 'audit', element: <AuditPage /> }]
+      },
+
       {
         element: <PermissionRoute allOf={[PERMISSIONS.saasManageWorkspace]} />,
         children: [{ path: 'workspace', element: <LazyRoute><SaasManagementPage /></LazyRoute> }]

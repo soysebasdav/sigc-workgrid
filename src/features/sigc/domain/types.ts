@@ -1,20 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 
-export type CaseStateName =
-  | 'Pendiente de Clasificación'
-  | 'Clasificado'
-  | 'Asignado'
-  | 'En Gestión'
-  | 'Pendiente de Información'
-  | 'Respuesta Elaborada'
-  | 'En Revisión / Aprobación'
-  | 'Devuelto para Ajustes'
-  | 'Aprobado'
-  | 'Enviado'
-  | 'Cerrado'
-  | 'Cancelado';
-
-export type CasePriorityName = 'Crítica' | 'Alta' | 'Media' | 'Baja';
+export type CaseStateName = string;
+export type CasePriorityName = string;
 export type SemColor = 'green' | 'yellow' | 'orange' | 'red';
 export type SigcDataSource = 'demo' | 'supabase';
 
@@ -25,6 +12,7 @@ export interface SigcCase {
   organizationId?: string;
   typeId?: string;
   type: string;
+  typeColor?: string | null;
   subject: string;
   description?: string;
   company: string;
@@ -34,12 +22,17 @@ export interface SigcCase {
   requesterPhone?: string;
   areaId?: string;
   area: string;
+  areaColor?: string | null;
   ownerId?: string;
   owner: string;
   stateId?: string;
+  stateCode?: string;
   state: CaseStateName | string;
+  stateColor?: string | null;
   priorityId?: string;
+  priorityCode?: string;
   priority: CasePriorityName;
+  priorityColor?: string | null;
   slaPolicyId?: string;
   sla: string;
   openedAt?: string;
@@ -169,6 +162,7 @@ export interface SigcMember {
   name: string;
   email: string;
   roleName: string;
+  permissionCodes: string[];
 }
 
 export interface SigcAssignment {
@@ -399,6 +393,80 @@ export interface SigcDocument {
   currentStoragePath: string;
   currentMimeType?: string;
   currentSizeBytes: number;
+  retentionUntil?: string | null;
+  legalHold: boolean;
+}
+
+export interface SigcDocumentVersion {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  originalFilename: string;
+  storagePath: string;
+  mimeType?: string | null;
+  sizeBytes: number;
+  checksum?: string | null;
+  changeNotes?: string | null;
+  uploadedBy?: string;
+  uploadedByName: string;
+  createdAt: string;
+  createdLabel: string;
+}
+
+export interface UpdateDocumentRetentionInput {
+  documentId: string;
+  retentionUntil?: string;
+  legalHold: boolean;
+}
+
+export type AuditSortDirection = 'asc' | 'desc';
+
+export interface SigcAuditFilters {
+  query?: string;
+  eventType?: string;
+  entityType?: string;
+  actorUserId?: string;
+  caseId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  pageSize?: number;
+  sortDirection?: AuditSortDirection;
+}
+
+export interface SigcAuditEvent {
+  id: number;
+  organizationId: string;
+  caseId?: string;
+  caseRadicado?: string;
+  actorUserId?: string;
+  actorName: string;
+  actorEmail?: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  beforeData?: Record<string, unknown> | null;
+  afterData?: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
+  createdLabel: string;
+}
+
+export interface SigcAuditPage {
+  items: SigcAuditEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface SigcTimelinePage {
+  items: SigcTimelineEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }
 
 export interface UploadCaseDocumentInput {
@@ -594,6 +662,10 @@ export interface AdminMember {
 export interface AdminWorkflowState {
   stateId: string;
   stateName: string;
+  stateCode: string;
+  stateColor?: string | null;
+  isInitial: boolean;
+  isTerminal: boolean;
   sortOrder: number;
   isRequired: boolean;
 }
@@ -613,6 +685,8 @@ export interface AdminWorkflow {
   caseTypeName: string;
   states: AdminWorkflowState[];
   transitions: AdminTransition[];
+  isValid: boolean;
+  validationMessages: string[];
 }
 
 export interface AdminEmailTemplate {
@@ -622,6 +696,8 @@ export interface AdminEmailTemplate {
   eventType?: string;
   subject: string;
   bodyText: string;
+  bodyHtml?: string | null;
+  variableCodes: string[];
   isActive: boolean;
 }
 
@@ -632,6 +708,8 @@ export interface AdminReminderRule {
   triggerKind: 'before_due' | 'overdue';
   offsetMinutes: number;
   includeManagers: boolean;
+  messageTemplate: string;
+  emailTemplateCode?: string;
   isActive: boolean;
 }
 
@@ -772,6 +850,7 @@ export interface SaveEmailTemplateInput {
   eventType?: string;
   subject: string;
   bodyText: string;
+  bodyHtml?: string;
   isActive: boolean;
 }
 
@@ -782,6 +861,8 @@ export interface SaveReminderRuleInput {
   triggerKind: AdminReminderRule['triggerKind'];
   offsetMinutes: number;
   includeManagers: boolean;
+  messageTemplate: string;
+  emailTemplateCode?: string;
   isActive: boolean;
 }
 
@@ -798,6 +879,35 @@ export interface SaveAutomationRuleInput {
   isActive: boolean;
   maxAttempts: number;
   retryDelayMinutes: number;
+}
+
+
+export interface EmailTemplatePreviewInput {
+  templateId?: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string;
+  caseId?: string;
+}
+
+export interface EmailTemplatePreview {
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string | null;
+  unresolvedVariables: string[];
+}
+
+export interface SendTestEmailInput extends EmailTemplatePreviewInput {
+  recipientEmail: string;
+}
+
+export interface RuntimeExecutionResult {
+  generatedAt: string;
+  remindersCreated: number;
+  overdueNotificationsCreated: number;
+  emailsQueued: number;
+  emailsDispatched: number;
+  emailsFailed: number;
 }
 
 // SIGC Fases 7 y 8 · analítica, reportes y operación SaaS

@@ -314,6 +314,8 @@ export interface Database {
         created_at: string;
         updated_at: string;
         deleted_at: string | null;
+        retention_until: string | null;
+        legal_hold: boolean;
       }>;
 
       document_versions: TableDef<{
@@ -365,6 +367,7 @@ export interface Database {
         event_type: string | null;
         subject: string;
         body_text: string;
+        body_html: string | null;
         is_active: boolean;
         created_at: string;
         updated_at: string;
@@ -378,7 +381,52 @@ export interface Database {
         trigger_kind: string;
         offset_minutes: number;
         include_managers: boolean;
+        message_template: string;
+        email_template_code: string | null;
         is_active: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      email_event_catalog: TableDef<{
+        code: string;
+        name: string;
+        created_at: string;
+      }>;
+
+      email_runtime_settings: TableDef<{
+        organization_id: string;
+        transport_mode: 'queue_only' | 'webhook';
+        webhook_url: string | null;
+        webhook_headers: Json;
+        max_attempts: number;
+        batch_size: number;
+        enabled: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      email_queue: TableDef<{
+        id: string;
+        organization_id: string;
+        case_id: string | null;
+        recipient_user_id: string | null;
+        recipient_email: string;
+        template_id: string | null;
+        event_type: string | null;
+        subject: string;
+        body_text: string;
+        body_html: string | null;
+        status: 'queued' | 'dispatching' | 'dispatched' | 'failed' | 'dead_letter';
+        attempts: number;
+        max_attempts: number;
+        available_at: string;
+        locked_at: string | null;
+        dispatched_at: string | null;
+        last_error: string | null;
+        dedupe_key: string | null;
+        provider_message_id: string | null;
+        metadata: Json;
         created_at: string;
         updated_at: string;
       }>;
@@ -749,6 +797,22 @@ export interface Database {
       accept_organization_invitation: { Args: { p_token: string }; Returns: string };
       get_runtime_settings: { Args: Record<PropertyKey, never>; Returns: Json };
       update_runtime_settings: { Args: { p_inactivity_timeout_minutes: number }; Returns: undefined };
+
+      save_admin_catalog_v2: { Args: { p_kind: string; p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_initial?: boolean; p_is_terminal?: boolean; p_is_active?: boolean }; Returns: undefined };
+      set_case_type_workflow_v2: { Args: { p_case_type_id: string; p_state_ids: string[] }; Returns: undefined };
+      save_case_state_transition_v2: { Args: { p_transition_id?: string | null; p_case_type_id?: string | null; p_from_state_id?: string | null; p_to_state_id?: string | null; p_required_permission_code?: string | null; p_requires_justification?: boolean; p_is_active?: boolean }; Returns: undefined };
+      submit_case_for_review_v2: { Args: { p_case_id: string; p_reviewer_user_id?: string | null; p_note?: string | null }; Returns: undefined };
+      decide_case_review_v2: { Args: { p_review_id: string; p_decision: string; p_comments?: string | null }; Returns: undefined };
+      register_case_delivery_v2: { Args: { p_case_id: string; p_channel: string; p_recipient: string; p_reference?: string | null; p_notes?: string | null }; Returns: undefined };
+      get_case_timeline_v2: { Args: { p_case_id: string; p_page?: number; p_page_size?: number }; Returns: Json };
+      get_audit_events_v2: { Args: { p_filters?: Json }; Returns: Json };
+      register_case_document_v2: { Args: { p_document_id: string; p_case_id: string; p_name: string; p_category: string; p_state: string; p_original_filename: string; p_storage_path: string; p_mime_type: string; p_size_bytes: number; p_change_notes?: string | null; p_checksum?: string | null; p_subtask_id?: string | null; p_comment_id?: string | null }; Returns: Array<{ document_id: string; version_number: number }> };
+      add_case_document_version_v2: { Args: { p_document_id: string; p_expected_current_version: number; p_original_filename: string; p_storage_path: string; p_mime_type: string; p_size_bytes: number; p_change_notes?: string | null; p_checksum?: string | null }; Returns: Array<{ document_id: string; version_number: number }> };
+      update_document_retention: { Args: { p_document_id: string; p_retention_until?: string | null; p_legal_hold?: boolean }; Returns: undefined };
+      preview_email_template_v2: { Args: { p_template_id?: string | null; p_subject?: string; p_body_text?: string; p_body_html?: string | null; p_case_id?: string | null }; Returns: Json };
+      queue_test_email_v2: { Args: { p_recipient_email: string; p_template_id?: string | null; p_subject?: string; p_body_text?: string; p_body_html?: string | null; p_case_id?: string | null }; Returns: string };
+      save_reminder_rule_v2: { Args: { p_rule_id?: string | null; p_code?: string | null; p_name?: string | null; p_trigger_kind?: string; p_offset_minutes?: number; p_include_managers?: boolean; p_message_template?: string; p_email_template_code?: string | null; p_is_active?: boolean }; Returns: undefined };
+      process_sigc_runtime_v2: { Args: { p_batch_size?: number }; Returns: Json };
 
       calculate_sla_due_at: {
         Args: { p_started_at: string; p_duration_value: number; p_duration_unit: string };
