@@ -154,9 +154,25 @@ export interface Database {
       areas: TableDef<OrganizationScoped & {
         code: string;
         name: string;
+        description: string | null;
         color: string | null;
+        parent_area_id: string | null;
+        email: string | null;
+        manager_membership_id: string | null;
         sort_order: number;
         is_active: boolean;
+      }>;
+
+      organization_member_areas: TableDef<{
+        id: string;
+        organization_id: string;
+        organization_member_id: string;
+        area_id: string;
+        is_primary: boolean;
+        is_coordinator: boolean;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
       }>;
 
       priorities: TableDef<OrganizationScoped & {
@@ -172,7 +188,26 @@ export interface Database {
         name: string;
         description: string | null;
         color: string | null;
+        sort_order: number;
+        is_public_enabled: boolean;
+        is_internal_enabled: boolean;
+        default_priority_id: string | null;
+        default_risk_level: string | null;
+        response_template_id: string | null;
         is_active: boolean;
+      }>;
+
+      case_type_default_areas: TableDef<{
+        id: string;
+        organization_id: string;
+        case_type_id: string;
+        area_id: string;
+        default_responsible_membership_id: string | null;
+        is_primary: boolean;
+        sort_order: number;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
       }>;
 
       case_states: TableDef<OrganizationScoped & {
@@ -967,6 +1002,21 @@ export interface Database {
       create_report_export_job_v3: { Args: { p_format: string; p_from: string; p_to: string; p_filters?: Json }; Returns: Json };
       get_report_export_page_v3: { Args: { p_job_id: string; p_page: number; p_page_size: number }; Returns: Json };
       complete_report_export_job_v3: { Args: { p_job_id: string; p_status: string; p_error_message?: string | null }; Returns: undefined };
+
+      get_operational_catalogs_v1: { Args: Record<PropertyKey, never>; Returns: Json };
+      save_admin_catalog_v3: { Args: { p_kind: string; p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_initial?: boolean; p_is_terminal?: boolean; p_is_active?: boolean; p_parent_area_id?: string | null; p_email?: string | null; p_manager_membership_id?: string | null; p_is_public_enabled?: boolean | null; p_is_internal_enabled?: boolean | null; p_default_priority_id?: string | null; p_default_risk_level?: string | null; p_response_template_id?: string | null }; Returns: undefined };
+      get_public_intake_context_v5: { Args: { p_tenant?: string | null; p_hostname?: string | null }; Returns: Json | null };
+      submit_public_case_v5: {
+        Args: {
+          p_tenant: string | null; p_hostname: string | null; p_case_type_id: string; p_requester_name: string;
+          p_requester_company: string; p_requester_document: string; p_requester_email: string; p_requester_phone: string;
+          p_subject: string; p_description: string; p_website?: string | null; p_attachment_count?: number;
+          p_privacy_consent?: boolean; p_challenge_id?: string | null; p_challenge_answer?: string | null;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null; upload_token: string | null; upload_path_prefix: string | null; upload_expires_at: string | null; max_files: number; max_file_size_bytes: number }>;
+      };
+      seed_orkesta_phase1_defaults: { Args: { p_organization_id?: string | null }; Returns: Json };
+      reset_orkesta_transactional_data_v1: { Args: { p_organization_id?: string | null; p_confirmation?: string }; Returns: Json };
 
       get_public_intake_context_v4: { Args: { p_tenant?: string | null; p_hostname?: string | null }; Returns: Json | null };
       submit_public_case_v4: {

@@ -1549,3 +1549,12 @@ svg { flex-shrink: 0; }
   .public-brand-logo.tenant-logo { width: 64px; height: 52px; }
   .workspace-sidebar-logo { width: 52px; height: 44px; }
 }
+
+/* Orkesta Fase 1 · salud de configuración por entidad */
+.phase1-configuration-health{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,.8fr);gap:18px;align-items:center;padding:22px;margin-bottom:18px;border:1px solid var(--border,#e5e7eb)}
+.phase1-configuration-health.ready{box-shadow:inset 4px 0 0 #16a34a}.phase1-configuration-health.pending{box-shadow:inset 4px 0 0 #f97316}
+.phase1-configuration-health h2{margin:4px 0 6px}.phase1-configuration-health p{margin:0;color:var(--muted,#64748b)}
+.phase1-health-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.phase1-health-counts span{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:10px 12px;border-radius:12px;background:var(--soft,#f8fafc);font-size:.86rem}.phase1-health-counts b{font-size:1.05rem}
+.phase1-health-issues,.phase1-health-ok{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}.phase1-health-issues span,.phase1-health-ok{align-items:center;padding:8px 10px;border-radius:10px;font-size:.86rem}.phase1-health-issues span{display:inline-flex;gap:7px;background:#fff7ed;color:#9a3412}.phase1-health-ok{gap:8px;background:#f0fdf4;color:#166534}
+.configuration-alert{display:flex;flex-direction:column;gap:4px}.configuration-alert span{line-height:1.45}
+@media(max-width:780px){.phase1-configuration-health{grid-template-columns:1fr}.phase1-health-counts{grid-template-columns:1fr 1fr}}

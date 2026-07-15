@@ -184,11 +184,15 @@ export interface CreatedCaseResult {
 }
 
 export interface SigcMember {
+  membershipId: string;
   userId: string;
   name: string;
   email: string;
   roleName: string;
   permissionCodes: string[];
+  areaIds: string[];
+  primaryAreaId?: string;
+  coordinatorAreaIds: string[];
 }
 
 export interface SigcAssignment {
@@ -291,12 +295,49 @@ export interface TimelineItem {
   icon: LucideIcon;
 }
 
+export interface SigcDefaultAreaOption {
+  areaId: string;
+  areaName: string;
+  responsibleUserId?: string;
+  responsibleName?: string;
+  isPrimary: boolean;
+  sortOrder: number;
+}
+
 export interface SigcCatalogOption {
   id: string;
   name: string;
   code?: string;
+  description?: string | null;
   color?: string | null;
+  sortOrder?: number;
   isActive?: boolean;
+  parentAreaId?: string | null;
+  email?: string | null;
+  isPublicEnabled?: boolean;
+  isInternalEnabled?: boolean;
+  defaultPriorityId?: string | null;
+  defaultRiskLevel?: string | null;
+  responseTemplateId?: string | null;
+  slaPolicyId?: string | null;
+  slaLabel?: string;
+  defaultAreas?: SigcDefaultAreaOption[];
+}
+
+export interface SigcConfigurationStatus {
+  readyForManual: boolean;
+  readyForPublic: boolean;
+  publicIntakeEnabled: boolean;
+  issues: string[];
+  counts: {
+    areas: number;
+    priorities: number;
+    states: number;
+    internalCaseTypes: number;
+    publicCaseTypes: number;
+    caseTypesWithoutSla: number;
+    caseTypesWithoutWorkflow: number;
+  };
 }
 
 export interface SigcCatalogs {
@@ -306,6 +347,7 @@ export interface SigcCatalogs {
   states: SigcCatalogOption[];
   priorities: SigcCatalogOption[];
   roles: SigcCatalogOption[];
+  configuration: SigcConfigurationStatus;
 }
 
 
@@ -663,6 +705,15 @@ export interface AdminCatalogItem {
   isActive: boolean;
   isInitial?: boolean;
   isTerminal?: boolean;
+  parentAreaId?: string;
+  email?: string;
+  managerMembershipId?: string;
+  isPublicEnabled?: boolean;
+  isInternalEnabled?: boolean;
+  defaultPriorityId?: string;
+  defaultRiskLevel?: string;
+  responseTemplateId?: string;
+  defaultAreas?: SigcDefaultAreaOption[];
 }
 
 export interface AdminSlaPolicy {
@@ -710,6 +761,9 @@ export interface AdminMember {
   roleId?: string;
   roleName: string;
   isActive: boolean;
+  areaIds: string[];
+  primaryAreaId?: string;
+  coordinatorAreaIds: string[];
 }
 
 export interface AdminWorkflowState {
@@ -985,6 +1039,7 @@ export interface SigcUserManagementSnapshot {
 
 export interface SigcAdminSnapshot {
   organizationId: string;
+  configuration: SigcConfigurationStatus;
   areas: AdminCatalogItem[];
   priorities: AdminCatalogItem[];
   caseTypes: AdminCatalogItem[];
@@ -1013,6 +1068,14 @@ export interface SaveAdminCatalogInput {
   isInitial?: boolean;
   isTerminal?: boolean;
   isActive?: boolean;
+  parentAreaId?: string;
+  email?: string;
+  managerMembershipId?: string;
+  isPublicEnabled?: boolean;
+  isInternalEnabled?: boolean;
+  defaultPriorityId?: string;
+  defaultRiskLevel?: string;
+  responseTemplateId?: string;
 }
 
 export interface SaveSlaPolicyInput {

@@ -171,6 +171,11 @@ export function AdminConfigurationPage() {
 
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
+      {data ? <section className={`card phase1-configuration-health ${data.configuration.readyForManual && (!data.configuration.publicIntakeEnabled || data.configuration.readyForPublic) ? 'ready' : 'pending'}`}>
+        <div><span className="eyebrow">Fase 1 · preparación de la entidad</span><h2>{data.configuration.readyForManual ? 'Configuración interna operativa' : 'Configuración interna incompleta'}</h2><p>{data.configuration.publicIntakeEnabled ? (data.configuration.readyForPublic ? 'La radicación pública también cuenta con tipos visibles y configuración base.' : 'La radicación pública está habilitada, pero aún necesita tipos públicos y SLA.') : 'La radicación pública está deshabilitada para esta entidad.'}</p></div>
+        <div className="phase1-health-counts"><span><b>{data.configuration.counts.areas}</b> áreas</span><span><b>{data.configuration.counts.internalCaseTypes}</b> tipos internos</span><span><b>{data.configuration.counts.publicCaseTypes}</b> tipos públicos</span><span><b>{data.configuration.counts.priorities}</b> prioridades</span></div>
+        {data.configuration.issues.length ? <div className="phase1-health-issues">{data.configuration.issues.map((issue) => <span key={issue}><Flag size={15} />{issue}</span>)}</div> : <div className="phase1-health-ok"><CheckCircle2 size={18} /> La configuración mínima está completa.</div>}
+      </section> : null}
 
       <section className="admin-live-kpis">
         <AdminKpi icon={<Building2 />} label="Áreas" value={data?.areas.length ?? 0} />

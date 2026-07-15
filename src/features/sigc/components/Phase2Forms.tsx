@@ -190,6 +190,7 @@ export function PublicCaseForm({
           </label>
         ) : null}
       </div>
+      {!caseTypes.length ? <div className="alert danger"><strong>Formulario temporalmente no disponible.</strong><span>La entidad todavía no tiene tipos de caso públicos configurados. Comunícate con {context.branding.supportEmail || 'el administrador de la plataforma'}.</span></div> : null}
       {submitError ? <div className="alert danger">{submitError}</div> : null}
       <button className="btn btn-primary full" type="submit" disabled={isSubmitting || !caseTypes.length || (context.privacy.requireConsent && !privacyConsent)}>
         {isSubmitting ? <><LoaderCircle size={17} className="spin" /> Radicando...</> : 'Enviar solicitud'}
@@ -225,6 +226,32 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
 
   const selectedType = catalogs?.caseTypes.find((item) => item.id === values.caseTypeId);
   const validAssignments = useMemo(() => assignments.filter((item) => item.areaId), [assignments]);
+  const configurationIssues = catalogs?.configuration.issues ?? [];
+  const hasMemberAreaConfiguration = members.some((member) => member.areaIds.length > 0);
+
+  function membersForArea(areaId: string) {
+    if (!areaId || !hasMemberAreaConfiguration) return members;
+    return members.filter((member) => member.areaIds.includes(areaId));
+  }
+
+  function selectCaseType(caseTypeId: string) {
+    const type = catalogs?.caseTypes.find((item) => item.id === caseTypeId);
+    setValues((current) => ({
+      ...current,
+      caseTypeId,
+      priorityId: type?.defaultPriorityId || current.priorityId,
+      riskLevel: type?.defaultRiskLevel || current.riskLevel
+    }));
+    if (type?.defaultAreas?.length) {
+      setAssignments(type.defaultAreas.map((area, index) => ({
+        areaId: area.areaId,
+        responsibleUserId: area.responsibleUserId ?? '',
+        dueAt: '',
+        observations: '',
+        isPrimary: area.isPrimary || index === 0
+      })));
+    }
+  }
 
   function setField(field: keyof typeof values, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -266,17 +293,18 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
       <div className="card form-card">
         <h2>Datos del solicitante y clasificación</h2>
         {catalogsWarning ? <div className="alert danger">{catalogsWarning}</div> : null}
+        {catalogs && !catalogs.configuration.readyForManual ? <div className="alert danger configuration-alert"><strong>La entidad aún no está lista para crear casos.</strong><span>{configurationIssues.join(' ') || 'Completa áreas, prioridades, tipos internos y estados desde Administración.'}</span></div> : null}
         <div className="manual-form-grid">
           <input className="field" placeholder="Nombre del solicitante *" value={values.requesterName} onChange={(event) => setField('requesterName', event.target.value)} required minLength={2} />
           <input className="field" placeholder="Empresa / área origen" value={values.requesterCompany} onChange={(event) => setField('requesterCompany', event.target.value)} />
           <input className="field" placeholder="Documento" value={values.requesterDocument} onChange={(event) => setField('requesterDocument', event.target.value)} />
           <input className="field" placeholder="Correo" type="email" value={values.requesterEmail} onChange={(event) => setField('requesterEmail', event.target.value)} />
           <input className="field" placeholder="Teléfono" value={values.requesterPhone} onChange={(event) => setField('requesterPhone', event.target.value)} />
-          <select className="field" value={values.caseTypeId} onChange={(event) => setField('caseTypeId', event.target.value)} required disabled={catalogsLoading}>
+          <select className="field" value={values.caseTypeId} onChange={(event) => selectCaseType(event.target.value)} required disabled={catalogsLoading || !catalogs?.caseTypes.length}>
             <option value="">Tipo de caso *</option>
             {catalogs?.caseTypes.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select>
-          <select className="field" value={values.priorityId} onChange={(event) => setField('priorityId', event.target.value)} required disabled={catalogsLoading}>
+          <select className="field" value={values.priorityId} onChange={(event) => setField('priorityId', event.target.value)} required disabled={catalogsLoading || !catalogs?.priorities.length}>
             <option value="">Prioridad *</option>
             {catalogs?.priorities.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select>
@@ -294,13 +322,13 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
         <div className="assignment-form-list">
           {assignments.map((assignment, index) => (
             <div className="assignment-form-row" key={index}>
-              <select className="field" value={assignment.areaId} onChange={(event) => updateAssignment(index, { areaId: event.target.value })}>
+              <select className="field" value={assignment.areaId} onChange={(event) => updateAssignment(index, { areaId: event.target.value, responsibleUserId: '' })} disabled={!catalogs?.areas.length}>
                 <option value="">Área</option>
                 {catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
               </select>
-              <select className="field" value={assignment.responsibleUserId ?? ''} onChange={(event) => updateAssignment(index, { responsibleUserId: event.target.value })} disabled={membersLoading}>
+              <select className="field" value={assignment.responsibleUserId ?? ''} onChange={(event) => updateAssignment(index, { responsibleUserId: event.target.value })} disabled={membersLoading || !assignment.areaId}>
                 <option value="">Sin responsable específico</option>
-                {members.map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
+                {membersForArea(assignment.areaId).map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
               </select>
               <input className="field" type="datetime-local" value={assignment.dueAt ?? ''} onChange={(event) => updateAssignment(index, { dueAt: event.target.value })} />
               <input className="field" placeholder="Observaciones" value={assignment.observations ?? ''} onChange={(event) => updateAssignment(index, { observations: event.target.value })} />
@@ -311,7 +339,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
         </div>
         {submitError ? <div className="alert danger">{submitError}</div> : null}
         <div className="manual-submit-row">
-          <button className="btn btn-primary" type="submit" disabled={isSubmitting || catalogsLoading || !catalogs}>
+          <button className="btn btn-primary" type="submit" disabled={isSubmitting || catalogsLoading || !catalogs || !catalogs.configuration.readyForManual}>
             {isSubmitting ? <><LoaderCircle size={17} className="spin" /> Creando...</> : <><Check size={17} /> Crear caso</>}
           </button>
         </div>
@@ -323,7 +351,10 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
           <div className="sla-box">
             <span>Tipo seleccionado</span>
             <strong>{selectedType?.name ?? 'Selecciona un tipo'}</strong>
-            <p>{createdDueAt ? <>Fecha límite: <b>{formatDateTime(createdDueAt)}</b></> : 'La fecha límite se calcula al crear el caso.'}</p>
+            <p>{selectedType ? <>SLA: <b>{selectedType.slaLabel ?? 'Sin SLA configurado'}</b></> : 'El SLA se mostrará al seleccionar un tipo.'}</p>
+            {selectedType?.defaultRiskLevel ? <p>Riesgo sugerido: <b>{selectedType.defaultRiskLevel}</b>.</p> : null}
+            {selectedType?.defaultAreas?.length ? <p>Área sugerida: <b>{selectedType.defaultAreas.find((area) => area.isPrimary)?.areaName ?? selectedType.defaultAreas[0].areaName}</b>.</p> : null}
+            {createdDueAt ? <p>Fecha límite calculada: <b>{formatDateTime(createdDueAt)}</b>.</p> : null}
           </div>
         </section>
         <section className="card card-block">

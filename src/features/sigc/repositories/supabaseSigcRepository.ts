@@ -491,6 +491,63 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async getCatalogs(): Promise<SigcCatalogs> {
     const client = requireClient();
+    const { data, error } = await client.rpc('get_operational_catalogs_v1');
+
+    if (!error && data && typeof data === 'object') {
+      const raw = data as any;
+      const mapOption = (item: any): SigcCatalogOption => ({
+        id: String(item.id),
+        name: String(item.name),
+        code: item.code == null ? undefined : String(item.code),
+        description: item.description ?? null,
+        color: item.color ?? null,
+        sortOrder: Number(item.sortOrder ?? 0),
+        isActive: item.isActive !== false,
+        parentAreaId: item.parentAreaId ?? null,
+        email: item.email ?? null,
+        isPublicEnabled: item.isPublicEnabled == null ? undefined : Boolean(item.isPublicEnabled),
+        isInternalEnabled: item.isInternalEnabled == null ? undefined : Boolean(item.isInternalEnabled),
+        defaultPriorityId: item.defaultPriorityId ?? null,
+        defaultRiskLevel: item.defaultRiskLevel ?? null,
+        responseTemplateId: item.responseTemplateId ?? null,
+        slaPolicyId: item.slaPolicyId ?? null,
+        slaLabel: item.slaLabel == null ? undefined : String(item.slaLabel),
+        defaultAreas: Array.isArray(item.defaultAreas) ? item.defaultAreas.map((entry: any) => ({
+          areaId: String(entry.areaId),
+          areaName: String(entry.areaName ?? 'Área'),
+          responsibleUserId: entry.responsibleUserId ?? undefined,
+          responsibleName: entry.responsibleName ?? undefined,
+          isPrimary: Boolean(entry.isPrimary),
+          sortOrder: Number(entry.sortOrder ?? 0)
+        })) : []
+      });
+      const configuration = raw.configuration ?? {};
+      return {
+        organizationId: raw.organizationId ? String(raw.organizationId) : null,
+        areas: Array.isArray(raw.areas) ? raw.areas.map(mapOption) : [],
+        caseTypes: Array.isArray(raw.caseTypes) ? raw.caseTypes.map(mapOption) : [],
+        states: Array.isArray(raw.states) ? raw.states.map(mapOption) : [],
+        priorities: Array.isArray(raw.priorities) ? raw.priorities.map(mapOption) : [],
+        roles: Array.isArray(raw.roles) ? raw.roles.map(mapOption) : [],
+        configuration: {
+          readyForManual: Boolean(configuration.readyForManual),
+          readyForPublic: Boolean(configuration.readyForPublic),
+          publicIntakeEnabled: Boolean(configuration.publicIntakeEnabled),
+          issues: Array.isArray(configuration.issues) ? configuration.issues.map(String) : [],
+          counts: {
+            areas: Number(configuration.counts?.areas ?? 0),
+            priorities: Number(configuration.counts?.priorities ?? 0),
+            states: Number(configuration.counts?.states ?? 0),
+            internalCaseTypes: Number(configuration.counts?.internalCaseTypes ?? 0),
+            publicCaseTypes: Number(configuration.counts?.publicCaseTypes ?? 0),
+            caseTypesWithoutSla: Number(configuration.counts?.caseTypesWithoutSla ?? 0),
+            caseTypesWithoutWorkflow: Number(configuration.counts?.caseTypesWithoutWorkflow ?? 0)
+          }
+        }
+      };
+    }
+
+    // Compatibilidad temporal: permite mostrar el estado real antes de ejecutar la migración de Fase 1.
     const organizationId = await ensureOrganization();
     const [areas, types, states, priorities, roles] = await Promise.all([
       client.from('areas').select('id,name,code,color,is_active').eq('organization_id', organizationId).eq('is_active', true).order('sort_order'),
@@ -499,17 +556,27 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('priorities').select('id,name,code,color,is_active').eq('organization_id', organizationId).eq('is_active', true).order('sort_order'),
       client.from('roles').select('id,name,code,is_active').eq('organization_id', organizationId).eq('is_active', true).order('name')
     ]);
-
-    const error = areas.error ?? types.error ?? states.error ?? priorities.error ?? roles.error;
-    if (error) throw error;
-
+    const fallbackError = areas.error ?? types.error ?? states.error ?? priorities.error ?? roles.error;
+    if (fallbackError) throw error ?? fallbackError;
+    const issues: string[] = [];
+    if (!(areas.data ?? []).length) issues.push('No existen áreas activas para la organización.');
+    if (!(priorities.data ?? []).length) issues.push('No existen prioridades activas para la organización.');
+    if (!(types.data ?? []).length) issues.push('No existen tipos de caso activos para la organización.');
+    if (!(states.data ?? []).length) issues.push('No existen estados activos para la organización.');
     return {
       organizationId,
       areas: mapCatalog(areas.data ?? []),
-      caseTypes: mapCatalog(types.data ?? []),
+      caseTypes: mapCatalog(types.data ?? []).map((item) => ({ ...item, isInternalEnabled: true, isPublicEnabled: true, defaultAreas: [] })),
       states: mapCatalog(states.data ?? []),
       priorities: mapCatalog(priorities.data ?? []),
-      roles: mapCatalog(roles.data ?? [])
+      roles: mapCatalog(roles.data ?? []),
+      configuration: {
+        readyForManual: issues.length === 0,
+        readyForPublic: Boolean((types.data ?? []).length),
+        publicIntakeEnabled: false,
+        issues: error ? [`La migración de Fase 1 aún no está aplicada: ${error.message}`, ...issues] : issues,
+        counts: { areas: areas.data?.length ?? 0, priorities: priorities.data?.length ?? 0, states: states.data?.length ?? 0, internalCaseTypes: types.data?.length ?? 0, publicCaseTypes: types.data?.length ?? 0, caseTypesWithoutSla: 0, caseTypesWithoutWorkflow: 0 }
+      }
     };
   },
 
@@ -518,22 +585,24 @@ export const supabaseSigcRepository: SigcRepository = {
     const organizationId = await ensureOrganization();
     const { data: memberships, error: membershipsError } = await client
       .from('organization_members')
-      .select('user_id,role_id')
+      .select('id,user_id,role_id')
       .eq('organization_id', organizationId)
       .eq('is_active', true);
     if (membershipsError) throw membershipsError;
 
     const userIds = [...new Set((memberships ?? []).map((item) => item.user_id))];
+    const membershipIds = [...new Set((memberships ?? []).map((item) => item.id))];
     const roleIds = [...new Set((memberships ?? []).map((item) => item.role_id).filter((id): id is string => Boolean(id)))];
     if (!userIds.length) return [];
 
-    const [profiles, roles, rolePermissions, permissions] = await Promise.all([
+    const [profiles, roles, rolePermissions, permissions, memberAreas] = await Promise.all([
       client.from('profiles').select('id,name,email').in('id', userIds),
       roleIds.length ? client.from('roles').select('id,name').in('id', roleIds) : Promise.resolve({ data: [], error: null }),
       roleIds.length ? client.from('role_permissions').select('role_id,permission_id').in('role_id', roleIds) : Promise.resolve({ data: [], error: null }),
-      client.from('permissions').select('id,code')
+      client.from('permissions').select('id,code'),
+      membershipIds.length ? client.from('organization_member_areas').select('organization_member_id,area_id,is_primary,is_coordinator,is_active').eq('organization_id', organizationId).in('organization_member_id', membershipIds).eq('is_active', true) : Promise.resolve({ data: [], error: null })
     ]);
-    const relatedError = profiles.error ?? roles.error ?? rolePermissions.error ?? permissions.error;
+    const relatedError = profiles.error ?? roles.error ?? rolePermissions.error ?? permissions.error ?? memberAreas.error;
     if (relatedError) throw relatedError;
 
     const profileMap = new Map<string, { id: string; name: string; email: string }>((profiles.data ?? []).map((item) => [item.id, item as { id: string; name: string; email: string }]));
@@ -545,21 +614,28 @@ export const supabaseSigcRepository: SigcRepository = {
       if (!code) continue;
       permissionsByRole.set(String(row.role_id), [...(permissionsByRole.get(String(row.role_id)) ?? []), code]);
     }
+    const areasByMembership = new Map<string, Array<{ areaId: string; isPrimary: boolean; isCoordinator: boolean }>>();
+    for (const row of memberAreas.data ?? []) {
+      const key = String(row.organization_member_id);
+      areasByMembership.set(key, [...(areasByMembership.get(key) ?? []), { areaId: String(row.area_id), isPrimary: Boolean(row.is_primary), isCoordinator: Boolean(row.is_coordinator) }]);
+    }
 
-    return (memberships ?? [])
-      .map((membership) => {
-        const profile = profileMap.get(membership.user_id);
-        if (!profile) return null;
-        return {
-          userId: profile.id,
-          name: profile.name,
-          email: profile.email,
-          roleName: membership.role_id ? roleMap.get(membership.role_id) ?? 'Sin rol' : 'Sin rol',
-          permissionCodes: membership.role_id ? permissionsByRole.get(membership.role_id) ?? [] : []
-        } satisfies SigcMember;
-      })
-      .filter((item): item is SigcMember => Boolean(item))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    return (memberships ?? []).flatMap((membership): SigcMember[] => {
+      const profile = profileMap.get(membership.user_id);
+      if (!profile) return [];
+      const areaLinks = areasByMembership.get(String(membership.id)) ?? [];
+      return [{
+        membershipId: membership.id,
+        userId: profile.id,
+        name: profile.name,
+        email: profile.email,
+        roleName: membership.role_id ? roleMap.get(membership.role_id) ?? 'Sin rol' : 'Sin rol',
+        permissionCodes: membership.role_id ? permissionsByRole.get(membership.role_id) ?? [] : [],
+        areaIds: areaLinks.map((entry) => entry.areaId),
+        primaryAreaId: areaLinks.find((entry) => entry.isPrimary)?.areaId,
+        coordinatorAreaIds: areaLinks.filter((entry) => entry.isCoordinator).map((entry) => entry.areaId)
+      }];
+    });
   },
 
   async listCaseAssignments(caseId: string): Promise<SigcAssignment[]> {
@@ -1333,13 +1409,18 @@ export const supabaseSigcRepository: SigcRepository = {
     const { data, error } = await client.rpc('get_user_management_context_v4');
     if (error) throw error;
     if (!data || typeof data !== 'object') throw new Error('No fue posible cargar la gestión de usuarios.');
-    return data as unknown as SigcUserManagementSnapshot;
+    const snapshot = data as unknown as SigcUserManagementSnapshot;
+    return {
+      ...snapshot,
+      members: (snapshot.members ?? []).map((member) => ({ ...member, areaIds: member.areaIds ?? [], coordinatorAreaIds: member.coordinatorAreaIds ?? [] }))
+    };
   },
 
   async getAdminSnapshot(): Promise<SigcAdminSnapshot> {
     const client = requireClient();
     const organizationId = await ensureOrganization();
-    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics] = await Promise.all([
+    const operationalCatalogs = await this.getCatalogs();
+    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics] = await Promise.all([
       client.from('areas').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('priorities').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('case_types').select('*').eq('organization_id', organizationId).order('name'),
@@ -1351,6 +1432,8 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('role_permissions').select('role_id,permission_id'),
       client.from('organization_members').select('*').eq('organization_id', organizationId).order('joined_at'),
       client.from('profiles').select('id,name,email'),
+      client.from('organization_member_areas').select('*').eq('organization_id', organizationId),
+      client.from('case_type_default_areas').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('case_type_states').select('*'),
       client.from('state_transitions').select('*').eq('organization_id', organizationId).order('created_at'),
       client.from('email_templates').select('*').eq('organization_id', organizationId).order('name'),
@@ -1359,7 +1442,7 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('automation_executions').select('*').eq('organization_id', organizationId).order('started_at', { ascending: false }).limit(100),
       client.rpc('analyze_automation_rules_v3')
     ]);
-    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics];
+    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics];
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
 
@@ -1372,7 +1455,15 @@ export const supabaseSigcRepository: SigcRepository = {
       sortOrder: Number(row.sort_order ?? 0),
       isActive: Boolean(row.is_active),
       isInitial: row.is_initial == null ? undefined : Boolean(row.is_initial),
-      isTerminal: row.is_terminal == null ? undefined : Boolean(row.is_terminal)
+      isTerminal: row.is_terminal == null ? undefined : Boolean(row.is_terminal),
+      parentAreaId: row.parent_area_id ?? undefined,
+      email: row.email ?? undefined,
+      managerMembershipId: row.manager_membership_id ?? undefined,
+      isPublicEnabled: row.is_public_enabled == null ? undefined : Boolean(row.is_public_enabled),
+      isInternalEnabled: row.is_internal_enabled == null ? undefined : Boolean(row.is_internal_enabled),
+      defaultPriorityId: row.default_priority_id ?? undefined,
+      defaultRiskLevel: row.default_risk_level ?? undefined,
+      responseTemplateId: row.response_template_id ?? undefined
     });
     const rolePermissionMap = new Map<string, string[]>();
     for (const row of rolePermissions.data ?? []) {
@@ -1380,6 +1471,26 @@ export const supabaseSigcRepository: SigcRepository = {
     }
     const profileMap = new Map<string, { name: string; email: string }>((profiles.data ?? []).map((row: any) => [row.id, { name: row.name, email: row.email }]));
     const roleMap = new Map<string, { name: string }>((roles.data ?? []).map((row: any) => [row.id, { name: row.name }]));
+    const memberAreaMap = new Map<string, Array<{ areaId: string; isPrimary: boolean; isCoordinator: boolean }>>();
+    for (const row of memberAreas.data ?? []) {
+      const key = String(row.organization_member_id);
+      memberAreaMap.set(key, [...(memberAreaMap.get(key) ?? []), { areaId: String(row.area_id), isPrimary: Boolean(row.is_primary), isCoordinator: Boolean(row.is_coordinator) }]);
+    }
+    const areaNameMap = new Map<string, string>((areas.data ?? []).map((row: any) => [String(row.id), String(row.name)]));
+    const profileNameMap = new Map<string, string>((profiles.data ?? []).map((row: any) => [String(row.id), String(row.name)]));
+    const defaultAreasByType = new Map<string, any[]>();
+    for (const row of caseTypeDefaultAreas.data ?? []) {
+      const key = String(row.case_type_id);
+      const membership = row.default_responsible_membership_id ? (memberships.data ?? []).find((entry: any) => entry.id === row.default_responsible_membership_id) : null;
+      defaultAreasByType.set(key, [...(defaultAreasByType.get(key) ?? []), {
+        areaId: String(row.area_id),
+        areaName: areaNameMap.get(String(row.area_id)) ?? 'Área',
+        responsibleUserId: membership?.user_id ?? undefined,
+        responsibleName: membership?.user_id ? profileNameMap.get(String(membership.user_id)) : undefined,
+        isPrimary: Boolean(row.is_primary),
+        sortOrder: Number(row.sort_order ?? 0)
+      }]);
+    }
     const caseTypeMap = new Map((caseTypes.data ?? []).map((row: any) => [row.id, row.name]));
     const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row]));
     const ruleMap = new Map((automationRules.data ?? []).map((row: any) => [row.id, row.name]));
@@ -1431,15 +1542,16 @@ export const supabaseSigcRepository: SigcRepository = {
 
     return {
       organizationId,
+      configuration: operationalCatalogs.configuration,
       areas: (areas.data ?? []).map(mapCatalogItem),
       priorities: (priorities.data ?? []).map(mapCatalogItem),
-      caseTypes: (caseTypes.data ?? []).map(mapCatalogItem),
+      caseTypes: (caseTypes.data ?? []).map((row: any) => ({ ...mapCatalogItem(row), defaultAreas: defaultAreasByType.get(String(row.id)) ?? [] })),
       states: (states.data ?? []).map(mapCatalogItem),
       slaPolicies: (slaPolicies.data ?? []).map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, caseTypeName: row.case_type_id ? caseTypeMap.get(row.case_type_id) ?? 'Tipo de caso' : 'General', name: row.name, durationValue: row.duration_value, durationUnit: row.duration_unit, timezone: row.timezone ?? 'America/Bogota', pauseOnPendingInformation: Boolean(row.pause_on_pending_information), isDefault: Boolean(row.is_default), isActive: Boolean(row.is_active) })),
       holidays: (holidays.data ?? []).map((row: any) => ({ id: row.id, holidayDate: row.holiday_date, name: row.name, isActive: Boolean(row.is_active) })),
       permissions: (permissions.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined })),
       roles: (roles.data ?? []).map((row: any) => ({ id: row.id, code: row.code, name: row.name, description: row.description ?? undefined, isSystem: Boolean(row.is_system), isActive: Boolean(row.is_active), permissionIds: rolePermissionMap.get(row.id) ?? [] })),
-      members: (memberships.data ?? []).map((row: any) => { const profile = profileMap.get(row.user_id); const role = row.role_id ? roleMap.get(row.role_id) : null; return { membershipId: row.id, userId: row.user_id, name: profile?.name ?? 'Usuario', email: profile?.email ?? '', roleId: row.role_id ?? undefined, roleName: role?.name ?? 'Sin rol', isActive: Boolean(row.is_active) }; }),
+      members: (memberships.data ?? []).map((row: any) => { const profile = profileMap.get(row.user_id); const role = row.role_id ? roleMap.get(row.role_id) : null; const areaLinks = memberAreaMap.get(String(row.id)) ?? []; return { membershipId: row.id, userId: row.user_id, name: profile?.name ?? 'Usuario', email: profile?.email ?? '', roleId: row.role_id ?? undefined, roleName: role?.name ?? 'Sin rol', isActive: Boolean(row.is_active), areaIds: areaLinks.map((entry) => entry.areaId), primaryAreaId: areaLinks.find((entry) => entry.isPrimary)?.areaId, coordinatorAreaIds: areaLinks.filter((entry) => entry.isCoordinator).map((entry) => entry.areaId) }; }),
       workflows,
       emailTemplates: (templates.data ?? []).map((row: any) => ({
         id: row.id,
@@ -1493,7 +1605,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
     const client = requireClient();
-    const { error } = await client.rpc('save_admin_catalog_v2', {
+    const { error } = await client.rpc('save_admin_catalog_v3', {
       p_kind: input.kind,
       p_id: input.id || null,
       p_code: input.code,
@@ -1503,7 +1615,15 @@ export const supabaseSigcRepository: SigcRepository = {
       p_sort_order: input.sortOrder ?? 0,
       p_is_initial: Boolean(input.isInitial),
       p_is_terminal: Boolean(input.isTerminal),
-      p_is_active: input.isActive ?? true
+      p_is_active: input.isActive ?? true,
+      p_parent_area_id: input.parentAreaId || null,
+      p_email: input.email?.trim() || null,
+      p_manager_membership_id: input.managerMembershipId || null,
+      p_is_public_enabled: input.isPublicEnabled ?? null,
+      p_is_internal_enabled: input.isInternalEnabled ?? null,
+      p_default_priority_id: input.defaultPriorityId || null,
+      p_default_risk_level: input.defaultRiskLevel || null,
+      p_response_template_id: input.responseTemplateId || null
     });
     if (error) throw error;
   },
@@ -2007,7 +2127,7 @@ export const supabaseSigcRepository: SigcRepository = {
 export const supabasePublicSigcRepository: PublicSigcRepository = {
   async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_public_intake_context_v4', {
+    const { data, error } = await client.rpc('get_public_intake_context_v5', {
       p_tenant: locator.tenant?.trim() || null,
       p_hostname: locator.hostname?.trim() || null
     });
@@ -2057,7 +2177,7 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const client = requireClient();
-    const { data, error } = await client.rpc('submit_public_case_v4', {
+    const { data, error } = await client.rpc('submit_public_case_v5', {
       p_tenant: input.tenant?.trim() || null,
       p_hostname: input.hostname?.trim() || null,
       p_case_type_id: input.caseTypeId,

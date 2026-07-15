@@ -140,26 +140,62 @@ const DEFAULT_PUBLIC_INTAKE_SETTINGS: UpdatePublicIntakeSettingsInput = {
   privacyPolicyUrl: ''
 };
 
+const demoAreas = ['Gerencia', 'Nómina', 'Talento Humano', 'Operaciones', 'SDG', 'Comercial', 'Administrativa y Financiera', 'Tecnología', 'Marketing y Telecomunicaciones', 'Jurídica']
+  .map((name, index) => ({ id: `demo-area-${index + 1}`, name, code: `AREA_${index + 1}`, color: ['#5b21b6','#db2777','#2563eb','#ea580c','#0891b2','#059669','#d97706','#e11d48','#0f766e','#7c3aed'][index] ?? '#64748b', sortOrder: index * 10, isActive: true }));
+
+const demoPriorities = ['Urgente', 'Alta', 'Media', 'Baja']
+  .map((name, index) => ({ id: `demo-priority-${index + 1}`, name, code: ['URGENT','HIGH','MEDIUM','LOW'][index], color: ['#dc2626','#ea580c','#ca8a04','#059669'][index] ?? '#64748b', sortOrder: index * 10, isActive: true }));
+
+const publicCaseTypeNames = new Set(['Derecho de Petición', 'Queja', 'Reclamo', 'Sugerencia', 'Felicitación', 'Requerimiento de Autoridad', 'Solicitud de documentos', 'Otros']);
+const demoCaseTypeNames = ['Derecho de Petición', 'Queja', 'Reclamo', 'Sugerencia', 'Felicitación', 'Requerimiento de Autoridad', 'Solicitud de documentos', 'Contrato', 'Acción de Tutela', 'Requerimiento Interno', 'Requerimiento Externo', 'Proceso Judicial', 'Revisión de Procesos', 'Otros'];
+const demoCaseTypes = demoCaseTypeNames.map((name, index) => {
+  const publicEnabled = publicCaseTypeNames.has(name);
+  const juridica = demoAreas.find((area) => area.name === 'Jurídica');
+  return {
+    id: `demo-type-${index + 1}`,
+    name,
+    code: `TYPE_${index + 1}`,
+    color: '#6366f1',
+    sortOrder: index * 10,
+    isActive: true,
+    isPublicEnabled: publicEnabled,
+    isInternalEnabled: true,
+    defaultPriorityId: name === 'Acción de Tutela' ? demoPriorities[0].id : demoPriorities[2].id,
+    defaultRiskLevel: name === 'Acción de Tutela' ? 'Crítico' : 'Medio',
+    slaPolicyId: `demo-sla-${index}`,
+    slaLabel: name === 'Acción de Tutela' ? '24 horas' : '5 días calendario',
+    defaultAreas: juridica && ['Derecho de Petición', 'Requerimiento de Autoridad', 'Acción de Tutela', 'Proceso Judicial'].includes(name)
+      ? [{ areaId: juridica.id, areaName: juridica.name, isPrimary: true, sortOrder: 0 }]
+      : []
+  };
+});
+
+const demoStates = ['Pendiente de Clasificación', 'Clasificado', 'Asignado', 'En Gestión', 'Pendiente de Información', 'Respuesta Elaborada', 'En Revisión / Aprobación', 'Devuelto para Ajustes', 'Aprobado', 'Enviado', 'Cerrado', 'Cancelado']
+  .map((name, index) => ({ id: `demo-state-${index + 1}`, name, code: ['PENDING_CLASSIFICATION','CLASSIFIED','ASSIGNED','IN_PROGRESS','PENDING_INFORMATION','RESPONSE_READY','IN_REVIEW','RETURNED_FOR_ADJUSTMENTS','APPROVED','SENT','CLOSED','CANCELLED'][index] ?? `STATE_${index + 1}`, color: ['#64748b','#4f46e5','#2563eb','#0891b2','#ca8a04','#7c3aed','#9333ea','#ea580c','#059669','#0f766e','#16a34a','#dc2626'][index] ?? '#64748b', sortOrder: index * 10, isActive: true }));
+
 const catalogs: SigcCatalogs = {
   organizationId: null,
-  areas: ['Gerencia', 'Nómina', 'Talento Humano', 'Operaciones', 'SDG', 'Comercial', 'Administrativa y Financiera', 'Tecnología', 'Marketing y Telecomunicaciones', 'Jurídica']
-    .map((name, index) => ({ id: `demo-area-${index + 1}`, name, code: `AREA_${index + 1}`, color: ['#5b21b6','#db2777','#2563eb','#ea580c','#0891b2','#059669','#d97706','#e11d48','#0f766e','#7c3aed'][index] ?? '#64748b', isActive: true })),
-  caseTypes: ['Petición', 'Contrato', 'Reclamo', 'Acción de Tutela', 'Requerimiento Interno', 'Requerimiento Externo', 'Proceso Judicial', 'Revisión de Procesos', 'Hallazgo de auditoría', 'Otros']
-    .map((name, index) => ({ id: `demo-type-${index + 1}`, name, code: `TYPE_${index + 1}`, color: '#6366f1', isActive: true })),
-  states: ['Pendiente de Clasificación', 'Clasificado', 'Asignado', 'En Gestión', 'Pendiente de Información', 'Respuesta Elaborada', 'En Revisión / Aprobación', 'Devuelto para Ajustes', 'Aprobado', 'Enviado', 'Cerrado', 'Cancelado']
-    .map((name, index) => ({ id: `demo-state-${index + 1}`, name, code: ['PENDING_CLASSIFICATION','CLASSIFIED','ASSIGNED','IN_PROGRESS','PENDING_INFORMATION','RESPONSE_READY','IN_REVIEW','RETURNED_FOR_ADJUSTMENTS','APPROVED','SENT','CLOSED','CANCELLED'][index] ?? `STATE_${index + 1}`, color: ['#64748b','#4f46e5','#2563eb','#0891b2','#ca8a04','#7c3aed','#9333ea','#ea580c','#059669','#0f766e','#16a34a','#dc2626'][index] ?? '#64748b', isActive: true })),
-  priorities: ['Crítica', 'Alta', 'Media', 'Baja']
-    .map((name, index) => ({ id: `demo-priority-${index + 1}`, name, code: `PRIORITY_${index + 1}`, color: ['#dc2626','#ea580c','#ca8a04','#059669'][index] ?? '#64748b', isActive: true })),
+  areas: demoAreas,
+  caseTypes: demoCaseTypes,
+  states: demoStates,
+  priorities: demoPriorities,
   roles: ['Administrador', 'Director', 'Coordinador', 'Analista', 'Consulta', 'Cliente Externo']
-    .map((name, index) => ({ id: `demo-role-${index + 1}`, name, isActive: true }))
+    .map((name, index) => ({ id: `demo-role-${index + 1}`, name, isActive: true })),
+  configuration: {
+    readyForManual: true,
+    readyForPublic: true,
+    publicIntakeEnabled: true,
+    issues: [],
+    counts: { areas: demoAreas.length, priorities: demoPriorities.length, states: demoStates.length, internalCaseTypes: demoCaseTypes.length, publicCaseTypes: demoCaseTypes.filter((item) => item.isPublicEnabled).length, caseTypesWithoutSla: 0, caseTypesWithoutWorkflow: 0 }
+  }
 };
 
 const members: SigcMember[] = [
-  { userId: 'demo-user-1', name: 'Laura Méndez', email: 'laura@sigc.demo', roleName: 'Coordinador', permissionCodes: ['case.approve','case.review'] },
-  { userId: 'demo-user-2', name: 'Felipe Vargas', email: 'felipe@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
-  { userId: 'demo-user-3', name: 'Mónica Díaz', email: 'monica@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
-  { userId: 'demo-user-4', name: 'Natalia Bernal', email: 'natalia@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] },
-  { userId: 'demo-user-5', name: 'Julián Pérez', email: 'julian@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'] }
+  { membershipId: 'demo-membership-1', userId: 'demo-user-1', name: 'Laura Méndez', email: 'laura@sigc.demo', roleName: 'Coordinador', permissionCodes: ['case.approve','case.review'], areaIds: [demoAreas[9].id], primaryAreaId: demoAreas[9].id, coordinatorAreaIds: [demoAreas[9].id] },
+  { membershipId: 'demo-membership-2', userId: 'demo-user-2', name: 'Felipe Vargas', email: 'felipe@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'], areaIds: [demoAreas[3].id], primaryAreaId: demoAreas[3].id, coordinatorAreaIds: [] },
+  { membershipId: 'demo-membership-3', userId: 'demo-user-3', name: 'Mónica Díaz', email: 'monica@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'], areaIds: [demoAreas[2].id], primaryAreaId: demoAreas[2].id, coordinatorAreaIds: [] },
+  { membershipId: 'demo-membership-4', userId: 'demo-user-4', name: 'Natalia Bernal', email: 'natalia@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'], areaIds: [demoAreas[6].id], primaryAreaId: demoAreas[6].id, coordinatorAreaIds: [] },
+  { membershipId: 'demo-membership-5', userId: 'demo-user-5', name: 'Julián Pérez', email: 'julian@sigc.demo', roleName: 'Analista', permissionCodes: ['case.review'], areaIds: [demoAreas[7].id], primaryAreaId: demoAreas[7].id, coordinatorAreaIds: [] }
 ];
 
 function readCases(): SigcCase[] {
@@ -689,7 +725,7 @@ export const demoSigcRepository: SigcRepository = {
     return {
       organizationId: 'demo-org',
       selectedCaseTypeId,
-      caseTypes: catalogs.caseTypes.map((item) => ({ id: item.id, code: item.id, name: item.name, caseCount: readCases().filter((c) => c.typeId === item.id).length })),
+      caseTypes: catalogs.caseTypes.filter((item) => item.isPublicEnabled).map((item) => ({ id: item.id, code: item.id, name: item.name, caseCount: readCases().filter((c) => c.typeId === item.id).length })),
       columns: workflowStates.map((state, index) => ({
         stateId: state.id,
         code: state.id,
@@ -1029,9 +1065,10 @@ export const demoSigcRepository: SigcRepository = {
     const states = catalogs.states.map((item, index) => ({ id: item.id, code: item.code ?? `STATE_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: index * 10, isActive: true, isInitial: index === 0, isTerminal: ['CLOSED', 'CANCELLED'].includes(item.code ?? '') }));
     return {
       organizationId: 'demo-org',
-      areas: catalogs.areas.map((item, index) => ({ id: item.id, code: `AREA_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
-      priorities: catalogs.priorities.map((item, index) => ({ id: item.id, code: `PRIORITY_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
-      caseTypes: catalogs.caseTypes.map((item, index) => ({ id: item.id, code: `TYPE_${index + 1}`, name: item.name, sortOrder: index * 10, isActive: true })),
+      configuration: catalogs.configuration,
+      areas: catalogs.areas.map((item, index) => ({ id: item.id, code: item.code ?? `AREA_${index + 1}`, name: item.name, description: item.description ?? undefined, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true, parentAreaId: item.parentAreaId ?? undefined, email: item.email ?? undefined })),
+      priorities: catalogs.priorities.map((item, index) => ({ id: item.id, code: item.code ?? `PRIORITY_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true })),
+      caseTypes: catalogs.caseTypes.map((item, index) => ({ id: item.id, code: item.code ?? `TYPE_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true, isPublicEnabled: item.isPublicEnabled, isInternalEnabled: item.isInternalEnabled, defaultPriorityId: item.defaultPriorityId ?? undefined, defaultRiskLevel: item.defaultRiskLevel ?? undefined, responseTemplateId: item.responseTemplateId ?? undefined, defaultAreas: item.defaultAreas ?? [] })),
       states,
       slaPolicies: catalogs.caseTypes.map((item, index) => ({ id: `demo-sla-${index}`, caseTypeId: item.id, caseTypeName: item.name, name: `SLA ${item.name}`, durationValue: item.name === 'Acción de Tutela' ? 24 : 5, durationUnit: item.name === 'Acción de Tutela' ? 'hours' : 'calendar_days', timezone: 'America/Bogota', pauseOnPendingInformation: true, isDefault: true, isActive: true })),
       holidays: [],
@@ -1042,7 +1079,7 @@ export const demoSigcRepository: SigcRepository = {
         { id: 'p4', code: 'audit.export', name: 'Exportar auditoría' }
       ],
       roles: catalogs.roles.map((item, index) => ({ id: item.id, code: `role_${index}`, name: item.name, isSystem: true, isActive: true, permissionIds: index === 0 ? ['p1', 'p2'] : [] })),
-      members: members.map((member, index) => ({ membershipId: `demo-membership-${index}`, userId: member.userId, name: member.name, email: member.email, roleId: catalogs.roles[index % catalogs.roles.length]?.id, roleName: member.roleName, isActive: true })),
+      members: members.map((member, index) => ({ membershipId: member.membershipId ?? `demo-membership-${index}`, userId: member.userId, name: member.name, email: member.email, roleId: catalogs.roles[index % catalogs.roles.length]?.id, roleName: member.roleName, isActive: true, areaIds: member.areaIds, primaryAreaId: member.primaryAreaId, coordinatorAreaIds: member.coordinatorAreaIds })),
       workflows: catalogs.caseTypes.map((item) => ({
         caseTypeId: item.id,
         caseTypeName: item.name,
@@ -1410,10 +1447,11 @@ export const demoPublicSigcRepository: PublicSigcRepository = {
         noticeText: intake.privacyNoticeText ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.privacyNoticeText ?? '',
         policyUrl: intake.privacyPolicyUrl?.trim() || null
       },
-      caseTypes: catalogs.caseTypes.map((item) => ({
+      caseTypes: catalogs.caseTypes.filter((item) => item.isPublicEnabled).map((item) => ({
         id: item.id,
         name: item.name,
-        slaLabel: item.name === 'Acción de Tutela' ? '24 horas' : '5 días calendario'
+        description: item.description ?? null,
+        slaLabel: item.slaLabel ?? 'Sin SLA configurado'
       }))
     };
   },
