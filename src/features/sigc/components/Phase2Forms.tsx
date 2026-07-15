@@ -408,6 +408,31 @@ export function ClassificationModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const hasMemberAreaConfiguration = members.some((member) => member.areaIds.length > 0);
+
+  function membersForArea(areaId: string) {
+    if (!areaId || !hasMemberAreaConfiguration) return members;
+    return members.filter((member) => member.areaIds.includes(areaId));
+  }
+
+  function selectCaseType(caseTypeId: string) {
+    const type = catalogs?.caseTypes.find((item) => item.id === caseTypeId);
+    setValues((current) => ({
+      ...current,
+      caseTypeId,
+      priorityId: type?.defaultPriorityId || current.priorityId,
+      riskLevel: type?.defaultRiskLevel || current.riskLevel
+    }));
+    if (type?.defaultAreas?.length) {
+      setAssignments(type.defaultAreas.map((area, index) => ({
+        areaId: area.areaId,
+        responsibleUserId: area.responsibleUserId ?? '',
+        dueAt: values.dueAt,
+        observations: '',
+        isPrimary: area.isPrimary || index === 0
+      })));
+    }
+  }
 
   function updateAssignment(index: number, patch: Partial<ManualCaseAssignmentInput>) {
     setAssignments((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
@@ -464,7 +489,7 @@ export function ClassificationModal({
         <header><div><h3>{caseItem.classifiedAt ? 'Editar clasificación' : 'Clasificar caso'}</h3><small>{caseItem.radicado} · operación atómica y auditable</small></div><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <div className="modal-body form-stack">
           <div className="phase3-form-grid">
-            <select className="field" value={values.caseTypeId} onChange={(event) => setValues((current) => ({ ...current, caseTypeId: event.target.value }))} disabled={catalogsLoading}>
+            <select className="field" value={values.caseTypeId} onChange={(event) => selectCaseType(event.target.value)} disabled={catalogsLoading}>
               <option value="">Tipo de caso *</option>{catalogs?.caseTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select>
             <select className="field" value={values.priorityId} onChange={(event) => setValues((current) => ({ ...current, priorityId: event.target.value }))} disabled={catalogsLoading}>
@@ -481,11 +506,11 @@ export function ClassificationModal({
           <div className="assignment-form-list">
             {assignments.map((assignment, index) => (
               <div className="assignment-form-row classification-assignment-row" key={index}>
-                <select className="field" value={assignment.areaId} onChange={(event) => updateAssignment(index, { areaId: event.target.value })}>
+                <select className="field" value={assignment.areaId} onChange={(event) => updateAssignment(index, { areaId: event.target.value, responsibleUserId: '' })}>
                   <option value="">Área *</option>{catalogs?.areas.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <select className="field" value={assignment.responsibleUserId ?? ''} onChange={(event) => updateAssignment(index, { responsibleUserId: event.target.value })} disabled={membersLoading}>
-                  <option value="">Sin responsable específico</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.name} · {member.roleName}</option>)}
+                <select className="field" value={assignment.responsibleUserId ?? ''} onChange={(event) => updateAssignment(index, { responsibleUserId: event.target.value })} disabled={membersLoading || !assignment.areaId}>
+                  <option value="">Sin responsable específico</option>{membersForArea(assignment.areaId).map((member) => <option key={member.userId} value={member.userId}>{member.name} · {member.roleName}</option>)}
                 </select>
                 <input className="field" type="datetime-local" value={assignment.dueAt ?? ''} onChange={(event) => updateAssignment(index, { dueAt: event.target.value })} />
                 <input className="field" placeholder="Observaciones" value={assignment.observations ?? ''} onChange={(event) => updateAssignment(index, { observations: event.target.value })} />
@@ -514,6 +539,8 @@ export function AssignCaseModal({ caseId, assignment, onClose, onSaved }: { case
   const [progress, setProgress] = useState(assignment?.progress ?? 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const hasMemberAreaConfiguration = members.some((member) => member.areaIds.length > 0);
+  const availableMembers = !areaId || !hasMemberAreaConfiguration ? members : members.filter((member) => member.areaIds.includes(areaId));
 
   async function save() {
     if (!areaId) {
@@ -542,11 +569,11 @@ export function AssignCaseModal({ caseId, assignment, onClose, onSaved }: { case
       <section className="modal open">
         <header><div><h3>{assignment ? 'Editar asignación' : 'Asignar área y responsable'}</h3>{assignment ? <small>Asignada {assignment.assignedLabel}</small> : null}</div><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <div className="modal-body form-stack">
-          <select className="field" value={areaId} onChange={(event) => setAreaId(event.target.value)}>
+          <select className="field" value={areaId} onChange={(event) => { setAreaId(event.target.value); setResponsibleUserId(''); }}>
             <option value="">Área *</option>{catalogs?.areas.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select>
           <select className="field" value={responsibleUserId} onChange={(event) => setResponsibleUserId(event.target.value)} disabled={isLoading}>
-            <option value="">Sin responsable específico</option>{members.map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
+            <option value="">Sin responsable específico</option>{availableMembers.map((member) => <option value={member.userId} key={member.userId}>{member.name} · {member.roleName}</option>)}
           </select>
           <input className="field" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
           {assignment ? (

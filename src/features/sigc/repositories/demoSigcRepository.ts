@@ -58,6 +58,8 @@ import type {
   SigcSecurityHealth,
   ClientPortalSnapshot,
   SaveAdminCatalogInput,
+  SaveCaseTypeConfigurationInput,
+  SaveMemberAreaConfigurationInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
   SaveRoleInput,
@@ -1097,6 +1099,8 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async saveAdminCatalog(_input: SaveAdminCatalogInput): Promise<void> {},
+  async saveCaseTypeConfiguration(input: SaveCaseTypeConfigurationInput): Promise<string> { return input.id ?? `demo-case-type-${crypto.randomUUID()}`; },
+  async saveMemberAreaConfiguration(_input: SaveMemberAreaConfigurationInput): Promise<void> {},
   async setAdminCatalogActive(_kind: SaveAdminCatalogInput['kind'], _id: string, _isActive: boolean): Promise<void> {},
   async saveSlaPolicy(_input: SaveSlaPolicyInput): Promise<void> {},
   async saveHoliday(_input: SaveHolidayInput): Promise<void> {},

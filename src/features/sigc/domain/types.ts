@@ -298,6 +298,7 @@ export interface TimelineItem {
 export interface SigcDefaultAreaOption {
   areaId: string;
   areaName: string;
+  responsibleMembershipId?: string;
   responsibleUserId?: string;
   responsibleName?: string;
   isPrimary: boolean;
@@ -1076,6 +1077,28 @@ export interface SaveAdminCatalogInput {
   defaultPriorityId?: string;
   defaultRiskLevel?: string;
   responseTemplateId?: string;
+}
+
+export interface SaveCaseTypeDefaultAreaInput {
+  areaId: string;
+  responsibleMembershipId?: string;
+  isPrimary: boolean;
+  sortOrder: number;
+}
+
+export interface SaveCaseTypeConfigurationInput extends Omit<SaveAdminCatalogInput, 'kind' | 'isInitial' | 'isTerminal' | 'parentAreaId' | 'email' | 'managerMembershipId'> {
+  defaultAreas: SaveCaseTypeDefaultAreaInput[];
+}
+
+export interface SaveMemberAreaLinkInput {
+  areaId: string;
+  isPrimary: boolean;
+  isCoordinator: boolean;
+}
+
+export interface SaveMemberAreaConfigurationInput {
+  membershipId: string;
+  areas: SaveMemberAreaLinkInput[];
 }
 
 export interface SaveSlaPolicyInput {

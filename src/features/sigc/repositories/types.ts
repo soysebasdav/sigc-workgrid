@@ -57,6 +57,8 @@ import type {
   SigcSecurityHealth,
   ClientPortalSnapshot,
   SaveAdminCatalogInput,
+  SaveCaseTypeConfigurationInput,
+  SaveMemberAreaConfigurationInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
   SaveRoleInput,
@@ -145,6 +147,8 @@ export interface SigcRepository {
   getAdminSnapshot(): Promise<SigcAdminSnapshot>;
   getUserManagementSnapshot(): Promise<SigcUserManagementSnapshot>;
   saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void>;
+  saveCaseTypeConfiguration(input: SaveCaseTypeConfigurationInput): Promise<string>;
+  saveMemberAreaConfiguration(input: SaveMemberAreaConfigurationInput): Promise<void>;
   setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void>;
   saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void>;
   saveHoliday(input: SaveHolidayInput): Promise<void>;

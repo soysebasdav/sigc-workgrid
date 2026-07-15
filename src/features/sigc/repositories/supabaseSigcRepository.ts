@@ -62,6 +62,8 @@ import type {
   SigcSecurityHealth,
   ClientPortalSnapshot,
   SaveAdminCatalogInput,
+  SaveCaseTypeConfigurationInput,
+  SaveMemberAreaConfigurationInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
   SaveRoleInput,
@@ -1485,6 +1487,7 @@ export const supabaseSigcRepository: SigcRepository = {
       defaultAreasByType.set(key, [...(defaultAreasByType.get(key) ?? []), {
         areaId: String(row.area_id),
         areaName: areaNameMap.get(String(row.area_id)) ?? 'Área',
+        responsibleMembershipId: row.default_responsible_membership_id ?? undefined,
         responsibleUserId: membership?.user_id ?? undefined,
         responsibleName: membership?.user_id ? profileNameMap.get(String(membership.user_id)) : undefined,
         isPrimary: Boolean(row.is_primary),
@@ -1605,6 +1608,22 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
     const client = requireClient();
+    if (input.kind === 'areas') {
+      const { error } = await client.rpc('save_area_configuration_v1', {
+        p_id: input.id || null,
+        p_code: input.code,
+        p_name: input.name,
+        p_description: input.description || null,
+        p_color: input.color || null,
+        p_sort_order: input.sortOrder ?? 0,
+        p_is_active: input.isActive ?? true,
+        p_parent_area_id: input.parentAreaId || null,
+        p_email: input.email?.trim() || null,
+        p_manager_membership_id: input.managerMembershipId || null
+      });
+      if (error) throw error;
+      return;
+    }
     const { error } = await client.rpc('save_admin_catalog_v3', {
       p_kind: input.kind,
       p_id: input.id || null,
@@ -1624,6 +1643,45 @@ export const supabaseSigcRepository: SigcRepository = {
       p_default_priority_id: input.defaultPriorityId || null,
       p_default_risk_level: input.defaultRiskLevel || null,
       p_response_template_id: input.responseTemplateId || null
+    });
+    if (error) throw error;
+  },
+
+  async saveCaseTypeConfiguration(input: SaveCaseTypeConfigurationInput): Promise<string> {
+    const client = requireClient();
+    const { data, error } = await client.rpc('save_case_type_configuration_v1', {
+      p_id: input.id || null,
+      p_code: input.code,
+      p_name: input.name,
+      p_description: input.description || null,
+      p_color: input.color || null,
+      p_sort_order: input.sortOrder ?? 0,
+      p_is_active: input.isActive ?? true,
+      p_is_public_enabled: input.isPublicEnabled ?? false,
+      p_is_internal_enabled: input.isInternalEnabled ?? true,
+      p_default_priority_id: input.defaultPriorityId || null,
+      p_default_risk_level: input.defaultRiskLevel || null,
+      p_response_template_id: input.responseTemplateId || null,
+      p_default_areas: input.defaultAreas.map((area) => ({
+        areaId: area.areaId,
+        responsibleMembershipId: area.responsibleMembershipId || null,
+        isPrimary: area.isPrimary,
+        sortOrder: area.sortOrder
+      })) as unknown as Json
+    });
+    if (error) throw error;
+    return String(data);
+  },
+
+  async saveMemberAreaConfiguration(input: SaveMemberAreaConfigurationInput): Promise<void> {
+    const client = requireClient();
+    const { error } = await client.rpc('save_member_area_configuration_v1', {
+      p_membership_id: input.membershipId,
+      p_area_links: input.areas.map((area) => ({
+        areaId: area.areaId,
+        isPrimary: area.isPrimary,
+        isCoordinator: area.isCoordinator
+      })) as unknown as Json
     });
     if (error) throw error;
   },

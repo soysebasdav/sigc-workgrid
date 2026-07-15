@@ -1005,6 +1005,9 @@ export interface Database {
 
       get_operational_catalogs_v1: { Args: Record<PropertyKey, never>; Returns: Json };
       save_admin_catalog_v3: { Args: { p_kind: string; p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_initial?: boolean; p_is_terminal?: boolean; p_is_active?: boolean; p_parent_area_id?: string | null; p_email?: string | null; p_manager_membership_id?: string | null; p_is_public_enabled?: boolean | null; p_is_internal_enabled?: boolean | null; p_default_priority_id?: string | null; p_default_risk_level?: string | null; p_response_template_id?: string | null }; Returns: undefined };
+      save_case_type_configuration_v1: { Args: { p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_active?: boolean; p_is_public_enabled?: boolean; p_is_internal_enabled?: boolean; p_default_priority_id?: string | null; p_default_risk_level?: string | null; p_response_template_id?: string | null; p_default_areas?: Json }; Returns: string };
+      save_member_area_configuration_v1: { Args: { p_membership_id: string; p_area_links?: Json }; Returns: Json };
+      save_area_configuration_v1: { Args: { p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_active?: boolean; p_parent_area_id?: string | null; p_email?: string | null; p_manager_membership_id?: string | null }; Returns: string };
       get_public_intake_context_v5: { Args: { p_tenant?: string | null; p_hostname?: string | null }; Returns: Json | null };
       submit_public_case_v5: {
         Args: {

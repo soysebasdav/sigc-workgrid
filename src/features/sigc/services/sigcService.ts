@@ -59,6 +59,8 @@ import type {
   SigcSecurityHealth,
   ClientPortalSnapshot,
   SaveAdminCatalogInput,
+  SaveCaseTypeConfigurationInput,
+  SaveMemberAreaConfigurationInput,
   SaveSlaPolicyInput,
   SaveHolidayInput,
   SaveRoleInput,
@@ -365,6 +367,15 @@ export const sigcService = {
   },
 
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> { await mutationRepository().saveAdminCatalog(input); emitSigcDataChanged(); },
+  async saveCaseTypeConfiguration(input: SaveCaseTypeConfigurationInput): Promise<string> {
+    const id = await mutationRepository().saveCaseTypeConfiguration(input);
+    emitSigcDataChanged();
+    return id;
+  },
+  async saveMemberAreaConfiguration(input: SaveMemberAreaConfigurationInput): Promise<void> {
+    await mutationRepository().saveMemberAreaConfiguration(input);
+    emitSigcDataChanged();
+  },
   async setAdminCatalogActive(kind: SaveAdminCatalogInput['kind'], id: string, isActive: boolean): Promise<void> { await mutationRepository().setAdminCatalogActive(kind, id, isActive); emitSigcDataChanged(); },
   async saveSlaPolicy(input: SaveSlaPolicyInput): Promise<void> { await mutationRepository().saveSlaPolicy(input); emitSigcDataChanged(); },
   async saveHoliday(input: SaveHolidayInput): Promise<void> { await mutationRepository().saveHoliday(input); emitSigcDataChanged(); },

@@ -44,6 +44,8 @@ import type {
   AutomationRuleVersion,
   AutomationDryRunResult,
   SaveAdminCatalogInput,
+  SaveCaseTypeConfigurationInput,
+  SaveCaseTypeDefaultAreaInput,
   SaveAutomationRuleInput,
   SaveEmailTemplateInput,
   SaveHolidayInput,
@@ -172,8 +174,8 @@ export function AdminConfigurationPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       {data ? <section className={`card phase1-configuration-health ${data.configuration.readyForManual && (!data.configuration.publicIntakeEnabled || data.configuration.readyForPublic) ? 'ready' : 'pending'}`}>
-        <div><span className="eyebrow">Fase 1 · preparación de la entidad</span><h2>{data.configuration.readyForManual ? 'Configuración interna operativa' : 'Configuración interna incompleta'}</h2><p>{data.configuration.publicIntakeEnabled ? (data.configuration.readyForPublic ? 'La radicación pública también cuenta con tipos visibles y configuración base.' : 'La radicación pública está habilitada, pero aún necesita tipos públicos y SLA.') : 'La radicación pública está deshabilitada para esta entidad.'}</p></div>
-        <div className="phase1-health-counts"><span><b>{data.configuration.counts.areas}</b> áreas</span><span><b>{data.configuration.counts.internalCaseTypes}</b> tipos internos</span><span><b>{data.configuration.counts.publicCaseTypes}</b> tipos públicos</span><span><b>{data.configuration.counts.priorities}</b> prioridades</span></div>
+        <div><span className="eyebrow">Fase 2 · configuración autónoma por entidad</span><h2>{data.configuration.readyForManual ? 'Configuración interna operativa' : 'Configuración interna incompleta'}</h2><p>{data.configuration.publicIntakeEnabled ? (data.configuration.readyForPublic ? 'La radicación pública también cuenta con tipos visibles y configuración base.' : 'La radicación pública está habilitada, pero aún necesita tipos públicos y SLA.') : 'La radicación pública está deshabilitada para esta entidad.'}</p></div>
+        <div className="phase1-health-counts"><span><b>{data.configuration.counts.areas}</b> áreas</span><span><b>{data.configuration.counts.internalCaseTypes}</b> tipos internos</span><span><b>{data.configuration.counts.publicCaseTypes}</b> tipos públicos</span><span><b>{data.members.filter((member) => member.areaIds.length > 0).length}/{data.members.length}</b> usuarios con área</span></div>
         {data.configuration.issues.length ? <div className="phase1-health-issues">{data.configuration.issues.map((issue) => <span key={issue}><Flag size={15} />{issue}</span>)}</div> : <div className="phase1-health-ok"><CheckCircle2 size={18} /> La configuración mínima está completa.</div>}
       </section> : null}
 
@@ -242,30 +244,220 @@ function CatalogsPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast
     } catch (error) { showToast(errorMessage(error)); }
   }
 
+  function configurationSummary(item: AdminCatalogItem): ReactNode {
+    if (kind === 'areas') {
+      const parent = data.areas.find((area) => area.id === item.parentAreaId)?.name;
+      const manager = data.members.find((member) => member.membershipId === item.managerMembershipId)?.name;
+      return <><span>{parent ? `Depende de ${parent}` : 'Área raíz'}</span><small>{manager ? `Responsable: ${manager}` : 'Sin responsable de área'}{item.email ? ` · ${item.email}` : ''}</small></>;
+    }
+    if (kind === 'caseTypes') {
+      const channels = [item.isPublicEnabled ? 'Público' : '', item.isInternalEnabled ? 'Interno' : ''].filter(Boolean).join(' + ') || 'Sin canal';
+      const priority = data.priorities.find((row) => row.id === item.defaultPriorityId)?.name;
+      const primary = item.defaultAreas?.find((area) => area.isPrimary)?.areaName;
+      const sla = data.slaPolicies.find((row) => row.caseTypeId === item.id && row.isActive);
+      return <><span>{channels}</span><small>{priority ? `Prioridad ${priority}` : 'Sin prioridad sugerida'} · {primary ? `Área ${primary}` : 'Sin área sugerida'} · {sla ? `${sla.durationValue} ${unitLabel(sla.durationUnit)}` : 'Sin SLA'}</small></>;
+    }
+    if (kind === 'states') return <><span>Orden {item.sortOrder}</span><small>{item.isInitial ? 'Inicial · ' : ''}{item.isTerminal ? 'Terminal' : 'Operativo'}</small></>;
+    return <><span>Orden {item.sortOrder}</span><small>Parámetro operativo</small></>;
+  }
+
   return (
     <div>
-      <SectionHead title="Catálogos parametrizables" description="Áreas, prioridades, tipos de caso y estados viven en base de datos." action={<button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} /> Nuevo {catalogLabels[kind].toLowerCase().replace(/s$/, '')}</button>} />
+      <SectionHead
+        title="Catálogos parametrizables"
+        description="Configura áreas, prioridades, tipos de caso y estados exclusivamente para la entidad activa."
+        action={<button className="btn btn-primary" onClick={() => setCreating(true)}><Plus size={16} /> Nuevo {catalogLabels[kind].toLowerCase().replace(/s$/, '')}</button>}
+      />
       <div className="phase56-subtabs">
         {(Object.keys(catalogLabels) as AdminCatalogKind[]).map((id) => <button key={id} className={kind === id ? 'active' : ''} onClick={() => setKind(id)}>{catalogLabels[id]} <em>{data[id].length}</em></button>)}
       </div>
+      {kind === 'areas' ? <div className="phase2-admin-hint"><Building2 size={18} /><div><strong>Estructura organizacional</strong><span>Define jerarquía, correo y responsable del área. La pertenencia de cada usuario se administra en Usuarios y roles.</span></div></div> : null}
+      {kind === 'caseTypes' ? <div className="phase2-admin-hint"><GitBranch size={18} /><div><strong>Comportamiento por tipo</strong><span>El canal, prioridad, riesgo y áreas sugeridas se aplican automáticamente en radicación pública y creación manual.</span></div></div> : null}
       <div className="phase56-table-wrap">
         <table className="phase56-table"><thead><tr><th>Código</th><th>Nombre</th><th>Configuración</th><th>Estado</th><th /></tr></thead>
-          <tbody>{rows.map((item) => <tr key={item.id}><td><code>{item.code}</code></td><td><strong>{item.name}</strong><span>{item.description || 'Sin descripción'}</span></td><td><span>Orden {item.sortOrder}</span>{kind === 'states' ? <small>{item.isInitial ? 'Inicial · ' : ''}{item.isTerminal ? 'Terminal' : 'Operativo'}</small> : null}</td><td><StatusPill active={item.isActive} /></td><td><div className="table-actions"><button className="btn btn-white" onClick={() => setEditing(item)}><Edit3 size={15} /></button><button className="btn btn-soft" onClick={() => void toggle(item)}>{item.isActive ? 'Desactivar' : 'Activar'}</button></div></td></tr>)}</tbody>
+          <tbody>{rows.map((item) => <tr key={item.id}><td><code>{item.code}</code></td><td><strong>{item.name}</strong><span>{item.description || 'Sin descripción'}</span></td><td>{configurationSummary(item)}</td><td><StatusPill active={item.isActive} /></td><td><div className="table-actions"><button className="btn btn-white" onClick={() => setEditing(item)}><Edit3 size={15} /></button><button className="btn btn-soft" onClick={() => void toggle(item)}>{item.isActive ? 'Desactivar' : 'Activar'}</button></div></td></tr>)}</tbody>
         </table>
       </div>
-      {creating || editing ? <CatalogModal kind={kind} item={editing} onClose={() => { setCreating(false); setEditing(null); }} showToast={showToast} /> : null}
+      {creating || editing ? <CatalogModal data={data} kind={kind} item={editing} onClose={() => { setCreating(false); setEditing(null); }} showToast={showToast} /> : null}
     </div>
   );
 }
 
-function CatalogModal({ kind, item, onClose, showToast }: { kind: AdminCatalogKind; item: AdminCatalogItem | null; onClose: () => void; showToast: (text: string) => void }) {
-  const [form, setForm] = useState<SaveAdminCatalogInput>({ kind, id: item?.id, code: item?.code ?? '', name: item?.name ?? '', description: item?.description ?? '', color: item?.color ?? '', sortOrder: item?.sortOrder ?? 0, isInitial: item?.isInitial ?? false, isTerminal: item?.isTerminal ?? false, isActive: item?.isActive ?? true });
+function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdminSnapshot; kind: AdminCatalogKind; item: AdminCatalogItem | null; onClose: () => void; showToast: (text: string) => void }) {
+  const [form, setForm] = useState<SaveAdminCatalogInput>({
+    kind,
+    id: item?.id,
+    code: item?.code ?? '',
+    name: item?.name ?? '',
+    description: item?.description ?? '',
+    color: item?.color ?? '',
+    sortOrder: item?.sortOrder ?? 0,
+    isInitial: item?.isInitial ?? false,
+    isTerminal: item?.isTerminal ?? false,
+    isActive: item?.isActive ?? true,
+    parentAreaId: item?.parentAreaId ?? '',
+    email: item?.email ?? '',
+    managerMembershipId: item?.managerMembershipId ?? '',
+    isPublicEnabled: item?.isPublicEnabled ?? false,
+    isInternalEnabled: item?.isInternalEnabled ?? true,
+    defaultPriorityId: item?.defaultPriorityId ?? '',
+    defaultRiskLevel: item?.defaultRiskLevel ?? '',
+    responseTemplateId: item?.responseTemplateId ?? ''
+  });
+  const [defaultAreas, setDefaultAreas] = useState<SaveCaseTypeDefaultAreaInput[]>(
+    (item?.defaultAreas ?? []).map((area) => ({
+      areaId: area.areaId,
+      responsibleMembershipId: area.responsibleMembershipId ?? '',
+      isPrimary: area.isPrimary,
+      sortOrder: area.sortOrder
+    }))
+  );
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setSaving(true);
-    try { await sigcService.saveAdminCatalog(form); showToast(`${catalogLabels[kind]} actualizado.`); onClose(); } catch (error) { showToast(errorMessage(error)); } finally { setSaving(false); }
+  const activeAreas = data.areas.filter((area) => area.isActive && area.id !== item?.id);
+  const activeMembers = data.members.filter((member) => member.isActive);
+  const activePriorities = data.priorities.filter((priority) => priority.isActive);
+  const activeTemplates = data.emailTemplates.filter((template) => template.isActive);
+  const caseTypeSla = item ? data.slaPolicies.find((policy) => policy.caseTypeId === item.id && policy.isActive) : null;
+  const caseTypeWorkflow = item ? data.workflows.find((workflow) => workflow.caseTypeId === item.id) : null;
+
+  function addDefaultArea() {
+    const available = activeAreas.find((area) => !defaultAreas.some((row) => row.areaId === area.id));
+    if (!available) {
+      showToast('No quedan áreas activas por agregar.');
+      return;
+    }
+    setDefaultAreas((current) => [...current, {
+      areaId: available.id,
+      responsibleMembershipId: '',
+      isPrimary: current.length === 0,
+      sortOrder: current.length
+    }]);
   }
-  return <ConfigModal title={item ? `Editar ${item.name}` : `Nuevo parámetro · ${catalogLabels[kind]}`} onClose={onClose}><form className="stack" onSubmit={submit}><div className="form-grid two"><label className="field-label">Código<input className="input" value={form.code} disabled={Boolean(item)} onChange={(e) => setForm({ ...form, code: e.target.value })} required /></label><label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label></div><label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label><div className="form-grid two"><label className="field-label">Color<input className="input" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="blue o #123C69" /></label><label className="field-label">Orden<input className="input" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /></label></div>{kind === 'states' ? <div className="phase56-check-grid"><CheckField label="Estado inicial" checked={Boolean(form.isInitial)} onChange={(checked) => setForm({ ...form, isInitial: checked })} /><CheckField label="Estado terminal" checked={Boolean(form.isTerminal)} onChange={(checked) => setForm({ ...form, isTerminal: checked })} /></div> : null}<CheckField label="Activo" checked={form.isActive !== false} onChange={(checked) => setForm({ ...form, isActive: checked })} /><button className="btn btn-primary full" disabled={saving}><Save size={16} /> {saving ? 'Guardando...' : 'Guardar parámetro'}</button></form></ConfigModal>;
+
+  function updateDefaultArea(index: number, patch: Partial<SaveCaseTypeDefaultAreaInput>) {
+    setDefaultAreas((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+
+  function removeDefaultArea(index: number) {
+    setDefaultAreas((current) => {
+      const next = current.filter((_, rowIndex) => rowIndex !== index).map((row, rowIndex) => ({ ...row, sortOrder: rowIndex }));
+      if (next.length && !next.some((row) => row.isPrimary)) next[0] = { ...next[0], isPrimary: true };
+      return next;
+    });
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (kind === 'caseTypes' && !form.isPublicEnabled && !form.isInternalEnabled) {
+      showToast('Habilita el tipo de caso en el canal público, interno o en ambos.');
+      return;
+    }
+    if (kind === 'caseTypes' && defaultAreas.length && defaultAreas.filter((row) => row.isPrimary).length !== 1) {
+      showToast('Selecciona exactamente un área principal.');
+      return;
+    }
+    setSaving(true);
+    try {
+      if (kind === 'caseTypes') {
+        const input: SaveCaseTypeConfigurationInput = {
+          id: form.id,
+          code: form.code,
+          name: form.name,
+          description: form.description,
+          color: form.color,
+          sortOrder: form.sortOrder,
+          isActive: form.isActive,
+          isPublicEnabled: form.isPublicEnabled,
+          isInternalEnabled: form.isInternalEnabled,
+          defaultPriorityId: form.defaultPriorityId || undefined,
+          defaultRiskLevel: form.defaultRiskLevel || undefined,
+          responseTemplateId: form.responseTemplateId || undefined,
+          defaultAreas: defaultAreas.map((row, index) => ({ ...row, responsibleMembershipId: row.responsibleMembershipId || undefined, sortOrder: index }))
+        };
+        await sigcService.saveCaseTypeConfiguration(input);
+      } else {
+        await sigcService.saveAdminCatalog(form);
+      }
+      showToast(`${catalogLabels[kind]} actualizado.`);
+      onClose();
+    } catch (error) {
+      showToast(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <ConfigModal title={item ? `Editar ${item.name}` : `Nuevo parámetro · ${catalogLabels[kind]}`} description={kind === 'caseTypes' ? 'La configuración se aplicará a los formularios y a la clasificación de esta entidad.' : undefined} onClose={onClose}>
+      <form className="stack phase2-catalog-form" onSubmit={submit}>
+        <div className="form-grid two">
+          <label className="field-label">Código<input className="input" value={form.code} disabled={Boolean(item)} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase().replace(/\s+/g, '_') })} required /></label>
+          <label className="field-label">Nombre<input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
+        </div>
+        <label className="field-label">Descripción<textarea className="input textarea compact" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+
+        {kind === 'areas' ? (
+          <>
+            <div className="form-grid two">
+              <label className="field-label">Área superior<select className="input" value={form.parentAreaId ?? ''} onChange={(e) => setForm({ ...form, parentAreaId: e.target.value })}><option value="">Área raíz</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+              <label className="field-label">Correo del área<input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="area@empresa.com" /></label>
+            </div>
+            <label className="field-label">Responsable o coordinador<select className="input" value={form.managerMembershipId ?? ''} onChange={(e) => setForm({ ...form, managerMembershipId: e.target.value })}><option value="">Sin responsable definido</option>{activeMembers.map((member) => <option key={member.membershipId} value={member.membershipId}>{member.name} · {member.roleName}</option>)}</select></label>
+          </>
+        ) : null}
+
+        {kind === 'caseTypes' ? (
+          <>
+            <section className="phase2-modal-section">
+              <div className="phase2-modal-section-head"><div><strong>Canales de uso</strong><span>Decide dónde estará disponible este tipo de caso.</span></div></div>
+              <div className="phase56-check-grid">
+                <CheckField label="Formulario público" checked={Boolean(form.isPublicEnabled)} onChange={(checked) => setForm({ ...form, isPublicEnabled: checked })} />
+                <CheckField label="Creación interna" checked={Boolean(form.isInternalEnabled)} onChange={(checked) => setForm({ ...form, isInternalEnabled: checked })} />
+              </div>
+            </section>
+            <section className="phase2-modal-section">
+              <div className="phase2-modal-section-head"><div><strong>Valores predeterminados</strong><span>Se proponen al crear o clasificar el caso y pueden modificarse con permisos.</span></div></div>
+              <div className="form-grid two">
+                <label className="field-label">Prioridad sugerida<select className="input" value={form.defaultPriorityId ?? ''} onChange={(e) => setForm({ ...form, defaultPriorityId: e.target.value })}><option value="">Sin prioridad sugerida</option>{activePriorities.map((priority) => <option key={priority.id} value={priority.id}>{priority.name}</option>)}</select></label>
+                <label className="field-label">Riesgo sugerido<select className="input" value={form.defaultRiskLevel ?? ''} onChange={(e) => setForm({ ...form, defaultRiskLevel: e.target.value })}><option value="">Sin riesgo sugerido</option><option>Bajo</option><option>Medio</option><option>Alto</option><option>Crítico</option></select></label>
+              </div>
+              <label className="field-label">Plantilla de respuesta<select className="input" value={form.responseTemplateId ?? ''} onChange={(e) => setForm({ ...form, responseTemplateId: e.target.value })}><option value="">Sin plantilla predeterminada</option>{activeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>
+              <div className="phase2-linked-config"><span><Clock3 size={15} /> {caseTypeSla ? `SLA: ${caseTypeSla.durationValue} ${unitLabel(caseTypeSla.durationUnit)}` : 'SLA pendiente'}</span><span><Workflow size={15} /> {caseTypeWorkflow?.isValid ? `${caseTypeWorkflow.states.length} estados configurados` : item ? 'Flujo requiere revisión' : 'El flujo se configura después de crear el tipo'}</span></div>
+            </section>
+            <section className="phase2-modal-section">
+              <div className="phase2-modal-section-head"><div><strong>Áreas sugeridas</strong><span>Define una principal y las áreas de apoyo que participarán inicialmente.</span></div><button type="button" className="btn btn-white small" onClick={addDefaultArea}><Plus size={15} /> Agregar área</button></div>
+              {!defaultAreas.length ? <div className="phase2-empty-config"><Building2 size={20} /><span>Sin áreas predeterminadas. El clasificador deberá agregarlas manualmente.</span></div> : null}
+              <div className="phase2-default-area-list">
+                {defaultAreas.map((row, index) => {
+                  const memberOptions = activeMembers.filter((member) => member.areaIds.includes(row.areaId));
+                  return <div className="phase2-default-area-row" key={`${row.areaId}-${index}`}>
+                    <select className="input" value={row.areaId} onChange={(e) => updateDefaultArea(index, { areaId: e.target.value, responsibleMembershipId: '' })}>
+                      {activeAreas.filter((area) => area.id === row.areaId || !defaultAreas.some((entry, entryIndex) => entryIndex !== index && entry.areaId === area.id)).map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
+                    </select>
+                    <select className="input" value={row.responsibleMembershipId ?? ''} onChange={(e) => updateDefaultArea(index, { responsibleMembershipId: e.target.value })}>
+                      <option value="">Sin responsable predeterminado</option>
+                      {memberOptions.map((member) => <option key={member.membershipId} value={member.membershipId}>{member.name}</option>)}
+                    </select>
+                    <label className="check-row compact-check"><input type="radio" name="default-area-primary" checked={row.isPrimary} onChange={() => setDefaultAreas((current) => current.map((entry, rowIndex) => ({ ...entry, isPrimary: rowIndex === index })))} /> Principal</label>
+                    <button type="button" className="btn btn-white icon-only" onClick={() => removeDefaultArea(index)} aria-label="Quitar área"><Trash2 size={15} /></button>
+                    {!memberOptions.length ? <small>No hay usuarios asociados a esta área. Configúralos en Usuarios y roles.</small> : null}
+                  </div>;
+                })}
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        <div className="form-grid two">
+          <label className="field-label">Color<input className="input" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="#123C69" /></label>
+          <label className="field-label">Orden<input className="input" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /></label>
+        </div>
+        {kind === 'states' ? <div className="phase56-check-grid"><CheckField label="Estado inicial" checked={Boolean(form.isInitial)} onChange={(checked) => setForm({ ...form, isInitial: checked })} /><CheckField label="Estado terminal" checked={Boolean(form.isTerminal)} onChange={(checked) => setForm({ ...form, isTerminal: checked })} /></div> : null}
+        <CheckField label="Activo" checked={form.isActive !== false} onChange={(checked) => setForm({ ...form, isActive: checked })} />
+        <button className="btn btn-primary full" disabled={saving}><Save size={16} /> {saving ? 'Guardando...' : 'Guardar configuración'}</button>
+      </form>
+    </ConfigModal>
+  );
 }
 
 function SlaPanel({ data, showToast }: { data: SigcAdminSnapshot; showToast: (text: string) => void }) {
