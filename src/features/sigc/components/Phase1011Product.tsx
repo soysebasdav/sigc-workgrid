@@ -27,7 +27,7 @@ export function ForgotPasswordPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  if (currentUser) return <Navigate to="/" replace />;
+  if (currentUser) return <Navigate to="/app" replace />;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -94,7 +94,7 @@ export function ResetPasswordPage() {
   return <main className="login-workgrid">
     <section className="login-panel hero-gradient"><div className="chip chip-light">Recuperación segura</div><h1>Define una nueva contraseña</h1><p>La sesión de recuperación debe provenir del enlace enviado a tu correo.</p></section>
     <section className="login-card card">
-      {isLoading ? <><Clock3 className="spin" /><h2>Validando enlace...</h2></> : completed ? <><CheckCircle2 size={34} /><h2>Contraseña actualizada</h2><p className="muted">Ya puedes continuar usando el SIGC con tu nueva contraseña.</p><Link className="btn btn-primary full" to="/">Continuar</Link></> : !currentUser || dataMode !== 'supabase' || !isPasswordRecovery ? <><Shield size={32} /><h2>Enlace no disponible</h2><p className="muted">Abre nuevamente el enlace de recuperación enviado a tu correo. Si expiró, solicita uno nuevo.</p><Link className="btn btn-primary full" to="/forgot-password">Solicitar otro enlace</Link></> : <><Shield size={32} /><h2>Nueva contraseña</h2><form className="form-stack" onSubmit={submit}><label className="field-label">Nueva contraseña<input className="field" type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label className="field-label">Confirmar contraseña<input className="field" type="password" minLength={8} value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></label>{error ? <div className="alert danger">{error}</div> : null}<button className="btn btn-primary full" disabled={saving}>{saving ? 'Actualizando...' : 'Guardar nueva contraseña'}</button></form></>}
+      {isLoading ? <><Clock3 className="spin" /><h2>Validando enlace...</h2></> : completed ? <><CheckCircle2 size={34} /><h2>Contraseña actualizada</h2><p className="muted">Ya puedes continuar usando el SIGC con tu nueva contraseña.</p><Link className="btn btn-primary full" to="/app">Continuar</Link></> : !currentUser || dataMode !== 'supabase' || !isPasswordRecovery ? <><Shield size={32} /><h2>Enlace no disponible</h2><p className="muted">Abre nuevamente el enlace de recuperación enviado a tu correo. Si expiró, solicita uno nuevo.</p><Link className="btn btn-primary full" to="/forgot-password">Solicitar otro enlace</Link></> : <><Shield size={32} /><h2>Nueva contraseña</h2><form className="form-stack" onSubmit={submit}><label className="field-label">Nueva contraseña<input className="field" type="password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><label className="field-label">Confirmar contraseña<input className="field" type="password" minLength={8} value={confirm} onChange={(event) => setConfirm(event.target.value)} required /></label>{error ? <div className="alert danger">{error}</div> : null}<button className="btn btn-primary full" disabled={saving}>{saving ? 'Actualizando...' : 'Guardar nueva contraseña'}</button></form></>}
     </section>
   </main>;
 }

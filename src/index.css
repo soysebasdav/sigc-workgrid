@@ -1371,3 +1371,29 @@ svg { flex-shrink: 0; }
   .login-card-symbol { width: 56px; height: 56px; }
   .login-powered-logo { width: 68px; }
 }
+
+
+/* Página pública de Orkesta integrada desde la landing HTML */
+.orkesta-home-page {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f8fafc;
+}
+.orkesta-home-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #f8fafc;
+}
+.login-home-link {
+  display: inline-flex;
+  justify-content: center;
+  color: #475569;
+  font-size: .84rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+.login-home-link:hover { color: var(--primary); }

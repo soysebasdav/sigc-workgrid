@@ -30,6 +30,7 @@ const AdminConfigurationPage = lazy(() => import('./features/sigc/components/Pha
 const SaasManagementPage = lazy(() => import('./features/sigc/components/Phase8Saas').then((module) => ({ default: module.SaasManagementPage })));
 const InvitationPage = lazy(() => import('./features/sigc/components/Phase8Saas').then((module) => ({ default: module.InvitationPage })));
 const QualityCenterPage = lazy(() => import('./features/quality/QualityCenterPage').then((module) => ({ default: module.QualityCenterPage })));
+const OrkestaHomePage = lazy(() => import('./features/home/OrkestaHomePage').then((module) => ({ default: module.OrkestaHomePage })));
 
 function LazyRoute({ children }: { children: ReactNode }) {
   return (
@@ -79,6 +80,7 @@ function HomeRedirect() {
 }
 
 const router = createBrowserRouter([
+  { path: '/', element: <LazyRoute><OrkestaHomePage /></LazyRoute> },
   { path: '/login', element: <SigcLoginPage /> },
   { path: '/forgot-password', element: <ForgotPasswordPage /> },
   { path: '/reset-password', element: <ResetPasswordPage /> },
@@ -89,11 +91,10 @@ const router = createBrowserRouter([
   { path: '/invite/:token', element: <LazyRoute><InvitationPage /></LazyRoute> },
   { path: '/public-form', element: <Navigate to="/radicar" replace /> },
   {
-    path: '/',
     element: <SigcShell />,
     errorElement: <RouteErrorFallback />,
     children: [
-      { index: true, element: <HomeRedirect /> },
+      { path: 'app', element: <HomeRedirect /> },
       {
         element: <PermissionRoute anyOf={[PERMISSIONS.reportsView]} />,
         children: [{ path: 'dashboard', element: <LazyRoute><AnalyticsDashboardPage /></LazyRoute> }]

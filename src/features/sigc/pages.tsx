@@ -97,7 +97,7 @@ export function SigcShell() {
         </main>
       );
     }
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   function showToast(text: string) {
@@ -189,7 +189,7 @@ export function SigcLoginPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
 
-  if (currentUser) return <Navigate to={loginParams.get('redirect') || '/'} replace />;
+  if (currentUser) return <Navigate to={loginParams.get('redirect') || '/app'} replace />;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -201,7 +201,7 @@ export function SigcLoginPage() {
         setError(dataMode === 'supabase' ? 'Correo o contraseña inválidos en Supabase Auth.' : 'Correo o contraseña inválidos. Usa las credenciales demo.');
         return;
       }
-      navigate(loginParams.get('redirect') || '/');
+      navigate(loginParams.get('redirect') || '/app');
     } finally {
       setSubmitting(false);
     }
@@ -246,6 +246,7 @@ export function SigcLoginPage() {
           {error ? <div className="alert danger">{error}</div> : null}
           <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading}>{isSubmitting || isLoading ? 'Validando...' : 'Entrar a Orkesta'}</button>
           {dataMode === 'supabase' ? <Link className="login-forgot-link" to="/forgot-password">Olvidé mi contraseña</Link> : null}
+          <Link className="login-home-link" to="/">Volver al inicio de Orkesta</Link>
         </form>
         {dataMode === 'local' ? (
           <div className="demo-credentials">
