@@ -108,6 +108,37 @@ const DELIVERIES_KEY = 'sigc_phase4_demo_deliveries';
 const REMINDERS_KEY = 'sigc_phase4_demo_reminders';
 const demoReportExportJobs = new Map<string, { format: SigcReportExportFormat; filters: SigcReportFilters; createdAt: string }>();
 const QUALITY_RUNS_KEY = 'sigc_phase12_demo_quality_runs';
+const ORGANIZATION_PROFILE_KEY = 'sigc_phase8_demo_organization_profile';
+const PUBLIC_INTAKE_SETTINGS_KEY = 'sigc_phase12_demo_public_intake_settings';
+
+const DEFAULT_ORGANIZATION_PROFILE: UpdateOrganizationProfileInput = {
+  name: 'Organización SIGC',
+  slug: 'organizacion-sigc',
+  productName: 'SIGC',
+  shortName: 'SIGC',
+  logoUrl: null,
+  primaryColor: '#7c3aed',
+  accentColor: '#f97316',
+  sidebarColor: '#111827',
+  supportEmail: 'soporte@sigc.demo',
+  customDomain: null
+};
+
+const DEFAULT_PUBLIC_INTAKE_SETTINGS: UpdatePublicIntakeSettingsInput = {
+  enabled: true,
+  formTitle: 'Radica tu solicitud',
+  formDescription: 'Completa la información para crear tu caso.',
+  confirmationMessage: 'Hemos recibido tu solicitud correctamente.',
+  allowAttachments: true,
+  maxFiles: 5,
+  maxFileSizeBytes: 26214400,
+  rateLimitPerHour: 20,
+  challengeMode: 'adaptive',
+  challengeThreshold: 5,
+  requirePrivacyConsent: true,
+  privacyNoticeText: 'Autorizo el tratamiento de los datos suministrados para gestionar esta solicitud.',
+  privacyPolicyUrl: ''
+};
 
 const catalogs: SigcCatalogs = {
   organizationId: null,
@@ -180,6 +211,45 @@ function readJson<T>(key: string, fallback: T): T {
 
 function writeJson<T>(key: string, value: T): void {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* demo only */ }
+}
+
+function readDemoOrganizationProfile(): UpdateOrganizationProfileInput {
+  const saved = readJson<Partial<UpdateOrganizationProfileInput>>(ORGANIZATION_PROFILE_KEY, {});
+  return {
+    ...DEFAULT_ORGANIZATION_PROFILE,
+    ...saved,
+    name: String(saved.name ?? DEFAULT_ORGANIZATION_PROFILE.name).trim() || DEFAULT_ORGANIZATION_PROFILE.name,
+    slug: String(saved.slug ?? DEFAULT_ORGANIZATION_PROFILE.slug).trim() || DEFAULT_ORGANIZATION_PROFILE.slug,
+    productName: String(saved.productName ?? DEFAULT_ORGANIZATION_PROFILE.productName).trim() || DEFAULT_ORGANIZATION_PROFILE.productName,
+    shortName: String(saved.shortName ?? DEFAULT_ORGANIZATION_PROFILE.shortName).trim().slice(0, 12) || DEFAULT_ORGANIZATION_PROFILE.shortName,
+    logoUrl: String(saved.logoUrl ?? '').trim() || null,
+    primaryColor: /^#[0-9a-f]{6}$/i.test(String(saved.primaryColor ?? '')) ? String(saved.primaryColor) : DEFAULT_ORGANIZATION_PROFILE.primaryColor,
+    accentColor: /^#[0-9a-f]{6}$/i.test(String(saved.accentColor ?? '')) ? String(saved.accentColor) : DEFAULT_ORGANIZATION_PROFILE.accentColor,
+    sidebarColor: /^#[0-9a-f]{6}$/i.test(String(saved.sidebarColor ?? '')) ? String(saved.sidebarColor) : DEFAULT_ORGANIZATION_PROFILE.sidebarColor,
+    supportEmail: String(saved.supportEmail ?? '').trim() || null,
+    customDomain: String(saved.customDomain ?? '').trim() || null
+  };
+}
+
+function readDemoPublicIntakeSettings(): UpdatePublicIntakeSettingsInput {
+  const saved = readJson<Partial<UpdatePublicIntakeSettingsInput>>(PUBLIC_INTAKE_SETTINGS_KEY, {});
+  return {
+    ...DEFAULT_PUBLIC_INTAKE_SETTINGS,
+    ...saved,
+    enabled: saved.enabled ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.enabled,
+    formTitle: String(saved.formTitle ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.formTitle).trim() || DEFAULT_PUBLIC_INTAKE_SETTINGS.formTitle,
+    formDescription: String(saved.formDescription ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.formDescription).trim() || DEFAULT_PUBLIC_INTAKE_SETTINGS.formDescription,
+    confirmationMessage: String(saved.confirmationMessage ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.confirmationMessage).trim() || DEFAULT_PUBLIC_INTAKE_SETTINGS.confirmationMessage,
+    allowAttachments: saved.allowAttachments ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.allowAttachments,
+    maxFiles: Math.max(0, Math.min(10, Number(saved.maxFiles ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.maxFiles))),
+    maxFileSizeBytes: Math.max(1048576, Math.min(104857600, Number(saved.maxFileSizeBytes ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.maxFileSizeBytes))),
+    rateLimitPerHour: Math.max(1, Math.min(500, Number(saved.rateLimitPerHour ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.rateLimitPerHour))),
+    challengeMode: saved.challengeMode === 'off' || saved.challengeMode === 'always' ? saved.challengeMode : 'adaptive',
+    challengeThreshold: Math.max(1, Math.min(100, Number(saved.challengeThreshold ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.challengeThreshold))),
+    requirePrivacyConsent: saved.requirePrivacyConsent ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.requirePrivacyConsent,
+    privacyNoticeText: String(saved.privacyNoticeText ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.privacyNoticeText),
+    privacyPolicyUrl: String(saved.privacyPolicyUrl ?? '')
+  };
 }
 
 function seedSubtasks(): SigcSubtask[] {
@@ -1167,7 +1237,50 @@ export const demoSigcRepository: SigcRepository = {
   async completeReportExportJob(jobId: string, _status: 'completed' | 'failed' | 'cancelled', _errorMessage?: string): Promise<void> { demoReportExportJobs.delete(jobId); },
 
   async getSaasContext(): Promise<SigcSaasContext> {
-    return { activeOrganization:{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',isActive:true,createdAt:new Date().toISOString(),settings:{publicIntake:{enabled:true,formTitle:'Radica tu solicitud',formDescription:'Cuéntanos qué necesitas y el SIGC generará tu radicado.',confirmationMessage:'Hemos recibido tu solicitud correctamente.',allowAttachments:true,maxFiles:5,maxFileSizeBytes:26214400}}}, branding:{productName:'SIGC',shortName:'SIGC',primaryColor:'#7c3aed',accentColor:'#f97316',sidebarColor:'#111827',supportEmail:'soporte@sigc.demo'}, subscription:{status:'trialing',trialEndsAt:new Date(Date.now()+30*86400000).toISOString(),plan:{id:'business',code:'business',name:'Business',description:'Plan empresarial',monthlyPriceCop:299000,limits:{max_members:50,max_active_cases:50000,max_automations:100,max_storage_bytes:53687091200,max_owned_organizations:3},features:{advanced_reports:true,custom_branding:true,email_delivery:true}}}, usage:{members:members.length,cases:readCases().length,activeCases:readCases().filter((item)=>!['Cerrado','Cancelado'].includes(item.state)).length,automations:2,storageBytes:readDocuments().reduce((total,item)=>total+item.currentSizeBytes,0)}, organizations:[{id:'demo-org',name:'Organización SIGC Demo',slug:'organizacion-sigc-demo',roleName:'Administrador',roleCode:'admin',planCode:'business',planName:'Business',isActive:true}], invitations:[], onboarding:[{code:'organization',label:'Configurar organización',completed:true},{code:'branding',label:'Personalizar identidad visual',completed:false},{code:'members',label:'Invitar al equipo',completed:true},{code:'workflow',label:'Configurar flujos',completed:true},{code:'automation',label:'Activar automatización',completed:true},{code:'first_case',label:'Gestionar primer caso',completed:readCases().length>0}], health:{errorsLast24h:0,auditEvents30d:readJson<SigcTimelineEvent[]>(TIMELINE_KEY,[]).length,queuedEmails:0}, canManage:true };
+    const profile = readDemoOrganizationProfile();
+    const publicIntake = readDemoPublicIntakeSettings();
+    const { name, slug, ...branding } = profile;
+    const brandingCompleted = Boolean(
+      branding.logoUrl
+      || branding.productName !== DEFAULT_ORGANIZATION_PROFILE.productName
+      || branding.primaryColor !== DEFAULT_ORGANIZATION_PROFILE.primaryColor
+      || branding.accentColor !== DEFAULT_ORGANIZATION_PROFILE.accentColor
+      || branding.sidebarColor !== DEFAULT_ORGANIZATION_PROFILE.sidebarColor
+    );
+    return {
+      activeOrganization: {
+        id: 'demo-org', name, slug, isActive: true, createdAt: new Date().toISOString(),
+        settings: { publicIntake }
+      },
+      branding,
+      subscription: {
+        status: 'trialing', trialEndsAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+        plan: {
+          id: 'business', code: 'business', name: 'Business', description: 'Plan empresarial', monthlyPriceCop: 299000,
+          limits: { max_members: 50, max_active_cases: 50000, max_automations: 100, max_storage_bytes: 53687091200, max_owned_organizations: 3 },
+          features: { advanced_reports: true, custom_branding: true, email_delivery: true }
+        }
+      },
+      usage: {
+        members: members.length,
+        cases: readCases().length,
+        activeCases: readCases().filter((item) => !['Cerrado', 'Cancelado'].includes(item.state)).length,
+        automations: 2,
+        storageBytes: readDocuments().reduce((total, item) => total + item.currentSizeBytes, 0)
+      },
+      organizations: [{ id: 'demo-org', name, slug, roleName: 'Administrador', roleCode: 'admin', planCode: 'business', planName: 'Business', isActive: true }],
+      invitations: [],
+      onboarding: [
+        { code: 'organization', label: 'Configurar organización', completed: true },
+        { code: 'branding', label: 'Personalizar identidad visual', completed: brandingCompleted },
+        { code: 'members', label: 'Invitar al equipo', completed: true },
+        { code: 'workflow', label: 'Configurar flujos', completed: true },
+        { code: 'automation', label: 'Activar automatización', completed: true },
+        { code: 'first_case', label: 'Gestionar primer caso', completed: readCases().length > 0 }
+      ],
+      health: { errorsLast24h: 0, auditEvents30d: readJson<SigcTimelineEvent[]>(TIMELINE_KEY, []).length, queuedEmails: 0 },
+      canManage: true
+    };
   },
 
   async getSecurityHealth(): Promise<SigcSecurityHealth> {
@@ -1186,7 +1299,7 @@ export const demoSigcRepository: SigcRepository = {
       deliveries: []
     }));
     const terminal = new Set(['Cerrado', 'Cancelado']);
-    return { organizationId: 'demo-org', organizationName: 'Organización SIGC Demo', email: 'cliente@sigc.demo', summary: { total: rows.length, open: rows.filter((item) => !terminal.has(item.state)).length, closed: rows.filter((item) => terminal.has(item.state)).length, overdue: rows.filter((item) => item.sem === 'red' && !terminal.has(item.state)).length }, items: visible, total: rows.length, page: currentPage, pageSize: size };
+    return { organizationId: 'demo-org', organizationName: readDemoOrganizationProfile().name, email: 'cliente@sigc.demo', summary: { total: rows.length, open: rows.filter((item) => !terminal.has(item.state)).length, closed: rows.filter((item) => terminal.has(item.state)).length, overdue: rows.filter((item) => item.sem === 'red' && !terminal.has(item.state)).length }, items: visible, total: rows.length, page: currentPage, pageSize: size };
   },
 
   async getAuthorizationContext(): Promise<SigcAuthorizationContext> {
@@ -1205,8 +1318,21 @@ export const demoSigcRepository: SigcRepository = {
     };
   },
   async setActiveOrganization(_organizationId: string): Promise<void> {},
-  async updateOrganizationProfile(_input: UpdateOrganizationProfileInput): Promise<void> {},
-  async updatePublicIntakeSettings(_input: UpdatePublicIntakeSettingsInput): Promise<void> {},
+  async updateOrganizationProfile(input: UpdateOrganizationProfileInput): Promise<void> {
+    writeJson(ORGANIZATION_PROFILE_KEY, {
+      ...input,
+      name: input.name.trim(),
+      slug: input.slug.trim(),
+      productName: input.productName.trim(),
+      shortName: input.shortName.trim().slice(0, 12),
+      logoUrl: input.logoUrl?.trim() || null,
+      supportEmail: input.supportEmail?.trim() || null,
+      customDomain: input.customDomain?.trim() || null
+    });
+  },
+  async updatePublicIntakeSettings(input: UpdatePublicIntakeSettingsInput): Promise<void> {
+    writeJson(PUBLIC_INTAKE_SETTINGS_KEY, input);
+  },
   async createSaasOrganization(_input: CreateSaasOrganizationInput): Promise<string> { return `demo-org-${crypto.randomUUID()}`; },
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> { return { invitationId:`demo-invite-${crypto.randomUUID()}`,token:crypto.randomUUID(),expiresAt:new Date(Date.now()+(input.expiresDays??7)*86400000).toISOString() }; },
   async revokeOrganizationInvitation(_invitationId: string): Promise<void> {},
@@ -1248,25 +1374,45 @@ export const demoSigcRepository: SigcRepository = {
 };
 
 export const demoPublicSigcRepository: PublicSigcRepository = {
-  async getPublicIntakeContext(_locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
+  async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
+    const profile = readDemoOrganizationProfile();
+    const intake = readDemoPublicIntakeSettings();
+    if (locator.tenant && locator.tenant !== profile.slug) return null;
     return {
-      organizationName: 'Organización SIGC Demo',
-      organizationSlug: 'organizacion-sigc-demo',
+      organizationName: profile.name,
+      organizationSlug: profile.slug,
       branding: {
-        productName: 'SIGC', shortName: 'SIGC', logoUrl: null,
-        primaryColor: '#7c3aed', accentColor: '#f97316',
-        supportEmail: 'soporte@sigc.demo', customDomain: null
+        productName: profile.productName,
+        shortName: profile.shortName,
+        logoUrl: profile.logoUrl,
+        primaryColor: profile.primaryColor,
+        accentColor: profile.accentColor,
+        supportEmail: profile.supportEmail,
+        customDomain: profile.customDomain
       },
       intake: {
-        enabled: true, formTitle: 'Radica tu solicitud',
-        formDescription: 'Cuéntanos qué necesitas y el SIGC generará tu radicado.',
-        confirmationMessage: 'Hemos recibido tu solicitud correctamente.',
-        allowAttachments: true, maxFiles: 5, maxFileSizeBytes: 26214400
+        enabled: intake.enabled,
+        formTitle: intake.formTitle,
+        formDescription: intake.formDescription,
+        confirmationMessage: intake.confirmationMessage,
+        allowAttachments: intake.allowAttachments,
+        maxFiles: intake.maxFiles,
+        maxFileSizeBytes: intake.maxFileSizeBytes
       },
-      security: { rateLimitPerHour: 20, challengeMode: 'adaptive', challengeRequired: false, challenge: null },
-      privacy: { requireConsent: true, noticeText: 'Autorizo el tratamiento de mis datos para gestionar esta solicitud.', policyUrl: null },
+      security: {
+        rateLimitPerHour: intake.rateLimitPerHour ?? 20,
+        challengeMode: intake.challengeMode ?? 'adaptive',
+        challengeRequired: intake.challengeMode === 'always',
+        challenge: null
+      },
+      privacy: {
+        requireConsent: intake.requirePrivacyConsent ?? true,
+        noticeText: intake.privacyNoticeText ?? DEFAULT_PUBLIC_INTAKE_SETTINGS.privacyNoticeText ?? '',
+        policyUrl: intake.privacyPolicyUrl?.trim() || null
+      },
       caseTypes: catalogs.caseTypes.map((item) => ({
-        id: item.id, name: item.name,
+        id: item.id,
+        name: item.name,
         slaLabel: item.name === 'Acción de Tutela' ? '24 horas' : '5 días calendario'
       }))
     };

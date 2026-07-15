@@ -74,6 +74,24 @@ function OrkestaLogo({ inverse = false, symbolOnly = false, className = '' }: Or
   return <img className={`orkesta-logo ${symbolOnly ? 'orkesta-logo-symbol' : 'orkesta-logo-full'} ${className}`.trim()} src={source} alt={symbolOnly ? '' : 'Orkesta'} aria-hidden={symbolOnly || undefined} />;
 }
 
+type TenantLogoProps = {
+  src?: string | null;
+  productName?: string | null;
+  shortName?: string | null;
+  className?: string;
+  compact?: boolean;
+};
+
+function TenantLogo({ src, productName, shortName, className = '', compact = false }: TenantLogoProps) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  const fallback = (shortName || productName || 'O').trim().slice(0, 1).toUpperCase() || 'O';
+  if (src && !failed) {
+    return <img className={`tenant-logo ${compact ? 'compact' : ''} ${className}`.trim()} src={src} alt={productName || 'Logotipo de la organización'} onError={() => setFailed(true)} />;
+  }
+  return <div className={`tenant-logo tenant-logo-fallback ${compact ? 'compact' : ''} ${className}`.trim()} aria-label={productName || 'Identidad de la organización'}>{fallback}</div>;
+}
+
 export function SigcShell() {
   const { currentUser, logout, resetDemoData, isLoading, dataMode } = useApp();
   const { can, canAny, roleName } = useAuthorization();
@@ -134,7 +152,13 @@ export function SigcShell() {
         <button className="btn btn-white mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
           <Menu size={18} />
         </button>
-        <OrkestaLogo symbolOnly className="topbar-orkesta-symbol" />
+        <TenantLogo
+          compact
+          className="topbar-workspace-logo"
+          src={saasContext?.branding.logoUrl}
+          productName={saasContext?.branding.productName}
+          shortName={saasContext?.branding.shortName}
+        />
         <OrganizationSwitcher />
         {canReadCases ? <>
           <div className="search-box">
@@ -558,7 +582,11 @@ export function PublicFormPage() {
 
   const style = {
     '--primary': context.branding.primaryColor,
-    '--accent': context.branding.accentColor
+    '--accent': context.branding.accentColor,
+    '--navy': context.branding.primaryColor,
+    '--petrol': `color-mix(in srgb, ${context.branding.primaryColor} 72%, #0f172a)`,
+    '--primary-dark': `color-mix(in srgb, ${context.branding.primaryColor} 78%, #000)`,
+    '--soft': `color-mix(in srgb, ${context.branding.primaryColor} 12%, #fff)`
   } as CSSProperties;
 
   return (
@@ -567,9 +595,12 @@ export function PublicFormPage() {
         <section className="public-layout">
           <div className="public-intro hero-gradient">
             <div className="public-tenant-brand">
-              {context.branding.logoUrl
-                ? <img className="public-brand-logo" src={context.branding.logoUrl} alt={context.branding.productName} />
-                : <div className="brand-mark large">{context.branding.shortName.slice(0, 1).toUpperCase()}</div>}
+              <TenantLogo
+                className="public-brand-logo"
+                src={context.branding.logoUrl}
+                productName={context.branding.productName}
+                shortName={context.branding.shortName}
+              />
               <div><strong>{context.branding.productName}</strong><span>{context.organizationName}</span></div>
             </div>
             <Badge tone="chip-light">Radicación pública</Badge>
@@ -577,6 +608,7 @@ export function PublicFormPage() {
             <p>{context.intake.formDescription}</p>
             <div className="public-benefits"><span><ShieldCheck /> Radicado automático.</span><span><MailCheck /> Confirmación de recepción.</span><span><CalendarDays /> SLA calculado por configuración.</span></div>
             {context.branding.supportEmail ? <p className="public-support">Soporte: <a href={`mailto:${context.branding.supportEmail}`}>{context.branding.supportEmail}</a></p> : null}
+            <div className="public-powered-by"><span>Operado con</span><OrkestaLogo inverse className="public-powered-logo" /></div>
           </div>
           <div className="card public-card">
             <div className="public-card-head"><div><span className="eyebrow">{context.organizationSlug}</span><h2>Crear solicitud</h2><p className="muted">El caso quedará en estado Pendiente de Clasificación.</p></div></div>
@@ -934,9 +966,17 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const critical = sidebarSummary?.criticalCases ?? 0;
   return (
     <div className="sidebar-inner">
-      <div className="brand orkesta-sidebar-brand">
-        <OrkestaLogo inverse className="sidebar-orkesta-logo" />
-        <span>{context?.activeOrganization.name ?? 'Gestión integral de casos'}</span>
+      <div className="brand workspace-sidebar-brand">
+        <TenantLogo
+          className="workspace-sidebar-logo"
+          src={context?.branding.logoUrl}
+          productName={context?.branding.productName}
+          shortName={context?.branding.shortName}
+        />
+        <div className="workspace-sidebar-copy">
+          <strong>{context?.branding.productName ?? 'SIGC'}</strong>
+          <span>{context?.activeOrganization.name ?? 'Gestión integral de casos'}</span>
+        </div>
       </div>
       <nav className="side-nav">
         {navItems.filter((item) => {
@@ -960,6 +1000,7 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
         <Progress value={compliance} />
         <p>{critical} caso{critical === 1 ? '' : 's'} crítico{critical === 1 ? '' : 's'} requiere{critical === 1 ? '' : 'n'} seguimiento.</p>
       </div> : null}
+      <div className="sidebar-powered-by"><span>Operado con</span><OrkestaLogo inverse className="sidebar-powered-logo" /></div>
       <NavLink to="/profile" className="sidebar-profile" onClick={closeMobile}>
         <UserCog size={18} />
         <div><strong>{currentUser?.name}</strong><span>{roleName}</span></div>

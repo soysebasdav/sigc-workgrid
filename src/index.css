@@ -1397,3 +1397,155 @@ svg { flex-shrink: 0; }
   text-decoration: none;
 }
 .login-home-link:hover { color: var(--primary); }
+
+/* Identidad multiempresa: la marca configurada ocupa el lugar principal.
+   Orkesta permanece como firma discreta de la plataforma. */
+.sigc-app {
+  --brand-shadow: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.sigc-app .btn-primary,
+.public-tenant-page .btn-primary {
+  box-shadow: 0 10px 22px var(--brand-shadow, color-mix(in srgb, var(--primary) 28%, transparent));
+}
+.sigc-app .btn-soft,
+.public-tenant-page .btn-soft {
+  background: var(--soft);
+  color: var(--primary-dark);
+  border-color: color-mix(in srgb, var(--primary) 24%, #fff);
+}
+.sigc-app .btn-soft:hover,
+.public-tenant-page .btn-soft:hover {
+  background: color-mix(in srgb, var(--primary) 17%, #fff);
+}
+.sigc-sidebar {
+  background: linear-gradient(180deg, var(--navy) 0%, var(--petrol) 100%);
+}
+.phase8-plan-card {
+  background: linear-gradient(145deg, var(--navy), var(--petrol));
+}
+
+.tenant-logo {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  object-fit: contain;
+  object-position: center;
+  color: #fff;
+  font-weight: 900;
+  line-height: 1;
+}
+.tenant-logo-fallback {
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+}
+.tenant-logo.compact { border-radius: 11px; }
+
+.workspace-sidebar-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 11px;
+  min-height: 66px;
+  padding: 4px 3px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.11);
+  text-align: left;
+}
+.workspace-sidebar-logo {
+  width: 58px;
+  height: 48px;
+  max-width: 58px;
+  border-radius: 13px;
+  padding: 5px;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 10px 24px rgba(0,0,0,.16);
+  color: #fff;
+  font-size: 1.1rem;
+}
+.workspace-sidebar-logo.tenant-logo-fallback { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+.workspace-sidebar-copy { min-width: 0; display: grid; gap: 3px; }
+.workspace-sidebar-copy strong,
+.workspace-sidebar-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-sidebar-copy strong { color: #fff; font-size: .96rem; }
+.workspace-sidebar-copy span { color: rgba(219,234,254,.76); font-size: .71rem; }
+
+.topbar-workspace-logo {
+  display: none;
+  width: 36px;
+  height: 36px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: #fff;
+  font-size: .82rem;
+}
+.topbar-workspace-logo.tenant-logo-fallback { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+
+.sidebar-powered-by {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 22px;
+  color: rgba(219,234,254,.58);
+}
+.sidebar-powered-by span {
+  font-size: .58rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.sidebar-powered-logo {
+  width: 61px;
+  max-height: 22px;
+  opacity: .72;
+}
+
+.public-tenant-page {
+  --brand-shadow: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.public-brand-logo.tenant-logo {
+  width: 78px;
+  height: 58px;
+  max-width: 78px;
+  border-radius: 15px;
+  padding: 6px;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 12px 30px rgba(15,23,42,.16);
+  color: #fff;
+  font-size: 1.25rem;
+}
+.public-brand-logo.tenant-logo-fallback { background: linear-gradient(135deg, var(--primary), var(--accent)); }
+.public-powered-by {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 28px;
+  color: rgba(255,255,255,.58);
+}
+.public-powered-by span {
+  font-size: .62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.public-powered-logo {
+  width: 72px;
+  max-height: 24px;
+  opacity: .72;
+}
+.public-intro { display: flex; flex-direction: column; }
+
+.phase8-brand-preview img {
+  background: #fff;
+  padding: 4px;
+}
+
+@media (max-width: 900px) {
+  .topbar-workspace-logo { display: grid; }
+}
+
+@media (max-width: 520px) {
+  .public-brand-logo.tenant-logo { width: 64px; height: 52px; }
+  .workspace-sidebar-logo { width: 52px; height: 44px; }
+}

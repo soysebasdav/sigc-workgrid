@@ -38,10 +38,17 @@ function slugify(value: string): string { return value.normalize('NFD').replace(
 export function useSaasTheme(): { context: SigcSaasContext | null; style: CSSProperties } {
   const { data: context } = useSigcSaasContext();
   const branding = context?.branding;
+  const primary = branding?.primaryColor ?? '#7c3aed';
+  const accent = branding?.accentColor ?? '#f97316';
+  const sidebar = branding?.sidebarColor ?? '#111827';
   const style = {
-    '--primary': branding?.primaryColor ?? '#7c3aed',
-    '--accent': branding?.accentColor ?? '#f97316',
-    '--navy': branding?.sidebarColor ?? '#111827'
+    '--primary': primary,
+    '--accent': accent,
+    '--navy': sidebar,
+    '--petrol': `color-mix(in srgb, ${sidebar} 68%, ${primary})`,
+    '--primary-dark': `color-mix(in srgb, ${primary} 78%, #000)`,
+    '--soft': `color-mix(in srgb, ${primary} 12%, #fff)`,
+    '--brand-shadow': `color-mix(in srgb, ${primary} 28%, transparent)`
   } as CSSProperties;
   return { context, style };
 }
