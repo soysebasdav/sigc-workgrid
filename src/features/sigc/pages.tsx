@@ -213,6 +213,10 @@ export function SigcLoginPage() {
   const [error, setError] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    document.title = 'Iniciar sesión · Orkesta';
+  }, []);
+
   if (currentUser) return <Navigate to={loginParams.get('redirect') || '/app'} replace />;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -554,6 +558,11 @@ export function PublicFormPage() {
   const { tenant } = useParams<{ tenant?: string }>();
   const hostname = typeof window === 'undefined' ? undefined : window.location.hostname;
   const { data: context, isLoading, error, reload } = usePublicIntakeContext({ tenant, hostname });
+
+  useEffect(() => {
+    const productName = context?.branding.productName?.trim();
+    document.title = productName ? `Formulario público · ${productName}` : 'Formulario público · Orkesta';
+  }, [context?.branding.productName]);
 
   if (isLoading && !context) {
     return (

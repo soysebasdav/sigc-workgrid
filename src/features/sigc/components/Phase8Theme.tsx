@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Building2 } from 'lucide-react';
 import type { SigcSaasContext } from '../domain/types';
 import { useSigcSaasContext } from '../hooks/useSigcData';
@@ -19,6 +19,12 @@ export function useSaasTheme(): { context: SigcSaasContext | null; style: CSSPro
     '--soft': `color-mix(in srgb, ${primary} 12%, #fff)`,
     '--brand-shadow': `color-mix(in srgb, ${primary} 28%, transparent)`
   } as CSSProperties;
+
+  useEffect(() => {
+    const productName = branding?.productName?.trim();
+    document.title = productName || 'Orkesta';
+  }, [branding?.productName]);
+
   return { context, style };
 }
 
