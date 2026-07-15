@@ -42,9 +42,12 @@ import { AssignCaseModal, ChangeCaseStateModal, ClassificationModal, DeactivateA
 import { canEditDocumentInline, CommentModal, DocumentUploadModal, DocumentVersionModal, SubtaskFormModal, TextDocumentEditorModal } from './components/Phase3Forms';
 import { DeliveryModal, ManualReminderModal, ReviewDecisionModal, SlaOverrideModal, SubmitReviewModal } from './components/Phase4Forms';
 import { DocumentHistoryModal } from './components/DocumentHistoryModal';
-import { OrganizationSwitcher, WorkspaceBrand, useSaasTheme } from './components/Phase8Theme';
+import { OrganizationSwitcher, useSaasTheme } from './components/Phase8Theme';
 import { useCaseAssignments, useCaseComments, useCaseDeliveries, useCaseReminders, useCaseReviews, useCaseSlaOverrides, useCaseTimeline, useDebouncedValue, useSigcCase, useSigcCaseSearch, useSigcCatalogs, useSigcDocumentSearch, useSigcMembers, useSigcSidebarSummary, useSigcSubtaskSearch, usePublicIntakeContext, useWorkflowBoard } from './hooks/useSigcData';
 import { sigcService } from './services/sigcService';
+import orkestaLogoDark from '../../assets/orkesta-logo-dark.png';
+import orkestaLogoLight from '../../assets/orkesta-logo-light.png';
+import orkestaSymbol from '../../assets/orkesta-symbol.png';
 import {
   adminModules,
   areaTones,
@@ -60,6 +63,17 @@ type ToastState = {
   text: string;
 };
 
+type OrkestaLogoProps = {
+  inverse?: boolean;
+  symbolOnly?: boolean;
+  className?: string;
+};
+
+function OrkestaLogo({ inverse = false, symbolOnly = false, className = '' }: OrkestaLogoProps) {
+  const source = symbolOnly ? orkestaSymbol : inverse ? orkestaLogoLight : orkestaLogoDark;
+  return <img className={`orkesta-logo ${symbolOnly ? 'orkesta-logo-symbol' : 'orkesta-logo-full'} ${className}`.trim()} src={source} alt={symbolOnly ? '' : 'Orkesta'} aria-hidden={symbolOnly || undefined} />;
+}
+
 export function SigcShell() {
   const { currentUser, logout, resetDemoData, isLoading, dataMode } = useApp();
   const { can, canAny, roleName } = useAuthorization();
@@ -74,11 +88,11 @@ export function SigcShell() {
   if (!currentUser) {
     if (isLoading) {
       return (
-        <main className="login-workgrid">
-          <section className="login-card card">
-            <div className="brand-mark large">S</div>
-            <h2>Conectando SIGC</h2>
-            <p className="muted">{dataMode === 'supabase' ? 'Validando sesión con Supabase...' : 'Cargando datos locales...'}</p>
+        <main className="login-workgrid login-loading-page">
+          <section className="login-card card login-loading-card">
+            <OrkestaLogo symbolOnly className="login-loading-symbol" />
+            <h2>Conectando con Orkesta</h2>
+            <p className="muted">{dataMode === 'supabase' ? 'Validando tu sesión segura...' : 'Preparando el espacio de trabajo...'}</p>
           </section>
         </main>
       );
@@ -120,6 +134,7 @@ export function SigcShell() {
         <button className="btn btn-white mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Abrir menú">
           <Menu size={18} />
         </button>
+        <OrkestaLogo symbolOnly className="topbar-orkesta-symbol" />
         <OrganizationSwitcher />
         {canReadCases ? <>
           <div className="search-box">
@@ -193,35 +208,43 @@ export function SigcLoginPage() {
   }
 
   return (
-    <main className="login-workgrid">
-      <section className="login-panel hero-gradient">
-        <div className="chip chip-light">SIGC · WorkGrid Color</div>
-        <h1>Sistema Integral de Gestión de Casos</h1>
-        <p>
-          Una interfaz SaaS empresarial para convertir solicitudes, contratos, reclamos, tutelas y procesos internos en casos con SLA, responsables,
-          documentos y trazabilidad completa.
-        </p>
-        <div className="login-benefits">
-          <span><ShieldCheck size={18} /> Control SLA</span>
-          <span><CalendarCheck size={18} /> Cronograma visual</span>
-          <span><CheckCircle2 size={18} /> Trazabilidad auditable</span>
+    <main className="login-workgrid orkesta-login">
+      <section className="login-panel hero-gradient orkesta-login-panel">
+        <OrkestaLogo symbolOnly className="login-watermark" />
+        <div className="login-panel-content">
+          <OrkestaLogo inverse className="login-logo-hero" />
+          <div className="chip chip-light">Plataforma empresarial de gestión</div>
+          <h1>Coordina procesos, casos y equipos.</h1>
+          <p>
+            Orkesta centraliza solicitudes, contratos, reclamos y procesos internos con SLA, responsables, documentos y trazabilidad completa.
+          </p>
+          <div className="login-benefits">
+            <span><ShieldCheck size={18} /> Control SLA</span>
+            <span><CalendarCheck size={18} /> Cronograma visual</span>
+            <span><CheckCircle2 size={18} /> Trazabilidad auditable</span>
+          </div>
         </div>
       </section>
-      <section className="login-card card">
-        <div className="brand-mark large">S</div>
-        <h2>Iniciar sesión</h2>
-        <p className="muted">{dataMode === 'supabase' ? 'Conectado a Supabase Auth y tablas PostgreSQL.' : 'Datos demo precargados en localStorage. El objetivo actual es validar la experiencia visual.'}</p>
+      <section className="login-card card orkesta-login-card">
+        <div className="login-card-heading">
+          <OrkestaLogo symbolOnly className="login-card-symbol" />
+          <div>
+            <span className="eyebrow">Acceso seguro</span>
+            <h2>Iniciar sesión</h2>
+          </div>
+        </div>
+        <p className="muted">Ingresa a tu espacio de trabajo en Orkesta. {dataMode === 'supabase' ? 'La autenticación está protegida por Supabase Auth.' : 'El entorno demo utiliza datos locales para validar la experiencia.'}</p>
         <form onSubmit={handleSubmit} className="form-stack">
           <label className="field-label">
             Correo
-            <input className="field" value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
+            <input className="field" value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
           </label>
           <label className="field-label">
             Contraseña
-            <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
+            <input className="field" value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
           </label>
           {error ? <div className="alert danger">{error}</div> : null}
-          <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading}>{isSubmitting || isLoading ? 'Validando...' : 'Entrar al SIGC'}</button>
+          <button className="btn btn-primary full" type="submit" disabled={isSubmitting || isLoading}>{isSubmitting || isLoading ? 'Validando...' : 'Entrar a Orkesta'}</button>
           {dataMode === 'supabase' ? <Link className="login-forgot-link" to="/forgot-password">Olvidé mi contraseña</Link> : null}
         </form>
         {dataMode === 'local' ? (
@@ -231,6 +254,7 @@ export function SigcLoginPage() {
             <span>user@test.com / User123*</span>
           </div>
         ) : null}
+        <div className="login-powered"><OrkestaLogo className="login-powered-logo" /></div>
       </section>
     </main>
   );
@@ -909,9 +933,9 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const critical = sidebarSummary?.criticalCases ?? 0;
   return (
     <div className="sidebar-inner">
-      <div className="brand">
-        <WorkspaceBrand compact />
-        <div><strong>{context?.branding.shortName ?? 'SIGC'}</strong><span>{context?.branding.productName ?? 'Sistema Integral de Gestión de Casos'}</span></div>
+      <div className="brand orkesta-sidebar-brand">
+        <OrkestaLogo inverse className="sidebar-orkesta-logo" />
+        <span>{context?.activeOrganization.name ?? 'Gestión integral de casos'}</span>
       </div>
       <nav className="side-nav">
         {navItems.filter((item) => {
@@ -950,7 +974,7 @@ function Page({ children, centered = false }: { children: ReactNode; centered?: 
 function PageHead({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
   return (
     <header className="page-head">
-      <div><span className="eyebrow">Opción 2 · WorkGrid Color</span><h1>{title}</h1><p>{description}</p></div>
+      <div><span className="eyebrow">Orkesta · Gestión integral</span><h1>{title}</h1><p>{description}</p></div>
       {actions ? <div className="page-actions">{actions}</div> : null}
     </header>
   );

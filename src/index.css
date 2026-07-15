@@ -1263,3 +1263,111 @@ svg { flex-shrink: 0; }
   .route-error-actions { width: 100%; }
   .route-error-actions .btn { flex: 1 1 180px; }
 }
+
+/* Identidad visual Orkesta */
+.orkesta-logo { display: block; object-fit: contain; user-select: none; }
+.orkesta-logo-full { width: auto; height: auto; }
+.orkesta-logo-symbol { width: auto; height: auto; }
+
+.orkesta-sidebar-brand {
+  align-items: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 4px 12px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.sidebar-orkesta-logo { width: 118px; max-height: 96px; }
+.orkesta-sidebar-brand > span {
+  width: 100%;
+  color: rgba(219,234,254,.76);
+  font-size: .72rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-orkesta-symbol { display: none; width: 32px; height: 32px; object-fit: contain; }
+
+.orkesta-login { position: relative; isolation: isolate; }
+.orkesta-login::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,.76), rgba(255,255,255,.34)),
+    radial-gradient(circle at 9% 12%, rgba(30,58,138,.13), transparent 28rem),
+    radial-gradient(circle at 90% 88%, rgba(249,115,22,.12), transparent 25rem);
+}
+.orkesta-login-panel { position: relative; overflow: hidden; min-height: 600px; }
+.login-panel-content { position: relative; z-index: 2; max-width: 900px; }
+.login-logo-hero { width: clamp(138px, 14vw, 190px); margin-bottom: 28px; filter: drop-shadow(0 14px 30px rgba(0,0,0,.18)); }
+.login-watermark {
+  position: absolute;
+  z-index: 1;
+  right: clamp(-150px, -7vw, -80px);
+  bottom: clamp(-150px, -9vw, -80px);
+  width: min(52vw, 650px);
+  opacity: .075;
+  transform: rotate(-8deg);
+  filter: saturate(.75) brightness(2.2);
+  pointer-events: none;
+}
+.orkesta-login-panel h1 { max-width: 850px; font-size: clamp(3rem, 6.1vw, 5.4rem); }
+.orkesta-login-panel p { max-width: 720px; }
+
+.orkesta-login-card { position: relative; overflow: hidden; padding: clamp(28px, 3.2vw, 40px); }
+.orkesta-login-card::after {
+  content: '';
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -110px;
+  top: -120px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(30,58,138,.11), rgba(249,115,22,.10));
+  pointer-events: none;
+}
+.login-card-heading { position: relative; z-index: 1; display: flex; align-items: center; gap: 15px; margin-bottom: 8px; }
+.login-card-symbol {
+  width: 64px;
+  height: 64px;
+  padding: 7px;
+  border-radius: 19px;
+  background: linear-gradient(145deg, #f8fafc, #fff);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 28px rgba(30,58,138,.13);
+}
+.login-card-heading h2 { margin: 3px 0 0; }
+.orkesta-login-card > .muted { margin: 12px 0 22px; line-height: 1.6; }
+.orkesta-login-card .field { min-height: 50px; border-radius: 15px; }
+.orkesta-login-card .btn-primary { min-height: 50px; background: linear-gradient(135deg, #1e3a8a 0%, var(--primary) 65%, #f97316 145%); box-shadow: 0 14px 28px rgba(30,58,138,.23); }
+.login-powered { display: flex; justify-content: center; margin-top: 22px; padding-top: 18px; border-top: 1px solid #eef2f7; }
+.login-powered-logo { width: 76px; opacity: .76; }
+
+.login-loading-page { grid-template-columns: minmax(300px, 460px); justify-content: center; }
+.login-loading-card { display: grid; justify-items: center; text-align: center; gap: 4px; }
+.login-loading-symbol { width: 82px; height: 82px; margin-bottom: 8px; animation: orkesta-pulse 1.6s ease-in-out infinite; }
+@keyframes orkesta-pulse { 0%,100% { transform: scale(.98); opacity: .82; } 50% { transform: scale(1.035); opacity: 1; } }
+
+@media (max-width: 1180px) {
+  .orkesta-login-panel { min-height: 430px; }
+  .login-watermark { width: 480px; }
+}
+
+@media (max-width: 900px) {
+  .topbar-orkesta-symbol { display: block; }
+  .sidebar-orkesta-logo { width: 108px; }
+}
+
+@media (max-width: 640px) {
+  .orkesta-login-panel { min-height: auto; }
+  .login-logo-hero { width: 122px; margin-bottom: 20px; }
+  .orkesta-login-panel h1 { font-size: clamp(2.45rem, 13vw, 3.6rem); letter-spacing: -.065em; }
+  .login-watermark { display: none; }
+  .login-card-symbol { width: 56px; height: 56px; }
+  .login-powered-logo { width: 68px; }
+}
