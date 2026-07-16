@@ -3,6 +3,7 @@ import { Check, LoaderCircle, Paperclip, Plus, Trash2, Upload, X } from 'lucide-
 import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext, SigcAssignment, SigcCase } from '../domain/types';
 import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
+import { DynamicCaseFields, filterDynamicValues } from './DynamicCaseFields';
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -43,6 +44,10 @@ export function PublicCaseForm({
     description: '',
     website: ''
   });
+  const selectedPublicType = caseTypes.find((type) => type.id === values.caseTypeId);
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const [usesAlternateResponseEmail, setUsesAlternateResponseEmail] = useState(false);
+  const [responseEmail, setResponseEmail] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
   const [privacyConsent, setPrivacyConsent] = useState(false);
   const [challengeAnswer, setChallengeAnswer] = useState('');
@@ -63,6 +68,12 @@ export function PublicCaseForm({
 
   function setField(field: keyof typeof values, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectPublicCaseType(caseTypeId: string) {
+    const type = caseTypes.find((item) => item.id === caseTypeId);
+    setValues((current) => ({ ...current, caseTypeId }));
+    setCustomFields((current) => filterDynamicValues(type?.fields ?? [], current));
   }
 
   function addAttachments(files: FileList | null) {
@@ -102,6 +113,9 @@ export function PublicCaseForm({
         tenant,
         hostname,
         privacyConsent,
+        responseEmail: usesAlternateResponseEmail ? responseEmail : values.requesterEmail,
+        usesAlternateResponseEmail,
+        customFields,
         challengeId: context.security.challenge?.id,
         challengeAnswer: challengeAnswer.trim() || undefined,
         attachments
@@ -119,6 +133,9 @@ export function PublicCaseForm({
         caseTypeId: '', subject: '', description: '', website: ''
       });
       setAttachments([]);
+      setCustomFields({});
+      setUsesAlternateResponseEmail(false);
+      setResponseEmail('');
       setPrivacyConsent(false);
       setChallengeAnswer('');
       onSecurityRefresh?.();
@@ -138,13 +155,32 @@ export function PublicCaseForm({
         <input className="field" placeholder="Empresa" value={values.requesterCompany} onChange={(event) => setField('requesterCompany', event.target.value)} />
         <input className="field" placeholder="Documento" value={values.requesterDocument} onChange={(event) => setField('requesterDocument', event.target.value)} />
         <input className="field" placeholder="Correo *" type="email" value={values.requesterEmail} onChange={(event) => setField('requesterEmail', event.target.value)} required />
+        {context.intake.allowAlternateResponseEmail !== false ? (
+          <div className="wide alternate-response-email">
+            <label className="check-row"><input type="checkbox" checked={usesAlternateResponseEmail} onChange={(event) => { setUsesAlternateResponseEmail(event.target.checked); if (!event.target.checked) setResponseEmail(''); }} /> ¿Deseas recibir la respuesta en un correo diferente?</label>
+            {usesAlternateResponseEmail ? <input className="field" placeholder="Correo electrónico para recibir la respuesta *" type="email" value={responseEmail} onChange={(event) => setResponseEmail(event.target.value)} required /> : null}
+          </div>
+        ) : null}
         <input className="field" placeholder="Teléfono" value={values.requesterPhone} onChange={(event) => setField('requesterPhone', event.target.value)} />
-        <select className="field" value={values.caseTypeId} onChange={(event) => setField('caseTypeId', event.target.value)} required>
+        <select className="field" value={values.caseTypeId} onChange={(event) => selectPublicCaseType(event.target.value)} required>
           <option value="">Tipo de caso *</option>
           {caseTypes.map((type) => <option value={type.id} key={type.id}>{type.name} · {type.slaLabel}</option>)}
         </select>
         <input className="field wide" placeholder="Asunto *" value={values.subject} onChange={(event) => setField('subject', event.target.value)} required minLength={4} maxLength={300} />
         <textarea className="field textarea wide" placeholder="Descripción detallada *" value={values.description} onChange={(event) => setField('description', event.target.value)} required minLength={10} maxLength={10000} />
+        {selectedPublicType ? (
+          <div className="wide selected-type-preview">
+            <strong>{selectedPublicType.name}</strong>
+            <span>{selectedPublicType.description || 'La entidad realizará la clasificación definitiva de la solicitud.'}</span>
+            <div>
+              <small>SLA: <b>{selectedPublicType.slaLabel}</b></small>
+              {selectedPublicType.defaultPriorityName ? <small>Prioridad sugerida: <b>{selectedPublicType.defaultPriorityName}</b></small> : null}
+              {selectedPublicType.defaultAreaName ? <small>Área sugerida: <b>{selectedPublicType.defaultAreaName}</b></small> : null}
+              {selectedPublicType.sla?.estimatedDueAt ? <small>Fecha estimada: <b>{formatDateTime(selectedPublicType.sla.estimatedDueAt)}</b></small> : null}
+            </div>
+          </div>
+        ) : null}
+        <DynamicCaseFields definitions={selectedPublicType?.fields ?? []} values={customFields} onChange={setCustomFields} className="wide" />
         <input className="sigc-honeypot" tabIndex={-1} autoComplete="off" aria-hidden="true" value={values.website} onChange={(event) => setField('website', event.target.value)} />
 
         {context.intake.allowAttachments ? (
@@ -186,7 +222,7 @@ export function PublicCaseForm({
         {context.privacy.requireConsent ? (
           <label className="public-privacy-consent wide">
             <input type="checkbox" checked={privacyConsent} onChange={(event) => setPrivacyConsent(event.target.checked)} required />
-            <span>{context.privacy.noticeText}{context.privacy.policyUrl ? <> <a href={context.privacy.policyUrl} target="_blank" rel="noreferrer">Consultar política de privacidad</a>.</> : null}</span>
+            <span>{context.privacy.noticeText} La respuesta será remitida al correo autorizado en este formulario.{context.privacy.policyUrl ? <> <a href={context.privacy.policyUrl} target="_blank" rel="noreferrer">Consultar política de privacidad</a>.</> : null}</span>
           </label>
         ) : null}
       </div>
@@ -218,6 +254,9 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
     requesterName: '', requesterCompany: '', requesterDocument: '', requesterEmail: '', requesterPhone: '',
     caseTypeId: '', priorityId: '', riskLevel: 'Medio', subject: '', description: ''
   });
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const [usesAlternateResponseEmail, setUsesAlternateResponseEmail] = useState(false);
+  const [responseEmail, setResponseEmail] = useState('');
   const [assignments, setAssignments] = useState<ManualCaseAssignmentInput[]>([{ areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: true }]);
   const [isSubmitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -242,6 +281,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
       priorityId: type?.defaultPriorityId || current.priorityId,
       riskLevel: type?.defaultRiskLevel || current.riskLevel
     }));
+    setCustomFields((current) => filterDynamicValues(type?.fields ?? [], current));
     if (type?.defaultAreas?.length) {
       setAssignments(type.defaultAreas.map((area, index) => ({
         areaId: area.areaId,
@@ -274,7 +314,14 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
     setSubmitError('');
     setSubmitting(true);
     try {
-      const result = await sigcService.createManualCase({ idempotencyKey, ...values, assignments: validAssignments });
+      const result = await sigcService.createManualCase({
+        idempotencyKey,
+        ...values,
+        responseEmail: usesAlternateResponseEmail ? responseEmail : values.requesterEmail,
+        usesAlternateResponseEmail,
+        customFields,
+        assignments: validAssignments
+      });
       setCreatedDueAt(result.dueAt);
       const uploads = await Promise.allSettled(initialFiles.map((file) => sigcService.uploadDocument({
         caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual'
@@ -299,6 +346,8 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
           <input className="field" placeholder="Empresa / área origen" value={values.requesterCompany} onChange={(event) => setField('requesterCompany', event.target.value)} />
           <input className="field" placeholder="Documento" value={values.requesterDocument} onChange={(event) => setField('requesterDocument', event.target.value)} />
           <input className="field" placeholder="Correo" type="email" value={values.requesterEmail} onChange={(event) => setField('requesterEmail', event.target.value)} />
+          <label className="check-row compact-check wide"><input type="checkbox" checked={usesAlternateResponseEmail} onChange={(event) => { setUsesAlternateResponseEmail(event.target.checked); if (!event.target.checked) setResponseEmail(''); }} /> Responder a un correo diferente</label>
+          {usesAlternateResponseEmail ? <input className="field wide" placeholder="Correo para recibir la respuesta *" type="email" value={responseEmail} onChange={(event) => setResponseEmail(event.target.value)} required /> : null}
           <input className="field" placeholder="Teléfono" value={values.requesterPhone} onChange={(event) => setField('requesterPhone', event.target.value)} />
           <select className="field" value={values.caseTypeId} onChange={(event) => selectCaseType(event.target.value)} required disabled={catalogsLoading || !catalogs?.caseTypes.length}>
             <option value="">Tipo de caso *</option>
@@ -313,6 +362,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
           </select>
           <input className="field wide" placeholder="Asunto *" value={values.subject} onChange={(event) => setField('subject', event.target.value)} required minLength={4} />
           <textarea className="field textarea wide" placeholder="Descripción *" value={values.description} onChange={(event) => setField('description', event.target.value)} required minLength={10} />
+          <DynamicCaseFields definitions={selectedType?.fields ?? []} values={customFields} onChange={setCustomFields} className="wide" />
         </div>
 
         <div className="section-title-row">
@@ -352,6 +402,9 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
             <span>Tipo seleccionado</span>
             <strong>{selectedType?.name ?? 'Selecciona un tipo'}</strong>
             <p>{selectedType ? <>SLA: <b>{selectedType.slaLabel ?? 'Sin SLA configurado'}</b></> : 'El SLA se mostrará al seleccionar un tipo.'}</p>
+            {selectedType?.defaultPriorityId ? <p>Prioridad sugerida: <b>{catalogs?.priorities.find((priority) => priority.id === selectedType.defaultPriorityId)?.name ?? 'Configurada'}</b>.</p> : null}
+            {selectedType?.sla?.estimatedDueAt ? <p>Fecha límite estimada: <b>{formatDateTime(selectedType.sla.estimatedDueAt)}</b>.</p> : null}
+            {selectedType?.workflowStateCount ? <p>Flujo configurado: <b>{selectedType.workflowStateCount} estados</b>.</p> : null}
             {selectedType?.defaultRiskLevel ? <p>Riesgo sugerido: <b>{selectedType.defaultRiskLevel}</b>.</p> : null}
             {selectedType?.defaultAreas?.length ? <p>Área sugerida: <b>{selectedType.defaultAreas.find((area) => area.isPrimary)?.areaName ?? selectedType.defaultAreas[0].areaName}</b>.</p> : null}
             {createdDueAt ? <p>Fecha límite calculada: <b>{formatDateTime(createdDueAt)}</b>.</p> : null}
@@ -396,6 +449,8 @@ export function ClassificationModal({
     dueAt: caseItem.classifiedAt ? toDateTimeLocal(caseItem.dueAt) : '',
     observations: caseItem.classificationObservations ?? ''
   });
+  const selectedClassificationType = catalogs?.caseTypes.find((item) => item.id === values.caseTypeId);
+  const [customFields, setCustomFields] = useState<Record<string, unknown>>(caseItem.customFields ?? {});
   const [assignments, setAssignments] = useState<ManualCaseAssignmentInput[]>(() => activeAssignments.length
     ? activeAssignments.map((assignment) => ({
         areaId: assignment.areaId,
@@ -423,6 +478,7 @@ export function ClassificationModal({
       priorityId: type?.defaultPriorityId || current.priorityId,
       riskLevel: type?.defaultRiskLevel || current.riskLevel
     }));
+    setCustomFields((current) => filterDynamicValues(type?.fields ?? [], current));
     if (type?.defaultAreas?.length) {
       setAssignments(type.defaultAreas.map((area, index) => ({
         areaId: area.areaId,
@@ -472,6 +528,7 @@ export function ClassificationModal({
         riskLevel: values.riskLevel,
         dueAt: values.dueAt,
         observations: values.observations,
+        customFields,
         assignments: validAssignments.map((assignment) => ({ ...assignment, caseId: caseItem.databaseId ?? caseItem.id }))
       });
       onSaved();
@@ -500,6 +557,9 @@ export function ClassificationModal({
             </select>
             <label className="field-label">Fecha límite opcional (vacío = SLA automático)<input className="field" type="datetime-local" value={values.dueAt} onChange={(event) => setValues((current) => ({ ...current, dueAt: event.target.value }))} /></label>
           </div>
+          {caseItem.submittedCaseTypeName ? <div className="classification-origin-note"><strong>Tipo informado por el solicitante</strong><span>{caseItem.submittedCaseTypeName}{caseItem.submittedCaseTypeId !== values.caseTypeId ? ' · se conservará como dato original' : ''}</span></div> : null}
+          {selectedClassificationType ? <div className="selected-type-preview"><strong>{selectedClassificationType.name}</strong><div><small>SLA: <b>{selectedClassificationType.slaLabel ?? 'Sin SLA'}</b></small>{selectedClassificationType.sla?.estimatedDueAt ? <small>Fecha estimada: <b>{formatDateTime(selectedClassificationType.sla.estimatedDueAt)}</b></small> : null}{selectedClassificationType.defaultAreas?.length ? <small>Área principal sugerida: <b>{selectedClassificationType.defaultAreas.find((area) => area.isPrimary)?.areaName ?? selectedClassificationType.defaultAreas[0].areaName}</b></small> : null}</div></div> : null}
+          <DynamicCaseFields definitions={selectedClassificationType?.fields ?? []} values={customFields} onChange={setCustomFields} />
           <textarea className="field textarea compact" placeholder="Observaciones de clasificación" value={values.observations} onChange={(event) => setValues((current) => ({ ...current, observations: event.target.value }))} />
 
           <div className="section-title-row"><div><h4>Áreas y responsables</h4><p className="muted">La clasificación reemplaza las asignaciones activas por este conjunto, conservando el historial anterior.</p></div><button className="btn btn-soft small" type="button" onClick={addAssignment}><Plus size={15} /> Área</button></div>

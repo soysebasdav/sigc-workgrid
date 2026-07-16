@@ -9,6 +9,7 @@ import type {
   UpdateCaseAssignmentInput,
   DeactivateCaseAssignmentInput,
   CasePriorityName,
+  CaseTypeFieldDefinition,
   ChangeCaseStateInput,
   CreateSubtaskInput,
   CreatedCaseResult,
@@ -174,6 +175,8 @@ type CaseQueryRow = {
   requester_company: string | null;
   requester_document: string | null;
   requester_email: string | null;
+  response_email: string | null;
+  uses_alternate_response_email: boolean;
   requester_phone: string | null;
   source: string;
   risk_level: string | null;
@@ -184,12 +187,15 @@ type CaseQueryRow = {
   progress: number;
   updated_at: string;
   case_type_id: string | null;
+  submitted_case_type_id: string | null;
+  custom_fields: Record<string, unknown> | null;
   priority_id: string | null;
   state_id: string | null;
   sla_policy_id: string | null;
   primary_area_id: string | null;
   primary_owner_id: string | null;
   case_type: { name: string; color: string | null } | null;
+  submitted_case_type: { name: string } | null;
   priority: { name: string; code: string; color: string | null } | null;
   state: { name: string; code: string; color: string | null; is_terminal: boolean } | null;
   area: { name: string; color: string | null } | null;
@@ -199,10 +205,11 @@ type CaseQueryRow = {
 
 const CASE_SELECT = `
   id, organization_id, radicado, subject, description,
-  requester_name, requester_company, requester_document, requester_email, requester_phone,
+  requester_name, requester_company, requester_document, requester_email, response_email, uses_alternate_response_email, requester_phone,
   source, risk_level, classification_observations, classified_at, opened_at, due_at, progress, updated_at,
-  case_type_id, priority_id, state_id, sla_policy_id, primary_area_id, primary_owner_id,
-  case_type:case_types(name,color),
+  case_type_id, submitted_case_type_id, custom_fields, priority_id, state_id, sla_policy_id, primary_area_id, primary_owner_id,
+  case_type:case_types!cases_case_type_id_fkey(name,color),
+  submitted_case_type:case_types!cases_submitted_case_type_id_fkey(name),
   priority:priorities(name,code,color),
   state:case_states(name,code,color,is_terminal),
   area:areas(name,color),
@@ -285,6 +292,8 @@ function mapCase(row: CaseQueryRow): SigcCase {
     radicado: row.radicado,
     organizationId: row.organization_id,
     typeId: row.case_type_id ?? undefined,
+    submittedCaseTypeId: row.submitted_case_type_id ?? undefined,
+    submittedCaseTypeName: row.submitted_case_type?.name ?? undefined,
     type: row.case_type?.name ?? 'Sin clasificar',
     typeColor: row.case_type?.color ?? null,
     subject: row.subject,
@@ -293,6 +302,8 @@ function mapCase(row: CaseQueryRow): SigcCase {
     requester: row.requester_name,
     requesterDocument: row.requester_document ?? undefined,
     requesterEmail: row.requester_email ?? undefined,
+    responseEmail: row.response_email ?? row.requester_email ?? undefined,
+    usesAlternateResponseEmail: Boolean(row.uses_alternate_response_email),
     requesterPhone: row.requester_phone ?? undefined,
     areaId: row.primary_area_id ?? undefined,
     area: row.area?.name ?? 'Sin área',
@@ -319,7 +330,8 @@ function mapCase(row: CaseQueryRow): SigcCase {
     risk: isTerminal ? row.state?.name ?? 'Finalizado' : riskLabel(row.risk_level, sem),
     source: row.source,
     classificationObservations: row.classification_observations ?? undefined,
-    classifiedAt: row.classified_at
+    classifiedAt: row.classified_at,
+    customFields: row.custom_fields ?? {}
   };
 }
 
@@ -331,6 +343,28 @@ function mapCatalog(rows: Array<{ id: string; name: string; code?: string | null
     color: row.color ?? null,
     isActive: row.is_active ?? true
   }));
+}
+
+function mapCaseTypeField(item: any): CaseTypeFieldDefinition {
+  const options = Array.isArray(item?.options) ? item.options.map((option: any) => {
+    if (typeof option === 'string') return { value: option, label: option };
+    const value = String(option?.value ?? option?.label ?? '');
+    return { value, label: String(option?.label ?? value) };
+  }).filter((option: { value: string }) => option.value) : [];
+  return {
+    id: item?.id ? String(item.id) : undefined,
+    fieldKey: String(item?.fieldKey ?? item?.field_key ?? ''),
+    label: String(item?.label ?? 'Campo adicional'),
+    inputType: item?.inputType ?? item?.input_type ?? 'text',
+    placeholder: item?.placeholder ?? null,
+    helpText: item?.helpText ?? item?.help_text ?? null,
+    isRequired: Boolean(item?.isRequired ?? item?.is_required),
+    isPublic: Boolean(item?.isPublic ?? item?.is_public),
+    isInternal: Boolean(item?.isInternal ?? item?.is_internal),
+    options,
+    sortOrder: Number(item?.sortOrder ?? item?.sort_order ?? 0),
+    isActive: item?.isActive !== false && item?.is_active !== false
+  };
 }
 
 function safeSearch(value: string): string {
@@ -493,7 +527,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async getCatalogs(): Promise<SigcCatalogs> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_operational_catalogs_v1');
+    const { data, error } = await client.rpc('get_operational_catalogs_v2');
 
     if (!error && data && typeof data === 'object') {
       const raw = data as any;
@@ -514,6 +548,16 @@ export const supabaseSigcRepository: SigcRepository = {
         responseTemplateId: item.responseTemplateId ?? null,
         slaPolicyId: item.slaPolicyId ?? null,
         slaLabel: item.slaLabel == null ? undefined : String(item.slaLabel),
+        sla: item.sla ? {
+          id: item.sla.id ? String(item.sla.id) : undefined,
+          name: item.sla.name ? String(item.sla.name) : undefined,
+          durationValue: Number(item.sla.durationValue ?? 0),
+          durationUnit: item.sla.durationUnit ?? 'calendar_days',
+          timezone: String(item.sla.timezone ?? 'America/Bogota'),
+          estimatedDueAt: item.sla.estimatedDueAt ?? null
+        } : null,
+        workflowStateCount: Number(item.workflowStateCount ?? 0),
+        fields: Array.isArray(item.fields) ? item.fields.map(mapCaseTypeField) : [],
         defaultAreas: Array.isArray(item.defaultAreas) ? item.defaultAreas.map((entry: any) => ({
           areaId: String(entry.areaId),
           areaName: String(entry.areaName ?? 'Área'),
@@ -706,7 +750,7 @@ export const supabaseSigcRepository: SigcRepository = {
       observations: assignment.observations ?? '',
       isPrimary: assignment.isPrimary ?? false
     }));
-    const { data, error } = await client.rpc('create_internal_case_v2', {
+    const { data, error } = await client.rpc('create_internal_case_v3', {
       p_idempotency_key: input.idempotencyKey,
       p_case_type_id: input.caseTypeId,
       p_priority_id: input.priorityId,
@@ -718,7 +762,10 @@ export const supabaseSigcRepository: SigcRepository = {
       p_subject: input.subject,
       p_description: input.description,
       p_risk_level: input.riskLevel ?? null,
-      p_assignments: assignments
+      p_assignments: assignments,
+      p_response_email: input.responseEmail?.trim() || null,
+      p_use_alternate_response_email: Boolean(input.usesAlternateResponseEmail),
+      p_custom_fields: (input.customFields ?? {}) as unknown as Json
     });
     if (error) throw error;
     const created = data?.[0];
@@ -750,14 +797,15 @@ export const supabaseSigcRepository: SigcRepository = {
       observations: assignment.observations?.trim() || null,
       isPrimary: assignment.isPrimary ?? index === 0
     }));
-    const { error } = await client.rpc('classify_case_v2', {
+    const { error } = await client.rpc('classify_case_v3', {
       p_case_id: resolvedCaseId,
       p_case_type_id: input.caseTypeId,
       p_priority_id: input.priorityId,
       p_risk_level: input.riskLevel,
       p_observations: input.observations?.trim() || null,
       p_due_at: input.dueAt ? new Date(input.dueAt).toISOString() : null,
-      p_assignments: assignments
+      p_assignments: assignments,
+      p_custom_fields: (input.customFields ?? {}) as unknown as Json
     });
     if (error) throw error;
   },
@@ -1422,7 +1470,7 @@ export const supabaseSigcRepository: SigcRepository = {
     const client = requireClient();
     const organizationId = await ensureOrganization();
     const operationalCatalogs = await this.getCatalogs();
-    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics] = await Promise.all([
+    const [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeFields, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics] = await Promise.all([
       client.from('areas').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('priorities').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('case_types').select('*').eq('organization_id', organizationId).order('name'),
@@ -1436,6 +1484,7 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('profiles').select('id,name,email'),
       client.from('organization_member_areas').select('*').eq('organization_id', organizationId),
       client.from('case_type_default_areas').select('*').eq('organization_id', organizationId).order('sort_order'),
+      client.from('case_type_fields').select('*').eq('organization_id', organizationId).order('sort_order'),
       client.from('case_type_states').select('*'),
       client.from('state_transitions').select('*').eq('organization_id', organizationId).order('created_at'),
       client.from('email_templates').select('*').eq('organization_id', organizationId).order('name'),
@@ -1444,7 +1493,7 @@ export const supabaseSigcRepository: SigcRepository = {
       client.from('automation_executions').select('*').eq('organization_id', organizationId).order('started_at', { ascending: false }).limit(100),
       client.rpc('analyze_automation_rules_v3')
     ]);
-    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics];
+    const results = [areas, priorities, caseTypes, states, slaPolicies, holidays, permissions, roles, rolePermissions, memberships, profiles, memberAreas, caseTypeDefaultAreas, caseTypeFields, caseTypeStates, transitions, templates, reminderRules, automationRules, automationExecutions, automationDiagnostics];
     const failed = results.find((result) => result.error);
     if (failed?.error) throw failed.error;
 
@@ -1493,6 +1542,11 @@ export const supabaseSigcRepository: SigcRepository = {
         isPrimary: Boolean(row.is_primary),
         sortOrder: Number(row.sort_order ?? 0)
       }]);
+    }
+    const fieldsByType = new Map<string, CaseTypeFieldDefinition[]>();
+    for (const row of caseTypeFields.data ?? []) {
+      const key = String(row.case_type_id);
+      fieldsByType.set(key, [...(fieldsByType.get(key) ?? []), mapCaseTypeField(row)]);
     }
     const caseTypeMap = new Map((caseTypes.data ?? []).map((row: any) => [row.id, row.name]));
     const stateMap = new Map((states.data ?? []).map((row: any) => [row.id, row]));
@@ -1548,7 +1602,7 @@ export const supabaseSigcRepository: SigcRepository = {
       configuration: operationalCatalogs.configuration,
       areas: (areas.data ?? []).map(mapCatalogItem),
       priorities: (priorities.data ?? []).map(mapCatalogItem),
-      caseTypes: (caseTypes.data ?? []).map((row: any) => ({ ...mapCatalogItem(row), defaultAreas: defaultAreasByType.get(String(row.id)) ?? [] })),
+      caseTypes: (caseTypes.data ?? []).map((row: any) => ({ ...mapCatalogItem(row), defaultAreas: defaultAreasByType.get(String(row.id)) ?? [], fields: fieldsByType.get(String(row.id)) ?? [] })),
       states: (states.data ?? []).map(mapCatalogItem),
       slaPolicies: (slaPolicies.data ?? []).map((row: any) => ({ id: row.id, caseTypeId: row.case_type_id ?? undefined, caseTypeName: row.case_type_id ? caseTypeMap.get(row.case_type_id) ?? 'Tipo de caso' : 'General', name: row.name, durationValue: row.duration_value, durationUnit: row.duration_unit, timezone: row.timezone ?? 'America/Bogota', pauseOnPendingInformation: Boolean(row.pause_on_pending_information), isDefault: Boolean(row.is_default), isActive: Boolean(row.is_active) })),
       holidays: (holidays.data ?? []).map((row: any) => ({ id: row.id, holidayDate: row.holiday_date, name: row.name, isActive: Boolean(row.is_active) })),
@@ -1649,7 +1703,7 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async saveCaseTypeConfiguration(input: SaveCaseTypeConfigurationInput): Promise<string> {
     const client = requireClient();
-    const { data, error } = await client.rpc('save_case_type_configuration_v1', {
+    const { data, error } = await client.rpc('save_case_type_configuration_v2', {
       p_id: input.id || null,
       p_code: input.code,
       p_name: input.name,
@@ -1667,6 +1721,19 @@ export const supabaseSigcRepository: SigcRepository = {
         responsibleMembershipId: area.responsibleMembershipId || null,
         isPrimary: area.isPrimary,
         sortOrder: area.sortOrder
+      })) as unknown as Json,
+      p_fields: input.fields.map((field) => ({
+        fieldKey: field.fieldKey,
+        label: field.label,
+        inputType: field.inputType,
+        placeholder: field.placeholder || null,
+        helpText: field.helpText || null,
+        isRequired: field.isRequired,
+        isPublic: field.isPublic,
+        isInternal: field.isInternal,
+        options: field.options,
+        sortOrder: field.sortOrder,
+        isActive: field.isActive
       })) as unknown as Json
     });
     if (error) throw error;
@@ -2185,7 +2252,7 @@ export const supabaseSigcRepository: SigcRepository = {
 export const supabasePublicSigcRepository: PublicSigcRepository = {
   async getPublicIntakeContext(locator: PublicIntakeLocator): Promise<PublicIntakeContext | null> {
     const client = requireClient();
-    const { data, error } = await client.rpc('get_public_intake_context_v5', {
+    const { data, error } = await client.rpc('get_public_intake_context_v6', {
       p_tenant: locator.tenant?.trim() || null,
       p_hostname: locator.hostname?.trim() || null
     });
@@ -2211,7 +2278,8 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
         confirmationMessage: String(raw.intake?.confirmationMessage ?? 'Hemos recibido tu solicitud correctamente.'),
         allowAttachments: Boolean(raw.intake?.allowAttachments),
         maxFiles: Number(raw.intake?.maxFiles ?? 5),
-        maxFileSizeBytes: Number(raw.intake?.maxFileSizeBytes ?? 26214400)
+        maxFileSizeBytes: Number(raw.intake?.maxFileSizeBytes ?? 26214400),
+        allowAlternateResponseEmail: raw.intake?.allowAlternateResponseEmail !== false
       },
       security: {
         rateLimitPerHour: Number(raw.security?.rateLimitPerHour ?? 20),
@@ -2228,14 +2296,26 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
         id: String(item.id),
         name: String(item.name),
         description: item.description ?? null,
-        slaLabel: String(item.slaLabel ?? 'Sin SLA configurado')
+        slaLabel: String(item.slaLabel ?? 'Sin SLA configurado'),
+        defaultPriorityName: item.defaultPriorityName ?? null,
+        defaultRiskLevel: item.defaultRiskLevel ?? null,
+        defaultAreaName: item.defaultAreaName ?? null,
+        fields: Array.isArray(item.fields) ? item.fields.map(mapCaseTypeField) : [],
+        sla: item.sla ? {
+          id: item.sla.id ? String(item.sla.id) : undefined,
+          name: item.sla.name ? String(item.sla.name) : undefined,
+          durationValue: Number(item.sla.durationValue ?? 0),
+          durationUnit: item.sla.durationUnit ?? 'calendar_days',
+          timezone: String(item.sla.timezone ?? 'America/Bogota'),
+          estimatedDueAt: item.sla.estimatedDueAt ?? null
+        } : null
       })) : []
     };
   },
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const client = requireClient();
-    const { data, error } = await client.rpc('submit_public_case_v5', {
+    const { data, error } = await client.rpc('submit_public_case_v6', {
       p_tenant: input.tenant?.trim() || null,
       p_hostname: input.hostname?.trim() || null,
       p_case_type_id: input.caseTypeId,
@@ -2246,6 +2326,9 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
       p_requester_phone: input.requesterPhone,
       p_subject: input.subject,
       p_description: input.description,
+      p_response_email: input.responseEmail?.trim() || null,
+      p_use_alternate_response_email: Boolean(input.usesAlternateResponseEmail),
+      p_custom_fields: (input.customFields ?? {}) as unknown as Json,
       p_website: input.website ?? null,
       p_attachment_count: input.attachments?.length ?? 0,
       p_privacy_consent: input.privacyConsent,

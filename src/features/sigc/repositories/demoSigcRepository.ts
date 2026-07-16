@@ -435,6 +435,8 @@ function createCaseBase(input: PublicCaseCreateInput | ManualCaseCreateInput, so
     requester: input.requesterName.trim(),
     requesterDocument: input.requesterDocument.trim() || undefined,
     requesterEmail: input.requesterEmail.trim() || undefined,
+    responseEmail: input.usesAlternateResponseEmail ? input.responseEmail?.trim() || undefined : input.requesterEmail.trim() || undefined,
+    usesAlternateResponseEmail: Boolean(input.usesAlternateResponseEmail),
     requesterPhone: input.requesterPhone.trim() || undefined,
     areaId: area?.id,
     area: area?.name ?? 'Sin área',
@@ -452,8 +454,11 @@ function createCaseBase(input: PublicCaseCreateInput | ManualCaseCreateInput, so
     progress: 0,
     updatedAt: openedAt,
     updated: 'Ahora',
-    risk: 'En tiempo',
-    source
+    risk: 'riskLevel' in input && input.riskLevel ? input.riskLevel : 'En tiempo',
+    source,
+    submittedCaseTypeId: source === 'Formulario público' ? caseType.id : undefined,
+    submittedCaseTypeName: source === 'Formulario público' ? caseType.name : undefined,
+    customFields: input.customFields ?? {}
   };
 
   writeCases([created, ...cases]);
@@ -1070,7 +1075,7 @@ export const demoSigcRepository: SigcRepository = {
       configuration: catalogs.configuration,
       areas: catalogs.areas.map((item, index) => ({ id: item.id, code: item.code ?? `AREA_${index + 1}`, name: item.name, description: item.description ?? undefined, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true, parentAreaId: item.parentAreaId ?? undefined, email: item.email ?? undefined })),
       priorities: catalogs.priorities.map((item, index) => ({ id: item.id, code: item.code ?? `PRIORITY_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true })),
-      caseTypes: catalogs.caseTypes.map((item, index) => ({ id: item.id, code: item.code ?? `TYPE_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true, isPublicEnabled: item.isPublicEnabled, isInternalEnabled: item.isInternalEnabled, defaultPriorityId: item.defaultPriorityId ?? undefined, defaultRiskLevel: item.defaultRiskLevel ?? undefined, responseTemplateId: item.responseTemplateId ?? undefined, defaultAreas: item.defaultAreas ?? [] })),
+      caseTypes: catalogs.caseTypes.map((item, index) => ({ id: item.id, code: item.code ?? `TYPE_${index + 1}`, name: item.name, color: item.color ?? undefined, sortOrder: item.sortOrder ?? index * 10, isActive: item.isActive ?? true, isPublicEnabled: item.isPublicEnabled, isInternalEnabled: item.isInternalEnabled, defaultPriorityId: item.defaultPriorityId ?? undefined, defaultRiskLevel: item.defaultRiskLevel ?? undefined, responseTemplateId: item.responseTemplateId ?? undefined, defaultAreas: item.defaultAreas ?? [], fields: item.fields ?? [] })),
       states,
       slaPolicies: catalogs.caseTypes.map((item, index) => ({ id: `demo-sla-${index}`, caseTypeId: item.id, caseTypeName: item.name, name: `SLA ${item.name}`, durationValue: item.name === 'Acción de Tutela' ? 24 : 5, durationUnit: item.name === 'Acción de Tutela' ? 'hours' : 'calendar_days', timezone: 'America/Bogota', pauseOnPendingInformation: true, isDefault: true, isActive: true })),
       holidays: [],
@@ -1455,7 +1460,12 @@ export const demoPublicSigcRepository: PublicSigcRepository = {
         id: item.id,
         name: item.name,
         description: item.description ?? null,
-        slaLabel: item.slaLabel ?? 'Sin SLA configurado'
+        slaLabel: item.slaLabel ?? 'Sin SLA configurado',
+        defaultPriorityName: catalogs.priorities.find((priority) => priority.id === item.defaultPriorityId)?.name ?? null,
+        defaultRiskLevel: item.defaultRiskLevel ?? null,
+        defaultAreaName: item.defaultAreas?.find((area) => area.isPrimary)?.areaName ?? item.defaultAreas?.[0]?.areaName ?? null,
+        fields: item.fields ?? [],
+        sla: item.sla ?? null
       }))
     };
   },

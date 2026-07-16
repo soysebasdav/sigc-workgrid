@@ -46,6 +46,7 @@ import type {
   SaveAdminCatalogInput,
   SaveCaseTypeConfigurationInput,
   SaveCaseTypeDefaultAreaInput,
+  SaveCaseTypeFieldInput,
   SaveAutomationRuleInput,
   SaveEmailTemplateInput,
   SaveHolidayInput,
@@ -312,6 +313,21 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
       sortOrder: area.sortOrder
     }))
   );
+  const [dynamicFields, setDynamicFields] = useState<SaveCaseTypeFieldInput[]>(
+    (item?.fields ?? []).map((field) => ({
+      fieldKey: field.fieldKey,
+      label: field.label,
+      inputType: field.inputType,
+      placeholder: field.placeholder ?? '',
+      helpText: field.helpText ?? '',
+      isRequired: field.isRequired,
+      isPublic: field.isPublic,
+      isInternal: field.isInternal,
+      options: field.options,
+      sortOrder: field.sortOrder,
+      isActive: field.isActive
+    }))
+  );
   const [saving, setSaving] = useState(false);
   const activeAreas = data.areas.filter((area) => area.isActive && area.id !== item?.id);
   const activeMembers = data.members.filter((member) => member.isActive);
@@ -346,6 +362,40 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
     });
   }
 
+  function addDynamicField() {
+    setDynamicFields((current) => [...current, {
+      fieldKey: `campo_${current.length + 1}`,
+      label: `Campo adicional ${current.length + 1}`,
+      inputType: 'text',
+      placeholder: '',
+      helpText: '',
+      isRequired: false,
+      isPublic: Boolean(form.isPublicEnabled),
+      isInternal: Boolean(form.isInternalEnabled),
+      options: [],
+      sortOrder: current.length,
+      isActive: true
+    }]);
+  }
+
+  function updateDynamicField(index: number, patch: Partial<SaveCaseTypeFieldInput>) {
+    setDynamicFields((current) => current.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field));
+  }
+
+  function removeDynamicField(index: number) {
+    setDynamicFields((current) => current.filter((_, fieldIndex) => fieldIndex !== index).map((field, fieldIndex) => ({ ...field, sortOrder: fieldIndex })));
+  }
+
+  function moveDynamicField(index: number, direction: -1 | 1) {
+    setDynamicFields((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next.map((field, fieldIndex) => ({ ...field, sortOrder: fieldIndex }));
+    });
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (kind === 'caseTypes' && !form.isPublicEnabled && !form.isInternalEnabled) {
@@ -355,6 +405,13 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
     if (kind === 'caseTypes' && defaultAreas.length && defaultAreas.filter((row) => row.isPrimary).length !== 1) {
       showToast('Selecciona exactamente un área principal.');
       return;
+    }
+    if (kind === 'caseTypes') {
+      const keys = dynamicFields.map((field) => field.fieldKey.trim().toLowerCase());
+      if (new Set(keys).size !== keys.length) { showToast('Las claves de los campos adicionales no pueden repetirse.'); return; }
+      if (dynamicFields.some((field) => !/^[a-z][a-z0-9_]{1,60}$/.test(field.fieldKey) || !field.label.trim())) { showToast('Revisa la clave y el nombre de los campos adicionales.'); return; }
+      if (dynamicFields.some((field) => !field.isPublic && !field.isInternal)) { showToast('Cada campo adicional debe estar disponible al menos en un canal.'); return; }
+      if (dynamicFields.some((field) => field.inputType === 'select' && !field.options.length)) { showToast('Los campos de lista deben tener al menos una opción.'); return; }
     }
     setSaving(true);
     try {
@@ -372,7 +429,8 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
           defaultPriorityId: form.defaultPriorityId || undefined,
           defaultRiskLevel: form.defaultRiskLevel || undefined,
           responseTemplateId: form.responseTemplateId || undefined,
-          defaultAreas: defaultAreas.map((row, index) => ({ ...row, responsibleMembershipId: row.responsibleMembershipId || undefined, sortOrder: index }))
+          defaultAreas: defaultAreas.map((row, index) => ({ ...row, responsibleMembershipId: row.responsibleMembershipId || undefined, sortOrder: index })),
+          fields: dynamicFields.map((field, index) => ({ ...field, fieldKey: field.fieldKey.trim().toLowerCase(), label: field.label.trim(), sortOrder: index }))
         };
         await sigcService.saveCaseTypeConfiguration(input);
       } else {
@@ -443,6 +501,37 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
                     {!memberOptions.length ? <small>No hay usuarios asociados a esta área. Configúralos en Usuarios y roles.</small> : null}
                   </div>;
                 })}
+              </div>
+            </section>
+            <section className="phase2-modal-section phase3-field-config-section">
+              <div className="phase2-modal-section-head"><div><strong>Campos adicionales por tipo</strong><span>El formulario público e interno se construirán automáticamente con esta configuración.</span></div><button type="button" className="btn btn-white small" onClick={addDynamicField}><Plus size={15} /> Agregar campo</button></div>
+              {!dynamicFields.length ? <div className="phase2-empty-config"><SlidersHorizontal size={20} /><span>Este tipo usa únicamente los campos generales del caso.</span></div> : null}
+              <div className="phase3-field-config-list">
+                {dynamicFields.map((field, index) => (
+                  <article className="phase3-field-config-row" key={`${field.fieldKey}-${index}`}>
+                    <div className="phase3-field-config-main">
+                      <input className="input" value={field.label} onChange={(event) => updateDynamicField(index, { label: event.target.value })} placeholder="Nombre visible" />
+                      <input className="input" value={field.fieldKey} onChange={(event) => updateDynamicField(index, { fieldKey: event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/^_+/, '') })} placeholder="clave_interna" />
+                      <select className="input" value={field.inputType} onChange={(event) => updateDynamicField(index, { inputType: event.target.value as SaveCaseTypeFieldInput['inputType'], options: event.target.value === 'select' ? field.options : [] })}>
+                        <option value="text">Texto</option><option value="textarea">Texto largo</option><option value="number">Número</option><option value="date">Fecha</option><option value="datetime">Fecha y hora</option><option value="email">Correo</option><option value="select">Lista</option><option value="boolean">Sí / No</option>
+                      </select>
+                      <input className="input" value={field.placeholder ?? ''} onChange={(event) => updateDynamicField(index, { placeholder: event.target.value })} placeholder="Texto de ayuda dentro del campo" />
+                    </div>
+                    <input className="input" value={field.helpText ?? ''} onChange={(event) => updateDynamicField(index, { helpText: event.target.value })} placeholder="Explicación opcional para el usuario" />
+                    {field.inputType === 'select' ? <input className="input" value={field.options.map((option) => option.label).join(', ')} onChange={(event) => updateDynamicField(index, { options: event.target.value.split(',').map((value) => value.trim()).filter(Boolean).map((value) => ({ value, label: value })) })} placeholder="Opciones separadas por coma" /> : null}
+                    <div className="phase3-field-config-flags">
+                      <CheckField label="Obligatorio" checked={field.isRequired} onChange={(checked) => updateDynamicField(index, { isRequired: checked })} />
+                      <CheckField label="Público" checked={field.isPublic} onChange={(checked) => updateDynamicField(index, { isPublic: checked })} />
+                      <CheckField label="Interno" checked={field.isInternal} onChange={(checked) => updateDynamicField(index, { isInternal: checked })} />
+                      <CheckField label="Activo" checked={field.isActive} onChange={(checked) => updateDynamicField(index, { isActive: checked })} />
+                    </div>
+                    <div className="phase3-field-config-actions">
+                      <button type="button" className="btn btn-white icon-only" disabled={index === 0} onClick={() => moveDynamicField(index, -1)} title="Subir"><ArrowUp size={15} /></button>
+                      <button type="button" className="btn btn-white icon-only" disabled={index === dynamicFields.length - 1} onClick={() => moveDynamicField(index, 1)} title="Bajar"><ArrowDown size={15} /></button>
+                      <button type="button" className="btn btn-white icon-only danger-icon" onClick={() => removeDynamicField(index)} title="Eliminar"><Trash2 size={15} /></button>
+                    </div>
+                  </article>
+                ))}
               </div>
             </section>
           </>

@@ -22,6 +22,7 @@ type CaseRow = {
   sequence_year: number;
   sequence_number: number;
   case_type_id: string | null;
+  submitted_case_type_id: string | null;
   priority_id: string | null;
   state_id: string | null;
   sla_policy_id: string | null;
@@ -31,12 +32,15 @@ type CaseRow = {
   requester_company: string | null;
   requester_document: string | null;
   requester_email: string | null;
+  response_email: string | null;
+  uses_alternate_response_email: boolean;
   requester_phone: string | null;
   subject: string;
   description: string;
   source: string;
   risk_level: string | null;
   classification_observations: string | null;
+  custom_fields: Json;
   classified_at: string | null;
   classified_by: string | null;
   idempotency_key: string | null;
@@ -210,6 +214,25 @@ export interface Database {
         updated_at: string;
       }>;
 
+      case_type_fields: TableDef<{
+        id: string;
+        organization_id: string;
+        case_type_id: string;
+        field_key: string;
+        label: string;
+        input_type: 'text' | 'textarea' | 'number' | 'date' | 'datetime' | 'email' | 'select' | 'boolean';
+        placeholder: string | null;
+        help_text: string | null;
+        is_required: boolean;
+        is_public: boolean;
+        is_internal: boolean;
+        options: Json;
+        sort_order: number;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+      }>;
+
       case_states: TableDef<OrganizationScoped & {
         code: string;
         name: string;
@@ -259,6 +282,7 @@ export interface Database {
 
       cases: TableDef<CaseRow, CaseInsert, CaseUpdate, [
         { foreignKeyName: 'cases_case_type_id_fkey'; columns: ['case_type_id']; isOneToOne: false; referencedRelation: 'case_types'; referencedColumns: ['id'] },
+        { foreignKeyName: 'cases_submitted_case_type_id_fkey'; columns: ['submitted_case_type_id']; isOneToOne: false; referencedRelation: 'case_types'; referencedColumns: ['id'] },
         { foreignKeyName: 'cases_priority_id_fkey'; columns: ['priority_id']; isOneToOne: false; referencedRelation: 'priorities'; referencedColumns: ['id'] },
         { foreignKeyName: 'cases_state_id_fkey'; columns: ['state_id']; isOneToOne: false; referencedRelation: 'case_states'; referencedColumns: ['id'] },
         { foreignKeyName: 'cases_primary_area_id_fkey'; columns: ['primary_area_id']; isOneToOne: false; referencedRelation: 'areas'; referencedColumns: ['id'] },
@@ -420,6 +444,8 @@ export interface Database {
         organization_id: string;
         case_id: string;
         requester_email: string | null;
+        response_email: string | null;
+        consent_payload: Json;
         consented_at: string;
         notice_text: string;
         policy_url: string | null;
@@ -1002,6 +1028,47 @@ export interface Database {
       create_report_export_job_v3: { Args: { p_format: string; p_from: string; p_to: string; p_filters?: Json }; Returns: Json };
       get_report_export_page_v3: { Args: { p_job_id: string; p_page: number; p_page_size: number }; Returns: Json };
       complete_report_export_job_v3: { Args: { p_job_id: string; p_status: string; p_error_message?: string | null }; Returns: undefined };
+
+      orkesta_calculate_due_at_v1: { Args: { p_organization_id: string; p_started_at: string; p_duration_value: number; p_duration_unit: string; p_timezone?: string }; Returns: string | null };
+      validate_case_custom_fields_v1: { Args: { p_organization_id: string; p_case_type_id: string; p_channel: string; p_values?: Json }; Returns: Json };
+      save_case_type_fields_v1: { Args: { p_case_type_id: string; p_fields?: Json }; Returns: number };
+      save_case_type_configuration_v2: {
+        Args: {
+          p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null;
+          p_color?: string | null; p_sort_order?: number; p_is_active?: boolean; p_is_public_enabled?: boolean;
+          p_is_internal_enabled?: boolean; p_default_priority_id?: string | null; p_default_risk_level?: string | null;
+          p_response_template_id?: string | null; p_default_areas?: Json; p_fields?: Json;
+        };
+        Returns: string;
+      };
+      get_operational_catalogs_v2: { Args: Record<PropertyKey, never>; Returns: Json };
+      get_public_intake_context_v6: { Args: { p_tenant?: string | null; p_hostname?: string | null }; Returns: Json | null };
+      submit_public_case_v6: {
+        Args: {
+          p_tenant: string | null; p_hostname: string | null; p_case_type_id: string; p_requester_name: string;
+          p_requester_company: string; p_requester_document: string; p_requester_email: string; p_requester_phone: string;
+          p_subject: string; p_description: string; p_response_email?: string | null; p_use_alternate_response_email?: boolean;
+          p_custom_fields?: Json; p_website?: string | null; p_attachment_count?: number; p_privacy_consent?: boolean;
+          p_challenge_id?: string | null; p_challenge_answer?: string | null;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null; upload_token: string | null; upload_path_prefix: string | null; upload_expires_at: string | null; max_files: number; max_file_size_bytes: number }>;
+      };
+      create_internal_case_v3: {
+        Args: {
+          p_idempotency_key: string; p_case_type_id: string; p_priority_id: string; p_requester_name: string;
+          p_requester_company: string; p_requester_document: string; p_requester_email: string; p_requester_phone: string;
+          p_subject: string; p_description: string; p_risk_level?: string | null; p_assignments?: Json;
+          p_response_email?: string | null; p_use_alternate_response_email?: boolean; p_custom_fields?: Json;
+        };
+        Returns: Array<{ case_id: string; radicado: string; due_at: string | null }>;
+      };
+      classify_case_v3: {
+        Args: {
+          p_case_id: string; p_case_type_id: string; p_priority_id: string; p_risk_level: string;
+          p_observations?: string | null; p_due_at?: string | null; p_assignments?: Json; p_custom_fields?: Json;
+        };
+        Returns: Array<{ case_id: string; state_id: string; state_name: string; due_at: string | null }>;
+      };
 
       get_operational_catalogs_v1: { Args: Record<PropertyKey, never>; Returns: Json };
       save_admin_catalog_v3: { Args: { p_kind: string; p_id?: string | null; p_code?: string | null; p_name?: string | null; p_description?: string | null; p_color?: string | null; p_sort_order?: number; p_is_initial?: boolean; p_is_terminal?: boolean; p_is_active?: boolean; p_parent_area_id?: string | null; p_email?: string | null; p_manager_membership_id?: string | null; p_is_public_enabled?: boolean | null; p_is_internal_enabled?: boolean | null; p_default_priority_id?: string | null; p_default_risk_level?: string | null; p_response_template_id?: string | null }; Returns: undefined };

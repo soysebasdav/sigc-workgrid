@@ -381,6 +381,8 @@ export function CaseDetailPage() {
   const { data: deliveries } = useCaseDeliveries(resolvedCaseId);
   const { data: reminders } = useCaseReminders(resolvedCaseId);
   const { data: members } = useSigcMembers();
+  const { data: detailCatalogs } = useSigcCatalogs();
+  const activeCaseTypeFields = detailCatalogs?.caseTypes.find((type) => type.id === item?.typeId)?.fields ?? [];
   const [detailModal, setDetailModal] = useState<'classify' | 'assign' | 'state' | 'comment' | 'subtask' | 'document' | 'sla' | 'reminder' | 'review' | 'delivery' | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<SigcAssignment | null>(null);
   const [deactivatingAssignment, setDeactivatingAssignment] = useState<SigcAssignment | null>(null);
@@ -426,7 +428,7 @@ export function CaseDetailPage() {
         <div>
           <div className="chip-row"><Badge tone="tone-dark">{item.radicado}</Badge><Badge tone={toneFromCatalog(item.typeColor, item.type, 'tone-purple')} color={item.typeColor}>{item.type}</Badge><Badge tone={toneFromCatalog(item.stateColor, item.state, stateTones[item.state] ?? 'tone-slate')} color={item.stateColor}>{item.state}</Badge><Badge tone={toneFromCatalog(item.priorityColor, item.priority, priorityTones[item.priority] ?? 'tone-slate')} color={item.priorityColor}>{item.priority}</Badge><Badge tone="tone-slate"><SemDot color={item.sem} /> {dueStatusLabel(item)}</Badge></div>
           <h2>{item.subject}</h2>
-          <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo: {item.requesterEmail}</> : null}</p>
+          <p>Solicitante: <strong>{item.requester}</strong> · {item.company}{item.requesterEmail ? <> · Correo registrado: {item.requesterEmail}</> : null}{item.responseEmail && item.responseEmail !== item.requesterEmail ? <> · Respuesta: {item.responseEmail}</> : null}</p>
         </div>
         <div className="progress-panel">
           <div className="bar-caption"><strong>Avance general por subtareas</strong><span>{item.progress}%</span></div>
@@ -527,9 +529,15 @@ export function CaseDetailPage() {
           <CardBlock title="Datos de clasificación" icon={<FileText />}>
             <dl className="definition-list">
               {[
-                ['Tipo de caso', item.type], ['Área principal', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', item.risk], ['Origen', item.source], ['Clasificado', item.classifiedAt ? new Date(item.classifiedAt).toLocaleString('es-CO') : 'Pendiente'], ['Documento', item.requesterDocument ?? 'No registrado'], ['Teléfono', item.requesterPhone ?? 'No registrado']
+                ['Tipo de caso clasificado', item.type], ['Tipo informado', item.submittedCaseTypeName ?? (item.source === 'public' ? 'No disponible' : 'No aplica')], ['Área principal', item.area], ['Responsable principal', item.owner], ['SLA', item.sla], ['Fecha límite', item.due], ['Nivel de riesgo', item.risk], ['Origen', item.source], ['Clasificado', item.classifiedAt ? new Date(item.classifiedAt).toLocaleString('es-CO') : 'Pendiente'], ['Correo de respuesta', item.responseEmail ?? item.requesterEmail ?? 'No registrado'], ['Documento', item.requesterDocument ?? 'No registrado'], ['Teléfono', item.requesterPhone ?? 'No registrado']
               ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
               {item.classificationObservations ? <div><dt>Observaciones de clasificación</dt><dd>{item.classificationObservations}</dd></div> : null}
+              {activeCaseTypeFields.map((field) => {
+                const value = item.customFields?.[field.fieldKey];
+                if (value == null || value === '') return null;
+                const displayValue = typeof value === 'boolean' ? (value ? 'Sí' : 'No') : String(value);
+                return <div key={field.fieldKey}><dt>{field.label}</dt><dd>{displayValue}</dd></div>;
+              })}
             </dl>
           </CardBlock>
           <CardBlock title="Descripción" icon={<MessageCircle />}><p className="case-description">{item.description || 'Sin descripción registrada.'}</p></CardBlock>
@@ -546,7 +554,7 @@ export function CaseDetailPage() {
       {detailModal === 'sla' && can(PERMISSIONS.caseOverrideSla) ? <SlaOverrideModal caseId={resolvedCaseId!} currentDueAt={item.dueAt} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'reminder' && can(PERMISSIONS.caseSendReminder) ? <ManualReminderModal caseId={resolvedCaseId!} members={members} assignments={assignments} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {detailModal === 'review' && can(PERMISSIONS.caseReview) ? <SubmitReviewModal caseId={resolvedCaseId!} members={members} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
-      {detailModal === 'delivery' && can(PERMISSIONS.caseRegisterDelivery) ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
+      {detailModal === 'delivery' && can(PERMISSIONS.caseRegisterDelivery) ? <DeliveryModal caseId={resolvedCaseId!} defaultRecipient={item.responseEmail ?? item.requesterEmail ?? item.requester} onClose={() => setDetailModal(null)} onSaved={(message) => { setDetailModal(null); showToast(message); }} /> : null}
       {reviewDecision && can(PERMISSIONS.caseApprove) ? <ReviewDecisionModal review={reviewDecision.review} decision={reviewDecision.decision} onClose={() => setReviewDecision(null)} onSaved={(message) => { setReviewDecision(null); showToast(message); }} /> : null}
       {historyDocument ? <DocumentHistoryModal document={historyDocument} canManageRetention={can(PERMISSIONS.documentUpload)} onClose={() => setHistoryDocument(null)} onSaved={(message) => showToast(message)} /> : null}
       {versionDocument && can(PERMISSIONS.documentUpload) ? <DocumentVersionModal document={versionDocument} onClose={() => setVersionDocument(null)} onSaved={(message) => { setVersionDocument(null); showToast(message); }} /> : null}

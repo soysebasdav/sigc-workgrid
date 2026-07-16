@@ -11,6 +11,8 @@ export interface SigcCase {
   radicado: string;
   organizationId?: string;
   typeId?: string;
+  submittedCaseTypeId?: string;
+  submittedCaseTypeName?: string;
   type: string;
   typeColor?: string | null;
   subject: string;
@@ -19,6 +21,8 @@ export interface SigcCase {
   requester: string;
   requesterDocument?: string;
   requesterEmail?: string;
+  responseEmail?: string;
+  usesAlternateResponseEmail?: boolean;
   requesterPhone?: string;
   areaId?: string;
   area: string;
@@ -46,6 +50,8 @@ export interface SigcCase {
   source: string;
   classificationObservations?: string;
   classifiedAt?: string | null;
+  customFields?: Record<string, unknown>;
+  customFieldDefinitions?: CaseTypeFieldDefinition[];
 }
 
 export interface SigcCaseFilters {
@@ -70,11 +76,47 @@ export interface SigcCasePage {
   pageSize: number;
 }
 
+export type CaseTypeFieldInput = 'text' | 'textarea' | 'number' | 'date' | 'datetime' | 'email' | 'select' | 'boolean';
+
+export interface CaseTypeFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface CaseTypeFieldDefinition {
+  id?: string;
+  fieldKey: string;
+  label: string;
+  inputType: CaseTypeFieldInput;
+  placeholder?: string | null;
+  helpText?: string | null;
+  isRequired: boolean;
+  isPublic: boolean;
+  isInternal: boolean;
+  options: CaseTypeFieldOption[];
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface CaseTypeSlaPreview {
+  id?: string;
+  name?: string;
+  durationValue: number;
+  durationUnit: 'hours' | 'calendar_days' | 'business_days';
+  timezone: string;
+  estimatedDueAt?: string | null;
+}
+
 export interface PublicCaseTypeOption {
   id: string;
   name: string;
   description?: string | null;
   slaLabel: string;
+  defaultPriorityName?: string | null;
+  defaultRiskLevel?: string | null;
+  defaultAreaName?: string | null;
+  fields: CaseTypeFieldDefinition[];
+  sla?: CaseTypeSlaPreview | null;
 }
 
 export interface PublicIntakeBranding {
@@ -95,6 +137,7 @@ export interface PublicIntakeSettings {
   allowAttachments: boolean;
   maxFiles: number;
   maxFileSizeBytes: number;
+  allowAlternateResponseEmail?: boolean;
 }
 
 export interface PublicIntakeChallenge {
@@ -137,6 +180,8 @@ export interface PublicCaseCreateInput extends PublicIntakeLocator {
   requesterCompany: string;
   requesterDocument: string;
   requesterEmail: string;
+  responseEmail?: string;
+  usesAlternateResponseEmail?: boolean;
   requesterPhone: string;
   subject: string;
   description: string;
@@ -145,6 +190,7 @@ export interface PublicCaseCreateInput extends PublicIntakeLocator {
   challengeId?: string;
   challengeAnswer?: string;
   attachments?: File[];
+  customFields?: Record<string, unknown>;
 }
 
 export interface PublicCaseSubmissionResult extends CreatedCaseResult {
@@ -170,10 +216,13 @@ export interface ManualCaseCreateInput {
   requesterCompany: string;
   requesterDocument: string;
   requesterEmail: string;
+  responseEmail?: string;
+  usesAlternateResponseEmail?: boolean;
   requesterPhone: string;
   subject: string;
   description: string;
   riskLevel?: string;
+  customFields?: Record<string, unknown>;
   assignments: ManualCaseAssignmentInput[];
 }
 
@@ -239,6 +288,7 @@ export interface ClassifyCaseInput {
   observations?: string;
   dueAt?: string;
   assignments: Array<CaseAssignmentInput & { caseId?: string }>;
+  customFields?: Record<string, unknown>;
 }
 
 export interface UpdateCaseAssignmentInput {
@@ -322,6 +372,9 @@ export interface SigcCatalogOption {
   responseTemplateId?: string | null;
   slaPolicyId?: string | null;
   slaLabel?: string;
+  sla?: CaseTypeSlaPreview | null;
+  workflowStateCount?: number;
+  fields?: CaseTypeFieldDefinition[];
   defaultAreas?: SigcDefaultAreaOption[];
 }
 
@@ -715,6 +768,7 @@ export interface AdminCatalogItem {
   defaultRiskLevel?: string;
   responseTemplateId?: string;
   defaultAreas?: SigcDefaultAreaOption[];
+  fields?: CaseTypeFieldDefinition[];
 }
 
 export interface AdminSlaPolicy {
@@ -1086,8 +1140,23 @@ export interface SaveCaseTypeDefaultAreaInput {
   sortOrder: number;
 }
 
+export interface SaveCaseTypeFieldInput {
+  fieldKey: string;
+  label: string;
+  inputType: CaseTypeFieldInput;
+  placeholder?: string;
+  helpText?: string;
+  isRequired: boolean;
+  isPublic: boolean;
+  isInternal: boolean;
+  options: CaseTypeFieldOption[];
+  sortOrder: number;
+  isActive: boolean;
+}
+
 export interface SaveCaseTypeConfigurationInput extends Omit<SaveAdminCatalogInput, 'kind' | 'isInitial' | 'isTerminal' | 'parentAreaId' | 'email' | 'managerMembershipId'> {
   defaultAreas: SaveCaseTypeDefaultAreaInput[];
+  fields: SaveCaseTypeFieldInput[];
 }
 
 export interface SaveMemberAreaLinkInput {
