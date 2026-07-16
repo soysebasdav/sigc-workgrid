@@ -3,6 +3,10 @@ import { Navigate, RouterProvider, createBrowserRouter, isRouteErrorResponse, us
 import { AppProvider } from './app/AppProvider';
 import { PermissionRoute } from './app/PermissionRoute';
 import { AuthorizationProvider, useAuthorization } from './features/authz/AuthorizationProvider';
+import { PlatformAccessProvider, usePlatformAccess } from './features/platform/PlatformAccessProvider';
+import { PlatformAdminRoute } from './features/platform/PlatformAdminRoute';
+import { PlatformAdminShell, PlatformAuditPage, PlatformBackupsPage, PlatformDashboardPage, PlatformOrganizationDetailPage, PlatformOrganizationsPage, PlatformOperationsPage, PlatformTicketsPage, PlatformUsersPage } from './features/platform/PlatformAdminPages';
+import { SupportPage } from './features/support/SupportPage';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from './features/authz/permissions';
 import { AgendaPage } from './features/agenda/AgendaPage';
 import { AuditPage } from './features/audit/AuditPage';
@@ -67,7 +71,9 @@ function RouteErrorFallback() {
 
 function HomeRedirect() {
   const { isLoading, can, canAny } = useAuthorization();
-  if (isLoading) return <main className="login-workgrid"><section className="login-card card"><strong>Resolviendo acceso...</strong></section></main>;
+  const { isPlatformAdmin, isLoading: platformLoading } = usePlatformAccess();
+  if (isLoading || platformLoading) return <main className="login-workgrid"><section className="login-card card"><strong>Resolviendo acceso...</strong></section></main>;
+  if (isPlatformAdmin) return <Navigate to="/superadmin" replace />;
   if (can(PERMISSIONS.clientPortal)) return <Navigate to="/portal" replace />;
   if (can(PERMISSIONS.reportsView)) return <Navigate to="/dashboard" replace />;
   if (canAny(CASE_READ_PERMISSIONS)) return <Navigate to="/cases" replace />;
@@ -90,6 +96,24 @@ const router = createBrowserRouter([
   { path: '/casos/:tenant', element: <PublicFormPage /> },
   { path: '/invite/:token', element: <LazyRoute><InvitationPage /></LazyRoute> },
   { path: '/public-form', element: <Navigate to="/radicar" replace /> },
+  {
+    element: <PlatformAdminRoute />,
+    children: [
+      {
+        element: <PlatformAdminShell />,
+        children: [
+          { path: 'superadmin', element: <PlatformDashboardPage /> },
+          { path: 'superadmin/organizations', element: <PlatformOrganizationsPage /> },
+          { path: 'superadmin/organizations/:organizationId', element: <PlatformOrganizationDetailPage /> },
+          { path: 'superadmin/users', element: <PlatformUsersPage /> },
+          { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
+          { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
+          { path: 'superadmin/audit', element: <PlatformAuditPage /> },
+          { path: 'superadmin/operations', element: <PlatformOperationsPage /> }
+        ]
+      }
+    ]
+  },
   {
     element: <SigcShell />,
     errorElement: <RouteErrorFallback />,
@@ -137,6 +161,7 @@ const router = createBrowserRouter([
         children: [{ path: 'workspace', element: <LazyRoute><SaasManagementPage /></LazyRoute> }]
       },
       { path: 'notifications', element: <NotificationsPage /> },
+      { path: 'support', element: <SupportPage /> },
       { path: 'profile', element: <ProfilePage /> },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.adminManageUsers]} />,
@@ -159,10 +184,12 @@ export default function App() {
   return (
     <SigcErrorBoundary>
       <AppProvider>
-        <AuthorizationProvider>
-          <ClientObservability />
-          <RouterProvider router={router} />
-        </AuthorizationProvider>
+        <PlatformAccessProvider>
+          <AuthorizationProvider>
+            <ClientObservability />
+            <RouterProvider router={router} />
+          </AuthorizationProvider>
+        </PlatformAccessProvider>
       </AppProvider>
     </SigcErrorBoundary>
   );

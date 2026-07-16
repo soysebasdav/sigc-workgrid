@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../app/AppProvider';
 import { useAuthorization } from '../authz/AuthorizationProvider';
+import { usePlatformAccess } from '../platform/PlatformAccessProvider';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from '../authz/permissions';
 import type { SigcAssignment, SigcCase, SigcCaseFilters, SigcDocument, SigcSubtask, SigcCaseReview, WorkflowBoardCard, WorkflowBoardSnapshot } from './domain/types';
 import { AssignCaseModal, ChangeCaseStateModal, ClassificationModal, DeactivateAssignmentModal, ManualCaseForm, PublicCaseForm } from './components/Phase2Forms';
@@ -976,6 +977,7 @@ export function SimpleLegacyPage({ title, description }: { title: string; descri
 function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
   const { currentUser, unreadNotifications } = useApp();
   const { can, canAny, canAll, roleName } = useAuthorization();
+  const { isPlatformAdmin } = usePlatformAccess();
   const canViewReports = can(PERMISSIONS.reportsView);
   const { data: sidebarSummary } = useSigcSidebarSummary(canViewReports);
   const { context } = useSaasTheme();
@@ -1010,6 +1012,7 @@ function SidebarContent({ closeMobile }: { closeMobile: () => void }) {
             </NavLink>
           );
         })}
+        {isPlatformAdmin ? <NavLink to="/superadmin" onClick={closeMobile} className="nav-item platform-entry"><ShieldCheck size={17} /><span>Super Admin</span></NavLink> : null}
       </nav>
       {canViewReports ? <div className="sidebar-compliance card">
         <strong>Cumplimiento del SLA</strong>

@@ -16,6 +16,7 @@ import {
   KanbanSquare,
   Layers3,
   LayoutDashboard,
+  LifeBuoy,
   ListChecks,
   Mail,
   Settings,
@@ -50,6 +51,7 @@ export const navItems: SigcNavItem[] = [
   { to: '/quality', label: 'Calidad y producción', icon: HeartPulse, allOf: [PERMISSIONS.qualityView] },
   { to: '/workspace', label: 'Espacio SaaS', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/notifications', label: 'Notificaciones', icon: BellRing },
+  { to: '/support', label: 'Ayuda y soporte', icon: LifeBuoy },
   { to: '/users', label: 'Usuarios', icon: Users, allOf: [PERMISSIONS.adminManageUsers] },
   { to: '/settings', label: 'Configuración', icon: Settings, allOf: [PERMISSIONS.adminManageConfiguration] },
   { to: '/admin', label: 'Administración SIGC', icon: Settings, allOf: [PERMISSIONS.adminManageConfiguration] }
