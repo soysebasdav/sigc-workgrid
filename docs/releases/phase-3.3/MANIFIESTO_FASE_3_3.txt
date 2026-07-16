@@ -1,0 +1,26 @@
+MANIFIESTO FASE 3.3
+
+NUEVO
+- migrations/202607160006_phase33_reliability_compliance.sql
+- migrations/VERIFICACION_FASE_3_3.sql
+- src/features/platform/Phase33ReliabilityPages.tsx
+- function-zips/platform-scheduler-fase3_3.zip
+- function-zips/process-organization-backup-fase3_3.zip
+- function-zips/process-organization-restore-fase3_3.zip
+- LEEME_FASE_3_3.txt
+- CAMBIOS_FASE_3_3.txt
+- PRUEBAS_FASE_3_3.txt
+- LIMITACIONES_FASE_3_3.txt
+- VALIDACION_TECNICA_FASE_3_3.txt
+
+MODIFICADO
+- src/App.tsx
+- src/index.css
+- src/features/authz/permissions.ts
+- src/features/sigc/ui.ts
+- src/features/platform/PlatformAdminPages.tsx
+- src/features/platform/platformService.ts
+- src/features/platform/types.ts
+- supabase/functions/platform-scheduler/index.ts
+- supabase/functions/process-organization-backup/index.ts
+- supabase/functions/process-organization-restore/index.ts

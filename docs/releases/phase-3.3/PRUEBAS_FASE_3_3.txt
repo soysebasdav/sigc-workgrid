@@ -1,0 +1,51 @@
+MATRIZ MÍNIMA DE PRUEBAS FASE 3.3
+
+1. Migración y permisos
+- Ejecutar migración sin errores.
+- VERIFICACION_FASE_3_3 debe mostrar 14/14 tablas, 12/12 permisos globales y 4/4 organizacionales.
+
+2. Scheduler
+- Probar platform-scheduler manualmente.
+- Debe responder 200, ok:true y un objeto reliability.
+- Confirmar nuevas filas en platform_health_snapshots y platform_capacity_snapshots.
+
+3. Salud y estado público
+- Abrir /superadmin/reliability.
+- Abrir /status sin iniciar sesión.
+- Programar un mantenimiento y confirmar que aparece en /status.
+
+4. Incidentes
+- Crear incidente interno.
+- Crear incidente público.
+- Agregar actualización, cambiar a monitoring y resolver.
+- Confirmar auditoría y visibilidad pública.
+
+5. Continuidad
+- Editar RPO/RTO de una organización.
+- Crear backup manual.
+- Ejecutar verificación de metadata desde el scheduler o RPC.
+- Confirmar resultado passed/warning/failed.
+
+6. Privacidad
+- Crear solicitud desde /privacy.
+- Consultarla y gestionarla desde /superadmin/privacy.
+- Verificar vencimiento, decisión, estado y auditoría.
+
+7. Retención
+- Abrir /superadmin/governance.
+- Ejecutar simulación.
+- Confirmar que devuelve conteos y no elimina registros.
+
+8. Seguridad y capacidad
+- Confirmar puntuación y hallazgos.
+- Resolver un hallazgo con nota.
+- Revisar capacidad por organización.
+
+9. Región
+- Cambiar timezone, moneda y formato.
+- Validar en /regional y /superadmin/governance.
+
+10. Backup y restore
+- Crear un backup posterior a la Fase 3.3.
+- Confirmar que el manifiesto incluye organization_continuity_policies, privacy_requests, organization_retention_policies y organization_regional_settings.
+- Realizar primero validación de restauración; no ejecutar replace en producción durante la prueba inicial.

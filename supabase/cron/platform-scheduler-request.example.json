@@ -1,0 +1,9 @@
+{
+  "method": "POST",
+  "url": "https://<PROJECT_REF>.supabase.co/functions/v1/platform-scheduler",
+  "headers": {
+    "content-type": "application/json",
+    "x-cron-secret": "<PLATFORM_CRON_SECRET>"
+  },
+  "body": {}
+}

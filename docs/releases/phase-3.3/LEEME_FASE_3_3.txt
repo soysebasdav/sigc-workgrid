@@ -1,0 +1,60 @@
+ORKESTA / SIGC — FASE 3.3
+Escala, continuidad, observabilidad, privacidad y cumplimiento
+
+ALCANCE
+- Centro de salud y disponibilidad de plataforma.
+- Componentes operativos, incidentes y mantenimientos.
+- Página pública de estado: /status.
+- Continuidad por organización con RPO, RTO y verificaciones de backup.
+- Solicitudes de privacidad y derechos de titulares.
+- Políticas de retención con simulación segura, sin borrado automático.
+- Capacidad agregada y consumo por organización.
+- Postura de seguridad y hallazgos automatizados.
+- Configuración regional, moneda, zona horaria y base de internacionalización.
+- Auditoría sobre las nuevas entidades.
+
+REQUISITOS
+1. Fases 1, 2, 3.1 y 3.2 instaladas.
+2. Las cinco Edge Functions de la Fase 3.2 ya desplegadas.
+3. Cron orkesta-platform-scheduler activo cada hora.
+4. Backup previo de Supabase recomendado.
+
+INSTALACIÓN EXACTA
+1. Ejecutar en Supabase SQL Editor:
+   migrations/202607160006_phase33_reliability_compliance.sql
+2. Ejecutar:
+   migrations/VERIFICACION_FASE_3_3.sql
+3. Reemplazar la carpeta src del repositorio por la carpeta src entregada.
+4. Hacer commit y push a GitHub; Render desplegará la interfaz.
+5. Actualizar tres Edge Functions existentes usando los ZIP incluidos:
+   - platform-scheduler-fase3_3.zip
+     Nombre: platform-scheduler
+     Verify JWT: DESACTIVADO
+   - process-organization-backup-fase3_3.zip
+     Nombre: process-organization-backup
+     Verify JWT: ACTIVADO
+   - process-organization-restore-fase3_3.zip
+     Nombre: process-organization-restore
+     Verify JWT: ACTIVADO
+6. No crear nuevas Edge Functions.
+7. No crear otro Cron ni otro secret.
+8. Probar platform-scheduler manualmente. La respuesta debe incluir:
+   "reliability": { "healthScore": ..., "status": ... }
+
+RUTAS NUEVAS DEL SUPER ADMIN
+- /superadmin/reliability
+- /superadmin/incidents
+- /superadmin/privacy
+- /superadmin/governance
+- /superadmin/capacity
+
+RUTAS ORGANIZACIONALES Y PÚBLICAS
+- /privacy
+- /regional
+- /status
+
+NOTAS IMPORTANTES
+- La simulación de retención NO elimina información.
+- La verificación automática de backup comprueba metadatos, manifiesto, checksum registrado y existencia del objeto en Storage. No sustituye una restauración completa de prueba.
+- La salud de Render, red externa o infraestructura de Supabase no se consulta mediante APIs del proveedor en esta fase; el panel se basa en telemetría interna de Orkesta.
+- La configuración regional prepara i18n, pero no traduce automáticamente todos los textos existentes.

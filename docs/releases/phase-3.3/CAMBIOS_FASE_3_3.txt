@@ -1,0 +1,21 @@
+CAMBIOS FASE 3.3
+
+BASE DE DATOS
+- 14 tablas nuevas de salud, incidentes, continuidad, privacidad, retención, capacidad, seguridad y región.
+- 26 funciones SQL/RPC nuevas.
+- 12 permisos globales y 4 permisos organizacionales.
+- RLS y auditoría para las nuevas entidades.
+- Scheduler de Fase 3.3 para capturas de salud/capacidad, verificación de backups, alertas de seguridad y vencimientos de privacidad.
+
+FRONTEND
+- Nuevo módulo Phase33ReliabilityPages.tsx.
+- Cinco vistas nuevas del Super Admin.
+- Portal organizacional de privacidad.
+- Configuración regional organizacional.
+- Página pública de estado.
+- Navegación, rutas, permisos, tipos y servicio actualizados.
+
+EDGE FUNCTIONS
+- platform-scheduler actualizado para ejecutar platform_phase33_scheduler_tick_v33.
+- backup actualizado para incluir configuración y datos organizacionales de Fase 3.3.
+- restore actualizado para recuperar entidades organizacionales compatibles de Fase 3.3.

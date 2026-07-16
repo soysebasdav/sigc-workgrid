@@ -1,0 +1,9 @@
+LIMITACIONES Y ALCANCE CONTROLADO — FASE 3.3
+
+1. La disponibilidad se calcula con telemetría interna de Orkesta. Para incorporar métricas reales de Render, Supabase, DNS o proveedores externos se requieren APIs y credenciales de cada proveedor.
+2. La verificación automática de backup es de integridad lógica/metadata. Una prueba completa de recuperación requiere restaurar en un proyecto o ambiente aislado.
+3. La retención funciona en modo preview. No se habilita borrado automático para evitar pérdida de información sin aprobación jurídica y operativa.
+4. La configuración regional no equivale a traducción completa de la aplicación.
+5. RPO y RTO son objetivos configurables; no constituyen por sí mismos una garantía contractual.
+6. Las solicitudes de privacidad deben adaptarse a la política jurídica, plazos y legislación aplicable a cada organización.
+7. La postura de seguridad es orientativa y no sustituye una auditoría, pentest o certificación independiente.

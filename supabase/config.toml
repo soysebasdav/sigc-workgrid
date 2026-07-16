@@ -1,0 +1,16 @@
+# Configuración por Edge Function. Se conserva en GitHub; no contiene secretos.
+
+[functions.orkesta-public-api]
+verify_jwt = false
+
+[functions.platform-scheduler]
+verify_jwt = false
+
+[functions.platform-integration-worker]
+verify_jwt = true
+
+[functions.process-organization-backup]
+verify_jwt = true
+
+[functions.process-organization-restore]
+verify_jwt = true
