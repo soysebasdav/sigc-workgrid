@@ -25,7 +25,15 @@ export const PERMISSIONS = {
   saasManageWorkspace: 'saas.manage_workspace',
   clientPortal: 'client.portal',
   qualityView: 'quality.view',
-  qualityRun: 'quality.run'
+  qualityRun: 'quality.run',
+  integrationsView: 'integrations.view',
+  integrationsManage: 'integrations.manage',
+  integrationsApiManage: 'integrations.api.manage',
+  integrationsWebhookManage: 'integrations.webhook.manage',
+  integrationsDomainManage: 'integrations.domain.manage',
+  integrationsIdentityManage: 'integrations.identity.manage',
+  integrationsExportsManage: 'integrations.exports.manage',
+  knowledgeView: 'knowledge.view'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

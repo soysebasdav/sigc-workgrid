@@ -15,6 +15,14 @@ import {
   PlatformPlansPage
 } from './features/platform/Phase31CommercialPages';
 import {
+  KnowledgeArticlePage,
+  KnowledgeCenterPage,
+  OrganizationIntegrationsPage,
+  PlatformIntegrationsPage,
+  PlatformKnowledgePage,
+  PlatformOrganizationIntegrationsPage
+} from './features/platform/Phase32IntegrationPages';
+import {
   PlatformExplorerPage,
   PlatformRecoveryPage,
   PlatformSchedulerPage,
@@ -124,6 +132,9 @@ const router = createBrowserRouter([
           { path: 'superadmin/plans', element: <PlatformPlansPage /> },
           { path: 'superadmin/billing', element: <PlatformBillingPage /> },
           { path: 'superadmin/onboarding', element: <PlatformOnboardingPage /> },
+          { path: 'superadmin/integrations', element: <PlatformIntegrationsPage /> },
+          { path: 'superadmin/integrations/:organizationId', element: <PlatformOrganizationIntegrationsPage /> },
+          { path: 'superadmin/knowledge', element: <PlatformKnowledgePage /> },
           { path: 'superadmin/users', element: <PlatformUsersPage /> },
           { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
           { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
@@ -188,6 +199,12 @@ const router = createBrowserRouter([
           { path: 'subscription', element: <OrganizationBillingPortalPage /> }
         ]
       },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.integrationsView]} />,
+        children: [{ path: 'integrations', element: <OrganizationIntegrationsPage /> }]
+      },
+      { path: 'help', element: <KnowledgeCenterPage /> },
+      { path: 'help/:slug', element: <KnowledgeArticlePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'support', element: <SupportPage /> },
       { path: 'profile', element: <ProfilePage /> },

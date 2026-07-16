@@ -657,3 +657,172 @@ export interface OrganizationSubscriptionPortal {
   addons: CommercialAddon[];
   canManage: boolean;
 }
+
+export interface IntegrationMetrics {
+  activeApiKeys: number;
+  activeWebhooks: number;
+  failedDeliveries: number;
+  pendingDomains: number;
+  verifiedDomains: number;
+  ssoReady: number;
+  pendingExports: number;
+  connectedConnectors: number;
+}
+
+export interface IntegrationOrganizationSummary {
+  organizationId: string;
+  organizationName: string;
+  slug: string;
+  apiKeys: number;
+  webhooks: number;
+  domains: number;
+  ssoStatus: string | null;
+  connectors: number;
+  failedDeliveries: number;
+  lastApiUse: string | null;
+}
+
+export interface IntegrationDashboard {
+  settings: {
+    publicApiBaseUrl: string | null;
+    appCnameTarget: string | null;
+    publicFormCnameTarget: string | null;
+    apiCnameTarget: string | null;
+    exportsRetentionDays: number;
+    webhookMaxAttempts: number;
+    webhookTimeoutMs: number;
+  };
+  metrics: IntegrationMetrics;
+  organizations: IntegrationOrganizationSummary[];
+  recentFailures: Array<{
+    id: string;
+    organizationId: string;
+    organizationName: string;
+    endpointId: string;
+    eventType: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+    createdAt: string;
+  }>;
+}
+
+export interface IntegrationApiKey {
+  id: string;
+  name: string;
+  environment: 'test' | 'live';
+  prefix: string;
+  scopes: string[];
+  status: 'active' | 'revoked' | 'expired';
+  rateLimitPerMinute: number;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  usageCount: number;
+  createdAt: string;
+}
+
+export interface IntegrationWebhook {
+  id: string;
+  name: string;
+  endpointUrl: string;
+  events: string[];
+  status: 'active' | 'paused' | 'disabled';
+  apiVersion: string;
+  maxAttempts: number;
+  timeoutMs: number;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  consecutiveFailures: number;
+  createdAt: string;
+}
+
+export interface IntegrationWebhookDelivery {
+  id: string;
+  endpointId: string;
+  eventType: string;
+  eventId: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  responseStatus: number | null;
+  lastError: string | null;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface IntegrationDomain {
+  id: string;
+  domain: string;
+  domainType: 'app' | 'public_form' | 'api';
+  status: 'pending' | 'verified' | 'active' | 'failed' | 'disabled';
+  verificationToken: string;
+  verificationRecordName: string;
+  expectedCname: string | null;
+  isPrimary: boolean;
+  lastCheckedAt: string | null;
+  verifiedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface OrganizationDataExport {
+  id: string;
+  scope: string;
+  format: string;
+  reason: string;
+  status: string;
+  fileName: string | null;
+  sizeBytes: number;
+  checksum: string | null;
+  errorMessage: string | null;
+  completedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface OrganizationIntegrationsSnapshot {
+  organization: { id: string; name: string; slug: string; isActive: boolean };
+  settings: Record<string, unknown>;
+  eventCatalog: Array<{ code: string; name: string; category: string; description: string | null }>;
+  apiKeys: IntegrationApiKey[];
+  webhooks: IntegrationWebhook[];
+  deliveries: IntegrationWebhookDelivery[];
+  domains: IntegrationDomain[];
+  sso: Record<string, unknown> | null;
+  emailChannel: Record<string, unknown> | null;
+  connectors: Array<Record<string, unknown>>;
+  exports: OrganizationDataExport[];
+}
+
+export interface CreatedIntegrationSecret {
+  id: string;
+  name?: string;
+  environment?: string;
+  prefix?: string;
+  secret: string;
+  scopes?: string[];
+  rateLimitPerMinute?: number;
+  expiresAt?: string | null;
+}
+
+export interface KnowledgeArticle {
+  id: string;
+  organizationId?: string | null;
+  organizationName?: string | null;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  category?: string | null;
+  categoryCode?: string | null;
+  slug: string;
+  title: string;
+  summary: string | null;
+  contentMarkdown: string;
+  visibility?: string;
+  status?: string;
+  tags: string[];
+  featured: boolean;
+  viewCount: number;
+  helpfulCount?: number;
+  unhelpfulCount?: number;
+  publishedAt: string | null;
+  updatedAt?: string | null;
+}

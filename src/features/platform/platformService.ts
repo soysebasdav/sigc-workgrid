@@ -23,7 +23,11 @@ import type {
   CommercialCatalog,
   BillingSnapshot,
   OnboardingRecord,
-  OrganizationSubscriptionPortal
+  OrganizationSubscriptionPortal,
+  IntegrationDashboard,
+  OrganizationIntegrationsSnapshot,
+  CreatedIntegrationSecret,
+  KnowledgeArticle
 } from './types';
 
 type JsonRecord = Record<string, unknown>;
@@ -517,5 +521,166 @@ export const platformService = {
       p_reason: reason
     });
   }
+,
+
+  getIntegrationsDashboard(): Promise<IntegrationDashboard> {
+    return rpc<IntegrationDashboard>('platform_get_integrations_dashboard_v32');
+  },
+
+  getOrganizationIntegrations(organizationId: string): Promise<OrganizationIntegrationsSnapshot> {
+    return rpc<OrganizationIntegrationsSnapshot>('platform_get_organization_integrations_v32', { p_organization_id: organizationId });
+  },
+
+  getOrganizationIntegrationsPortal(): Promise<OrganizationIntegrationsSnapshot> {
+    return rpc<OrganizationIntegrationsSnapshot>('organization_get_integrations_portal_v32');
+  },
+
+  createPlatformApiKey(input: { organizationId: string; name: string; environment: 'test' | 'live'; scopes: string[]; rateLimit?: number; expiresAt?: string | null; reason: string }): Promise<CreatedIntegrationSecret> {
+    return rpc<CreatedIntegrationSecret>('platform_create_api_key_v32', {
+      p_organization_id: input.organizationId,
+      p_name: input.name,
+      p_environment: input.environment,
+      p_scopes: input.scopes,
+      p_rate_limit: input.rateLimit ?? 120,
+      p_expires_at: input.expiresAt || null,
+      p_reason: input.reason
+    });
+  },
+
+  createOrganizationApiKey(input: { name: string; environment: 'test' | 'live'; scopes: string[]; rateLimit?: number; expiresAt?: string | null }): Promise<CreatedIntegrationSecret> {
+    return rpc<CreatedIntegrationSecret>('organization_create_api_key_v32', {
+      p_name: input.name,
+      p_environment: input.environment,
+      p_scopes: input.scopes,
+      p_rate_limit: input.rateLimit ?? 120,
+      p_expires_at: input.expiresAt || null
+    });
+  },
+
+  revokePlatformApiKey(apiKeyId: string, reason: string): Promise<void> {
+    return rpc<void>('platform_revoke_api_key_v32', { p_api_key_id: apiKeyId, p_reason: reason });
+  },
+
+  revokeOrganizationApiKey(apiKeyId: string, reason: string): Promise<void> {
+    return rpc<void>('organization_revoke_api_key_v32', { p_api_key_id: apiKeyId, p_reason: reason });
+  },
+
+  upsertPlatformWebhook(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_upsert_webhook_v32', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  upsertOrganizationWebhook(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('organization_upsert_webhook_v32', { p_payload: payload });
+  },
+
+  rotatePlatformWebhookSecret(endpointId: string, reason: string): Promise<string> {
+    return rpc<string>('platform_rotate_webhook_secret_v32', { p_endpoint_id: endpointId, p_reason: reason });
+  },
+
+  rotateOrganizationWebhookSecret(endpointId: string): Promise<string> {
+    return rpc<string>('organization_rotate_webhook_secret_v32', { p_endpoint_id: endpointId });
+  },
+
+  requeueWebhookDelivery(deliveryId: string, reason: string): Promise<void> {
+    return rpc<void>('platform_requeue_webhook_delivery_v32', { p_delivery_id: deliveryId, p_reason: reason });
+  },
+
+  registerPlatformDomain(input: { organizationId: string; domain: string; domainType: string; primary: boolean; reason: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_register_domain_v32', {
+      p_organization_id: input.organizationId,
+      p_domain: input.domain,
+      p_type: input.domainType,
+      p_primary: input.primary,
+      p_reason: input.reason
+    });
+  },
+
+  registerOrganizationDomain(input: { domain: string; domainType: string; primary: boolean }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('organization_register_domain_v32', { p_domain: input.domain, p_type: input.domainType, p_primary: input.primary });
+  },
+
+  upsertPlatformSso(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_upsert_sso_v32', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  upsertOrganizationSso(payload: Record<string, unknown>): Promise<void> {
+    return rpc<void>('organization_upsert_sso_v32', { p_payload: payload });
+  },
+
+  upsertPlatformEmailChannel(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_upsert_email_channel_v32', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  upsertOrganizationEmailChannel(payload: Record<string, unknown>): Promise<void> {
+    return rpc<void>('organization_upsert_email_channel_v32', { p_payload: payload });
+  },
+
+  upsertPlatformConnector(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_connector_v32', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  upsertOrganizationConnector(payload: Record<string, unknown>): Promise<string> {
+    return rpc<string>('organization_upsert_connector_v32', { p_payload: payload });
+  },
+
+  requestPlatformDataExport(input: { organizationId: string; scope: string; format: string; reason: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_request_data_export_v32', { p_organization_id: input.organizationId, p_scope: input.scope, p_format: input.format, p_reason: input.reason });
+  },
+
+  requestOrganizationDataExport(input: { scope: string; format: string; reason: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('organization_request_data_export_v32', { p_scope: input.scope, p_format: input.format, p_reason: input.reason });
+  },
+
+  async invokeIntegrationWorker(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const { data, error } = await client().functions.invoke('platform-integration-worker', { body: payload });
+    if (error) throw new Error(error.message || 'No fue posible ejecutar el proceso de integración.');
+    return asRecord(data);
+  },
+
+  verifyIntegrationDomain(domainId: string): Promise<Record<string, unknown>> {
+    return this.invokeIntegrationWorker({ operation: 'verify-domain', domainId });
+  },
+
+  testIntegrationWebhook(endpointId: string): Promise<Record<string, unknown>> {
+    return this.invokeIntegrationWorker({ operation: 'test-webhook', endpointId });
+  },
+
+  processDataExport(exportId: string): Promise<Record<string, unknown>> {
+    return this.invokeIntegrationWorker({ operation: 'process-export', exportId });
+  },
+
+  async createDataExportDownloadUrl(exportId: string): Promise<{ url: string; fileName: string }> {
+    const result = await rpc<Record<string, unknown>>('integration_get_export_download_v32', { p_export_id: exportId });
+    const storagePath = String(result.storagePath || '');
+    if (!storagePath) throw new Error('La exportación no tiene archivo disponible.');
+    const { data, error } = await client().storage.from('organization-exports').createSignedUrl(storagePath, 300, { download: String(result.fileName || 'orkesta-export.json.gz') });
+    if (error || !data?.signedUrl) throw new Error(error?.message || 'No fue posible generar el enlace de descarga.');
+    return { url: data.signedUrl, fileName: String(result.fileName || 'orkesta-export.json.gz') };
+  },
+
+  listPlatformKnowledge(status?: string, search?: string): Promise<KnowledgeArticle[]> {
+    return rpc<KnowledgeArticle[]>('platform_list_knowledge_v32', { p_status: status || null, p_search: search || null });
+  },
+
+  upsertKnowledgeArticle(payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_knowledge_article_v32', { p_payload: payload, p_reason: reason });
+  },
+
+  listKnowledge(search?: string, category?: string): Promise<KnowledgeArticle[]> {
+    return rpc<KnowledgeArticle[]>('knowledge_list_articles_v32', { p_search: search || null, p_category: category || null });
+  },
+
+  getKnowledgeArticle(slug: string): Promise<KnowledgeArticle> {
+    return rpc<KnowledgeArticle>('knowledge_get_article_v32', { p_slug: slug });
+  },
+
+  sendKnowledgeFeedback(articleId: string, helpful: boolean, comment?: string): Promise<void> {
+    return rpc<void>('knowledge_feedback_v32', { p_article_id: articleId, p_helpful: helpful, p_comment: comment || null });
+  },
+
+  updateIntegrationSettings(payload: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_update_integration_settings_v32', { p_payload: payload, p_reason: reason });
+  }
+
 
 };
