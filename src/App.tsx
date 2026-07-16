@@ -8,6 +8,13 @@ import { PlatformAdminRoute } from './features/platform/PlatformAdminRoute';
 import { PlatformAdminShell, PlatformAuditPage, PlatformBackupsPage, PlatformDashboardPage, PlatformOrganizationDetailPage, PlatformOrganizationsPage, PlatformOperationsPage, PlatformTicketsPage, PlatformUsersPage } from './features/platform/PlatformAdminPages';
 import { SupportPage } from './features/support/SupportPage';
 import {
+  OrganizationBillingPortalPage,
+  PlatformBillingPage,
+  PlatformCommercialDashboardPage,
+  PlatformOnboardingPage,
+  PlatformPlansPage
+} from './features/platform/Phase31CommercialPages';
+import {
   PlatformExplorerPage,
   PlatformRecoveryPage,
   PlatformSchedulerPage,
@@ -113,6 +120,10 @@ const router = createBrowserRouter([
           { path: 'superadmin', element: <PlatformDashboardPage /> },
           { path: 'superadmin/organizations', element: <PlatformOrganizationsPage /> },
           { path: 'superadmin/organizations/:organizationId', element: <PlatformOrganizationDetailPage /> },
+          { path: 'superadmin/commercial', element: <PlatformCommercialDashboardPage /> },
+          { path: 'superadmin/plans', element: <PlatformPlansPage /> },
+          { path: 'superadmin/billing', element: <PlatformBillingPage /> },
+          { path: 'superadmin/onboarding', element: <PlatformOnboardingPage /> },
           { path: 'superadmin/users', element: <PlatformUsersPage /> },
           { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
           { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
@@ -172,7 +183,10 @@ const router = createBrowserRouter([
 
       {
         element: <PermissionRoute allOf={[PERMISSIONS.saasManageWorkspace]} />,
-        children: [{ path: 'workspace', element: <LazyRoute><SaasManagementPage /></LazyRoute> }]
+        children: [
+          { path: 'workspace', element: <LazyRoute><SaasManagementPage /></LazyRoute> },
+          { path: 'subscription', element: <OrganizationBillingPortalPage /> }
+        ]
       },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'support', element: <SupportPage /> },

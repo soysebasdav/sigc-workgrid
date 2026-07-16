@@ -18,7 +18,12 @@ import type {
   BackupRestoreRequest,
   OrganizationUsageControl,
   PlatformExplorerResult,
-  PlatformAdminRole
+  PlatformAdminRole,
+  CommercialDashboard,
+  CommercialCatalog,
+  BillingSnapshot,
+  OnboardingRecord,
+  OrganizationSubscriptionPortal
 } from './types';
 
 type JsonRecord = Record<string, unknown>;
@@ -374,6 +379,143 @@ export const platformService = {
     const { data, error } = await client().functions.invoke('platform-scheduler', { body: {} });
     if (error) throw new Error(error.message || 'No fue posible ejecutar el scheduler central.');
     return asRecord(data);
+  },
+
+  getCommercialDashboard(): Promise<CommercialDashboard> {
+    return rpc<CommercialDashboard>('platform_get_commercial_dashboard_v31');
+  },
+
+  getCommercialCatalog(includeInactive = true): Promise<CommercialCatalog> {
+    return rpc<CommercialCatalog>('platform_list_plans_v31', { p_include_inactive: includeInactive });
+  },
+
+  upsertCommercialPlan(payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_upsert_plan_v31', { p_payload: payload, p_reason: reason });
+  },
+
+  upsertCommercialAddon(payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_upsert_addon_v31', { p_payload: payload, p_reason: reason });
+  },
+
+  upsertCommercialCoupon(payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_upsert_coupon_v31', { p_payload: payload, p_reason: reason });
+  },
+
+  async listBilling(params: { organizationId?: string; status?: string; search?: string; page?: number; pageSize?: number } = {}): Promise<BillingSnapshot> {
+    const result = await rpc<unknown>('platform_list_billing_v31', {
+      p_organization_id: params.organizationId || null,
+      p_status: params.status || null,
+      p_search: params.search || null,
+      p_page: params.page ?? 1,
+      p_page_size: params.pageSize ?? 25
+    });
+    const row = asRecord(result);
+    const page = normalizePage<any>(row);
+    return {
+      ...page,
+      payments: asArray(row.payments),
+      accounts: asArray(row.accounts)
+    } as BillingSnapshot;
+  },
+
+  createInvoice(input: { organizationId: string; planId: string; billingInterval: string; addons?: Array<{ addonId: string; quantity: number }>; couponCode?: string; taxPercent?: number; dueDate?: string; notes?: string; issueNow?: boolean }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_create_invoice_v31', {
+      p_organization_id: input.organizationId,
+      p_plan_id: input.planId,
+      p_billing_interval: input.billingInterval,
+      p_addons: input.addons ?? [],
+      p_coupon_code: input.couponCode || null,
+      p_tax_percent: input.taxPercent ?? 0,
+      p_due_date: input.dueDate || null,
+      p_notes: input.notes || null,
+      p_issue_now: input.issueNow ?? true
+    });
+  },
+
+  registerPayment(input: { invoiceId: string; amount: number; method: string; reference?: string; paidAt?: string; notes?: string; confirm?: boolean }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_register_payment_v31', {
+      p_invoice_id: input.invoiceId,
+      p_amount: input.amount,
+      p_method: input.method,
+      p_reference: input.reference || null,
+      p_paid_at: input.paidAt || new Date().toISOString(),
+      p_notes: input.notes || null,
+      p_confirm: input.confirm ?? true
+    });
+  },
+
+  voidInvoice(invoiceId: string, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_void_invoice_v31', { p_invoice_id: invoiceId, p_reason: reason });
+  },
+
+  updateBillingAccount(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_update_billing_account_v31', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  scheduleSubscriptionChange(input: { organizationId: string; planId: string; billingInterval: string; effectiveMode: 'immediate' | 'period_end'; reason: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_schedule_subscription_change_v31', {
+      p_organization_id: input.organizationId,
+      p_plan_id: input.planId,
+      p_billing_interval: input.billingInterval,
+      p_effective_mode: input.effectiveMode,
+      p_reason: input.reason
+    });
+  },
+
+  setSubscriptionCancellation(organizationId: string, cancelAtPeriodEnd: boolean, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_set_subscription_cancellation_v31', {
+      p_organization_id: organizationId,
+      p_cancel_at_period_end: cancelAtPeriodEnd,
+      p_reason: reason
+    });
+  },
+
+  reviewCommercialRequest(requestId: string, decision: 'approved' | 'rejected' | 'in_review', notes: string, apply = false): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_review_subscription_request_v31', {
+      p_request_id: requestId,
+      p_decision: decision,
+      p_notes: notes,
+      p_apply: apply
+    });
+  },
+
+  listOnboarding(status?: string): Promise<OnboardingRecord[]> {
+    return rpc<OnboardingRecord[]>('platform_list_onboarding_v31', { p_status: status || null });
+  },
+
+  provisionOrganization(input: { name: string; slug: string; adminEmail: string; planId: string; billingInterval: string; trialDays?: number | null; reason: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_provision_organization_v31', {
+      p_name: input.name,
+      p_slug: input.slug,
+      p_admin_email: input.adminEmail,
+      p_plan_id: input.planId,
+      p_billing_interval: input.billingInterval,
+      p_trial_days: input.trialDays ?? null,
+      p_reason: input.reason
+    });
+  },
+
+  updateOnboarding(input: { organizationId: string; status: string; currentStep: string; checklist: Record<string, boolean>; notes: string; blockingReason?: string }): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_update_onboarding_v31', {
+      p_organization_id: input.organizationId,
+      p_status: input.status,
+      p_current_step: input.currentStep,
+      p_checklist: input.checklist,
+      p_notes: input.notes,
+      p_blocking_reason: input.blockingReason || null
+    });
+  },
+
+  getOrganizationSubscriptionPortal(): Promise<OrganizationSubscriptionPortal> {
+    return rpc<OrganizationSubscriptionPortal>('organization_get_subscription_portal_v31');
+  },
+
+  requestOrganizationSubscriptionChange(requestType: string, payload: Record<string, unknown>, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('organization_request_subscription_change_v31', {
+      p_request_type: requestType,
+      p_payload: payload,
+      p_reason: reason
+    });
   }
 
 };

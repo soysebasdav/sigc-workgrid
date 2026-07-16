@@ -447,3 +447,213 @@ export interface PlatformExplorerResult {
   page: number;
   pageSize: number;
 }
+
+export interface CommercialMetrics {
+  activeSubscriptions: number;
+  trialingSubscriptions: number;
+  pastDueSubscriptions: number;
+  scheduledCancellations: number;
+  monthlyRecurringRevenue: number;
+  invoicedThisMonth: number;
+  collectedThisMonth: number;
+  outstandingBalance: number;
+  overdueInvoices: number;
+  pendingRequests: number;
+  onboardingInProgress: number;
+}
+
+export interface CommercialRenewal {
+  organizationId: string;
+  organizationName: string;
+  planName: string;
+  status: string;
+  periodEnd: string | null;
+  autoRenew: boolean;
+  cancelAtPeriodEnd: boolean;
+}
+
+export interface BillingInvoice {
+  id: string;
+  invoiceNumber: string;
+  organizationId: string;
+  organizationName: string;
+  status: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'overdue' | 'void';
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  servicePeriodStart: string | null;
+  servicePeriodEnd: string | null;
+  subtotal: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface BillingPayment {
+  id: string;
+  paymentNumber: string;
+  organizationId: string;
+  organizationName: string;
+  status: 'pending' | 'confirmed' | 'rejected' | 'refunded';
+  method: string;
+  amount: number;
+  paidAt: string;
+  reference: string | null;
+  createdAt: string;
+}
+
+export interface BillingAccount {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  legalName: string;
+  taxId: string | null;
+  billingEmail: string | null;
+  contactName: string | null;
+  paymentTermsDays: number;
+  status: 'active' | 'incomplete' | 'blocked';
+}
+
+export interface CommercialRequest {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  requestType: 'plan_change' | 'cancel' | 'reactivate' | 'addon_change' | 'billing_update' | 'renewal';
+  requestedPayload?: Record<string, unknown>;
+  reason: string;
+  status: 'pending' | 'in_review' | 'approved' | 'rejected' | 'applied' | 'cancelled';
+  requestedAt: string;
+  requestedByName?: string | null;
+  reviewNotes?: string | null;
+}
+
+export interface CommercialDashboard {
+  metrics: CommercialMetrics;
+  renewals: CommercialRenewal[];
+  recentInvoices: BillingInvoice[];
+  pendingRequests: CommercialRequest[];
+}
+
+export interface CommercialPlan {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthlyPriceCop: number;
+  annualPriceCop: number;
+  currency: string;
+  trialDays: number;
+  graceDays: number;
+  billingIntervals: string[];
+  limits: Record<string, unknown>;
+  features: Record<string, unknown>;
+  onboardingTemplate: Record<string, unknown>;
+  isPublic: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  version: number;
+  activeSubscriptions: number;
+}
+
+export interface CommercialAddon {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  unitName: string;
+  monthlyPriceCop: number;
+  annualPriceCop: number;
+  currency: string;
+  limitsDelta: Record<string, unknown>;
+  featuresDelta: Record<string, unknown>;
+  minQuantity: number;
+  maxQuantity: number | null;
+  isPublic: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface CommercialCoupon {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  currency: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  applicablePlanIds: string[];
+  firstPurchaseOnly: boolean;
+  isActive: boolean;
+}
+
+export interface CommercialCatalog {
+  plans: CommercialPlan[];
+  addons: CommercialAddon[];
+  coupons: CommercialCoupon[];
+}
+
+export interface BillingSnapshot extends PaginatedResult<BillingInvoice> {
+  payments: BillingPayment[];
+  accounts: BillingAccount[];
+}
+
+export interface OnboardingRecord {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+  status: 'not_started' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
+  currentStep: string;
+  progress: number;
+  checklist: Record<string, boolean>;
+  adminEmail: string | null;
+  assignedTo: string | null;
+  assignedToName: string | null;
+  blockingReason: string | null;
+  notes: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  planName: string | null;
+  subscriptionStatus: string | null;
+  periodEnd: string | null;
+}
+
+export interface OrganizationSubscriptionPortal {
+  organization: { id: string; name: string; slug: string; isActive: boolean };
+  subscription: {
+    id: string;
+    status: string;
+    planId: string;
+    planName: string;
+    planCode: string;
+    billingInterval: string;
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+    trialEndsAt: string | null;
+    autoRenew: boolean;
+    cancelAtPeriodEnd: boolean;
+    nextPlanId: string | null;
+    nextPlanName: string | null;
+    nextBillingInterval: string | null;
+    nextChangeAt: string | null;
+    limits: Record<string, unknown>;
+    features: Record<string, unknown>;
+  };
+  billingAccount: Record<string, unknown>;
+  invoices: BillingInvoice[];
+  payments: BillingPayment[];
+  requests: CommercialRequest[];
+  plans: CommercialPlan[];
+  addons: CommercialAddon[];
+  canManage: boolean;
+}

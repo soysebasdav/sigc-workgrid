@@ -23,7 +23,8 @@ import {
   Shield,
   Timer,
   Users,
-  Workflow
+  Workflow,
+  WalletCards
 } from 'lucide-react';
 import { CASE_READ_PERMISSIONS, PERMISSIONS, type PermissionCode } from '../authz/permissions';
 
@@ -50,6 +51,7 @@ export const navItems: SigcNavItem[] = [
   { to: '/audit', label: 'Auditoría', icon: Shield, allOf: [PERMISSIONS.auditView] },
   { to: '/quality', label: 'Calidad y producción', icon: HeartPulse, allOf: [PERMISSIONS.qualityView] },
   { to: '/workspace', label: 'Espacio SaaS', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
+  { to: '/subscription', label: 'Suscripción y facturación', icon: WalletCards, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/notifications', label: 'Notificaciones', icon: BellRing },
   { to: '/support', label: 'Ayuda y soporte', icon: LifeBuoy },
   { to: '/users', label: 'Usuarios', icon: Users, allOf: [PERMISSIONS.adminManageUsers] },
