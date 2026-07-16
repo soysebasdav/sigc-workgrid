@@ -23,6 +23,16 @@ import {
   PlatformOrganizationIntegrationsPage
 } from './features/platform/Phase32IntegrationPages';
 import {
+  OrganizationPrivacyPage,
+  OrganizationRegionalPage,
+  PlatformCapacityPage,
+  PlatformGovernancePage,
+  PlatformIncidentsPage,
+  PlatformPrivacyPage,
+  PlatformReliabilityPage,
+  PublicStatusPage
+} from './features/platform/Phase33ReliabilityPages';
+import {
   PlatformExplorerPage,
   PlatformRecoveryPage,
   PlatformSchedulerPage,
@@ -118,6 +128,7 @@ const router = createBrowserRouter([
   { path: '/casos', element: <PublicFormPage /> },
   { path: '/casos/:tenant', element: <PublicFormPage /> },
   { path: '/invite/:token', element: <LazyRoute><InvitationPage /></LazyRoute> },
+  { path: '/status', element: <PublicStatusPage /> },
   { path: '/public-form', element: <Navigate to="/radicar" replace /> },
   {
     element: <PlatformAdminRoute />,
@@ -135,6 +146,11 @@ const router = createBrowserRouter([
           { path: 'superadmin/integrations', element: <PlatformIntegrationsPage /> },
           { path: 'superadmin/integrations/:organizationId', element: <PlatformOrganizationIntegrationsPage /> },
           { path: 'superadmin/knowledge', element: <PlatformKnowledgePage /> },
+          { path: 'superadmin/reliability', element: <PlatformReliabilityPage /> },
+          { path: 'superadmin/incidents', element: <PlatformIncidentsPage /> },
+          { path: 'superadmin/privacy', element: <PlatformPrivacyPage /> },
+          { path: 'superadmin/governance', element: <PlatformGovernancePage /> },
+          { path: 'superadmin/capacity', element: <PlatformCapacityPage /> },
           { path: 'superadmin/users', element: <PlatformUsersPage /> },
           { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
           { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
@@ -204,6 +220,14 @@ const router = createBrowserRouter([
         children: [{ path: 'integrations', element: <OrganizationIntegrationsPage /> }]
       },
       { path: 'help', element: <KnowledgeCenterPage /> },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.privacyView]} />,
+        children: [{ path: 'privacy', element: <OrganizationPrivacyPage /> }]
+      },
+      {
+        element: <PermissionRoute allOf={[PERMISSIONS.regionalView]} />,
+        children: [{ path: 'regional', element: <OrganizationRegionalPage /> }]
+      },
       { path: 'help/:slug', element: <KnowledgeArticlePage /> },
       { path: 'notifications', element: <NotificationsPage /> },
       { path: 'support', element: <SupportPage /> },

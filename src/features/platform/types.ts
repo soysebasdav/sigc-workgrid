@@ -826,3 +826,120 @@ export interface KnowledgeArticle {
   publishedAt: string | null;
   updatedAt?: string | null;
 }
+
+export type ReliabilityStatus = 'operational' | 'degraded' | 'partial_outage' | 'major_outage' | 'maintenance';
+
+export interface Phase33HealthComponent {
+  id?: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  status: ReliabilityStatus;
+  message?: string | null;
+  lastCheckedAt?: string | null;
+  componentType?: string;
+  isPublic?: boolean;
+  sortOrder?: number;
+}
+
+export interface PlatformIncident {
+  id: string;
+  incidentNumber: string;
+  title: string;
+  summary: string;
+  severity: 'minor' | 'major' | 'critical';
+  status: 'investigating' | 'identified' | 'monitoring' | 'resolved' | 'cancelled';
+  impact: 'none' | 'degraded' | 'partial_outage' | 'major_outage';
+  affectedComponentCodes: string[];
+  affectedOrganizationIds: string[];
+  isPublic: boolean;
+  startedAt: string;
+  identifiedAt: string | null;
+  resolvedAt: string | null;
+  rootCause: string | null;
+  resolutionSummary: string | null;
+  ownerUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  updates: Array<{ id: string; status: string; message: string; isPublic: boolean; createdAt: string }>;
+}
+
+export interface Phase33Dashboard {
+  health: { status: ReliabilityStatus | 'unknown'; healthScore: number; components: Phase33HealthComponent[]; metrics: Record<string, number>; createdAt?: string };
+  incidents: { active: number; critical: number; recent: PlatformIncident[] };
+  privacy: { open: number; overdue: number };
+  continuity: { organizationsWithoutRecentBackup: number; failedVerifications: number };
+  security: { openFindings: number; highFindings: number };
+  capacity: Record<string, unknown>;
+  maintenance: Array<Record<string, unknown>>;
+}
+
+export interface PrivacyRequestRecord {
+  id: string;
+  requestNumber: string;
+  organizationId?: string;
+  organizationName?: string;
+  requestType: string;
+  status: string;
+  priority: string;
+  requesterName: string;
+  requesterEmail: string;
+  requesterDocument?: string | null;
+  description: string;
+  legalBasis?: string | null;
+  dueAt: string;
+  identityVerifiedAt?: string | null;
+  assignedTo?: string | null;
+  decision?: string | null;
+  decisionReason?: string | null;
+  evidence?: Record<string, unknown>;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContinuitySnapshot {
+  policies: Array<Record<string, unknown>>;
+  verifications: Array<Record<string, unknown>>;
+}
+
+export interface RetentionSnapshot {
+  policies: Array<Record<string, unknown>>;
+  runs: Array<Record<string, unknown>>;
+}
+
+export interface CapacitySnapshot {
+  current: Record<string, unknown>;
+  history: Array<Record<string, unknown>>;
+  organizations: Array<Record<string, unknown>>;
+}
+
+export interface SecurityPostureSnapshot {
+  score: number;
+  open: number;
+  findings: Array<Record<string, unknown>>;
+}
+
+export interface RegionalSettingsSnapshot {
+  organizationId: string;
+  organizationName?: string;
+  locale: string;
+  language: string;
+  countryCode: string;
+  timezone: string;
+  currency: string;
+  dateFormat: string;
+  timeFormat: '12h' | '24h';
+  firstDayOfWeek: number;
+  businessDays: number[];
+  translations: Record<string, unknown>;
+  updatedAt?: string;
+}
+
+export interface PublicStatusSnapshot {
+  overallStatus: ReliabilityStatus;
+  updatedAt: string;
+  components: Phase33HealthComponent[];
+  incidents: PlatformIncident[];
+  maintenance: Array<Record<string, unknown>>;
+}

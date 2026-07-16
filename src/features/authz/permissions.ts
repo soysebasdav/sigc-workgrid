@@ -33,7 +33,11 @@ export const PERMISSIONS = {
   integrationsDomainManage: 'integrations.domain.manage',
   integrationsIdentityManage: 'integrations.identity.manage',
   integrationsExportsManage: 'integrations.exports.manage',
-  knowledgeView: 'knowledge.view'
+  knowledgeView: 'knowledge.view',
+  privacyView: 'privacy.view',
+  privacyManage: 'privacy.manage',
+  regionalView: 'regional.view',
+  regionalManage: 'regional.manage'
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

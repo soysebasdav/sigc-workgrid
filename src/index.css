@@ -2110,3 +2110,106 @@ svg { flex-shrink: 0; }
 
 @media(max-width:1200px){.integration-card-grid,.integration-knowledge-grid,.knowledge-user-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:800px){.integration-card-grid,.integration-knowledge-grid,.knowledge-user-grid,.integration-settings-grid{grid-template-columns:1fr}.integration-card dl,.integration-form fieldset{grid-template-columns:1fr}.integration-organization-hero,.knowledge-article>footer{align-items:flex-start;flex-direction:column}.knowledge-article{padding:20px}.knowledge-article>header h1{font-size:23px}}
+
+/* --------------------------------------------------------------------------
+   Fase 3.3 · Confiabilidad, continuidad y cumplimiento
+   -------------------------------------------------------------------------- */
+.phase33-page { display: grid; gap: 20px; }
+.phase33-health-hero { display: flex; align-items: center; gap: 22px; padding: 24px; background: linear-gradient(135deg, rgba(124,58,237,.08), rgba(14,165,233,.05)); }
+.phase33-health-hero > div:nth-child(2) { flex: 1; }
+.phase33-health-hero h2 { margin: 8px 0 4px; }
+.phase33-health-hero p { margin: 0; color: var(--muted); }
+.phase33-score { width: 98px; height: 98px; border-radius: 50%; display: grid; place-content: center; text-align: center; border: 8px solid rgba(148,163,184,.2); background: #fff; }
+.phase33-score strong { font-size: 2rem; line-height: 1; }
+.phase33-score span { font-size: .8rem; color: var(--muted); }
+.phase33-score.success { border-color: rgba(16,185,129,.35); }
+.phase33-score.warning { border-color: rgba(245,158,11,.4); }
+.phase33-score.danger { border-color: rgba(239,68,68,.4); }
+.phase33-two-columns { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
+.phase33-panel { padding: 22px; }
+.phase33-panel > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+.phase33-panel > header h2 { margin: 0 0 4px; }
+.phase33-panel > header p { margin: 0; color: var(--muted); }
+.phase33-component-list { display: grid; gap: 10px; }
+.phase33-component-list > div { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.phase33-component-list > div:last-child { border-bottom: 0; }
+.phase33-component-list strong,.phase33-component-list small { display: block; }
+.phase33-component-list small { color: var(--muted); margin-top: 3px; }
+.phase33-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #94a3b8; }
+.phase33-dot.success { background: #10b981; box-shadow: 0 0 0 4px rgba(16,185,129,.12); }
+.phase33-dot.warning { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245,158,11,.12); }
+.phase33-dot.danger { background: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,.12); }
+.phase33-list-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.phase33-list-row:last-child { border-bottom: 0; }
+.phase33-list-row strong,.phase33-list-row small { display: block; }
+.phase33-list-row small { margin-top: 4px; color: var(--muted); }
+.phase33-empty { color: var(--muted); padding: 18px 0; }
+.phase33-modal { width: min(820px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; }
+.phase33-form { display: grid; gap: 15px; }
+.phase33-form label,.phase33-regional-form label,.phase33-governance-toolbar label { display: grid; gap: 7px; font-weight: 650; color: var(--ink); }
+.phase33-form input,.phase33-form textarea,.phase33-form select,.phase33-regional-form input,.phase33-regional-form select,.phase33-governance-toolbar select { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; background: #fff; }
+.phase33-form footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+.phase33-incident-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.phase33-incident-card { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+.phase33-incident-card > header { display: flex; gap: 8px; justify-content: space-between; }
+.phase33-incident-card h2 { margin: 0; font-size: 1.08rem; }
+.phase33-incident-card p { margin: 0; color: var(--muted); }
+.phase33-incident-card footer { margin-top: auto; display: flex; justify-content: flex-end; }
+.phase33-incident-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: .8rem; }
+.phase33-update-list { display: grid; gap: 8px; }
+.phase33-update-list > div { padding: 9px 10px; border-radius: 10px; background: var(--soft); }
+.phase33-update-list strong,.phase33-update-list span,.phase33-update-list small { display: block; }
+.phase33-update-list span { margin: 3px 0; }
+.phase33-update-list small { color: var(--muted); }
+.phase33-governance-toolbar { padding: 18px; display: flex; justify-content: space-between; align-items: end; gap: 18px; }
+.phase33-governance-toolbar label { min-width: 280px; }
+.phase33-governance-toolbar > div { display: flex; gap: 6px; background: var(--soft); padding: 5px; border-radius: 12px; }
+.phase33-governance-toolbar button { border: 0; background: transparent; border-radius: 9px; padding: 9px 12px; cursor: pointer; font-weight: 700; }
+.phase33-governance-toolbar button.active { background: #fff; box-shadow: 0 1px 6px rgba(15,23,42,.1); }
+.phase33-kv { display: grid; grid-template-columns: 1fr auto; gap: 12px 20px; margin: 18px 0; }
+.phase33-kv span { color: var(--muted); }
+.phase33-section-actions { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 16px; }
+.phase33-section-actions h2,.phase33-section-actions p { margin: 0; }
+.phase33-section-actions p { color: var(--muted); margin-top: 4px; }
+.phase33-retention-grid,.phase33-finding-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.phase33-retention-grid article,.phase33-finding-grid article { padding: 18px; }
+.phase33-retention-grid h3,.phase33-finding-grid h3 { margin: 12px 0 6px; }
+.phase33-retention-grid p,.phase33-finding-grid p,.phase33-finding-grid small { color: var(--muted); }
+.phase33-finding-grid article > header { display: flex; justify-content: space-between; gap: 8px; }
+.phase33-finding-grid button { margin-top: 14px; }
+.phase33-preview { margin-top: 18px; padding: 20px; }
+.phase33-preview pre { max-height: 320px; overflow: auto; padding: 14px; border-radius: 12px; background: #0f172a; color: #e2e8f0; }
+.phase33-regional-form { padding: 22px; display: grid; gap: 18px; }
+.phase33-privacy-user-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 15px; }
+.phase33-privacy-user-grid article { padding: 20px; }
+.phase33-privacy-user-grid header,.phase33-privacy-user-grid footer { display: flex; justify-content: space-between; gap: 10px; }
+.phase33-privacy-user-grid p { color: var(--muted); }
+.phase33-privacy-user-grid footer { font-size: .82rem; color: var(--muted); flex-wrap: wrap; }
+.phase33-public-status { min-height: 100vh; padding: 28px max(20px,calc((100vw - 1120px)/2)); background: #f8fafc; display: grid; align-content: start; gap: 20px; }
+.phase33-public-status > header { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 16px; }
+.phase33-public-status > header a { font-size: 1.35rem; font-weight: 900; color: #5b21b6; text-decoration: none; }
+.phase33-status-banner { padding: 26px; border-radius: 18px; display: flex; justify-content: space-between; align-items: center; gap: 20px; color: #fff; background: #64748b; }
+.phase33-status-banner.success { background: linear-gradient(135deg,#047857,#10b981); }
+.phase33-status-banner.warning { background: linear-gradient(135deg,#b45309,#f59e0b); }
+.phase33-status-banner.danger { background: linear-gradient(135deg,#b91c1c,#ef4444); }
+.phase33-status-banner h1,.phase33-status-banner p { margin: 4px 0; }
+.phase33-status-banner svg { width: 32px; height: 32px; }
+.phase33-status-components { padding: 22px; }
+.phase33-status-components > div { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.phase33-status-components > div > div { display: flex; align-items: center; gap: 10px; }
+.phase33-status-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.phase33-status-grid > article { padding: 22px; }
+.phase33-status-incident { padding: 15px 0; border-bottom: 1px solid var(--border); }
+.phase33-status-incident header { display: flex; justify-content: space-between; gap: 12px; }
+.phase33-status-incident p { color: var(--muted); }
+.phase33-status-incident small { color: var(--muted); }
+.text-danger { color: #b91c1c; font-weight: 700; }
+@media (max-width: 1000px) {
+  .phase33-incident-grid,.phase33-retention-grid,.phase33-finding-grid,.phase33-privacy-user-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 760px) {
+  .phase33-health-hero,.phase33-section-actions,.phase33-governance-toolbar,.phase33-status-banner { align-items: stretch; flex-direction: column; }
+  .phase33-two-columns,.phase33-status-grid,.phase33-incident-grid,.phase33-retention-grid,.phase33-finding-grid,.phase33-privacy-user-grid { grid-template-columns: 1fr; }
+  .phase33-governance-toolbar > div { overflow-x: auto; width: 100%; }
+  .phase33-governance-toolbar label { min-width: 0; width: 100%; }
+}

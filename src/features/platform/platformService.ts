@@ -27,7 +27,16 @@ import type {
   IntegrationDashboard,
   OrganizationIntegrationsSnapshot,
   CreatedIntegrationSecret,
-  KnowledgeArticle
+  KnowledgeArticle,
+  Phase33Dashboard,
+  PlatformIncident,
+  PrivacyRequestRecord,
+  ContinuitySnapshot,
+  RetentionSnapshot,
+  CapacitySnapshot,
+  SecurityPostureSnapshot,
+  RegionalSettingsSnapshot,
+  PublicStatusSnapshot
 } from './types';
 
 type JsonRecord = Record<string, unknown>;
@@ -680,6 +689,109 @@ export const platformService = {
 
   updateIntegrationSettings(payload: Record<string, unknown>, reason: string): Promise<void> {
     return rpc<void>('platform_update_integration_settings_v32', { p_payload: payload, p_reason: reason });
+  }
+
+,
+  getPhase33Dashboard(): Promise<Phase33Dashboard> {
+    return rpc<Phase33Dashboard>('platform_get_phase33_dashboard_v33');
+  },
+
+  listPhase33Incidents(includeResolved = true): Promise<PlatformIncident[]> {
+    return rpc<PlatformIncident[]>('platform_list_incidents_v33', { p_include_resolved: includeResolved });
+  },
+
+  upsertPhase33Incident(payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_incident_v33', { p_payload: payload, p_reason: reason });
+  },
+
+  addPhase33IncidentUpdate(incidentId: string, status: string, message: string, isPublic = true): Promise<string> {
+    return rpc<string>('platform_add_incident_update_v33', { p_incident_id: incidentId, p_status: status, p_message: message, p_is_public: isPublic });
+  },
+
+  upsertPhase33ServiceComponent(payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_service_component_v33', { p_payload: payload, p_reason: reason });
+  },
+
+  upsertPhase33Maintenance(payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_maintenance_v33', { p_payload: payload, p_reason: reason });
+  },
+
+  getPhase33Continuity(organizationId?: string): Promise<ContinuitySnapshot> {
+    return rpc<ContinuitySnapshot>('platform_get_continuity_v33', { p_organization_id: organizationId || null });
+  },
+
+  upsertPhase33ContinuityPolicy(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_upsert_continuity_policy_v33', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  verifyPhase33Backup(backupJobId: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_verify_backup_metadata_v33', { p_backup_job_id: backupJobId });
+  },
+
+  listPhase33PrivacyRequests(organizationId?: string, status?: string): Promise<PrivacyRequestRecord[]> {
+    return rpc<PrivacyRequestRecord[]>('platform_list_privacy_requests_v33', { p_organization_id: organizationId || null, p_status: status || null });
+  },
+
+  upsertPhase33PrivacyRequest(payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_privacy_request_v33', { p_payload: payload, p_reason: reason });
+  },
+
+  listOrganizationPrivacyRequests(): Promise<PrivacyRequestRecord[]> {
+    return rpc<PrivacyRequestRecord[]>('organization_list_privacy_requests_v33');
+  },
+
+  createOrganizationPrivacyRequest(input: { requestType: string; requesterName: string; requesterEmail: string; requesterDocument?: string; description: string }): Promise<string> {
+    return rpc<string>('organization_create_privacy_request_v33', {
+      p_request_type: input.requestType,
+      p_requester_name: input.requesterName,
+      p_requester_email: input.requesterEmail,
+      p_requester_document: input.requesterDocument || null,
+      p_description: input.description
+    });
+  },
+
+  getPhase33Retention(organizationId: string): Promise<RetentionSnapshot> {
+    return rpc<RetentionSnapshot>('platform_get_retention_v33', { p_organization_id: organizationId });
+  },
+
+  upsertPhase33RetentionPolicy(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<string> {
+    return rpc<string>('platform_upsert_retention_policy_v33', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  previewPhase33Retention(organizationId: string, reason: string): Promise<Record<string, unknown>> {
+    return rpc<Record<string, unknown>>('platform_preview_retention_v33', { p_organization_id: organizationId, p_reason: reason });
+  },
+
+  getPhase33Capacity(): Promise<CapacitySnapshot> {
+    return rpc<CapacitySnapshot>('platform_get_capacity_v33');
+  },
+
+  getPhase33SecurityPosture(): Promise<SecurityPostureSnapshot> {
+    return rpc<SecurityPostureSnapshot>('platform_get_security_posture_v33');
+  },
+
+  resolvePhase33SecurityFinding(findingId: string, status: string, notes: string): Promise<void> {
+    return rpc<void>('platform_resolve_security_finding_v33', { p_finding_id: findingId, p_status: status, p_notes: notes });
+  },
+
+  getPhase33RegionalSettings(organizationId: string): Promise<RegionalSettingsSnapshot> {
+    return rpc<RegionalSettingsSnapshot>('platform_get_regional_settings_v33', { p_organization_id: organizationId });
+  },
+
+  upsertPhase33RegionalSettings(organizationId: string, payload: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_upsert_regional_settings_v33', { p_organization_id: organizationId, p_payload: payload, p_reason: reason });
+  },
+
+  getOrganizationRegionalSettings(): Promise<RegionalSettingsSnapshot> {
+    return rpc<RegionalSettingsSnapshot>('organization_get_regional_settings_v33');
+  },
+
+  updateOrganizationRegionalSettings(payload: Record<string, unknown>): Promise<void> {
+    return rpc<void>('organization_update_regional_settings_v33', { p_payload: payload });
+  },
+
+  getPublicStatus(): Promise<PublicStatusSnapshot> {
+    return rpc<PublicStatusSnapshot>('public_status_snapshot_v33');
   }
 
 
