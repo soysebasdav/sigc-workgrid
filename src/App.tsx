@@ -7,6 +7,14 @@ import { PlatformAccessProvider, usePlatformAccess } from './features/platform/P
 import { PlatformAdminRoute } from './features/platform/PlatformAdminRoute';
 import { PlatformAdminShell, PlatformAuditPage, PlatformBackupsPage, PlatformDashboardPage, PlatformOrganizationDetailPage, PlatformOrganizationsPage, PlatformOperationsPage, PlatformTicketsPage, PlatformUsersPage } from './features/platform/PlatformAdminPages';
 import { SupportPage } from './features/support/SupportPage';
+import {
+  PlatformExplorerPage,
+  PlatformRecoveryPage,
+  PlatformSchedulerPage,
+  PlatformSecurityTeamPage,
+  PlatformSupportAccessPage,
+  PlatformUsageControlPage
+} from './features/platform/Phase2PlatformPages';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from './features/authz/permissions';
 import { AgendaPage } from './features/agenda/AgendaPage';
 import { AuditPage } from './features/audit/AuditPage';
@@ -108,8 +116,14 @@ const router = createBrowserRouter([
           { path: 'superadmin/users', element: <PlatformUsersPage /> },
           { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
           { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
+          { path: 'superadmin/recovery', element: <PlatformRecoveryPage /> },
+          { path: 'superadmin/access', element: <PlatformSupportAccessPage /> },
+          { path: 'superadmin/usage', element: <PlatformUsageControlPage /> },
+          { path: 'superadmin/explorer', element: <PlatformExplorerPage /> },
+          { path: 'superadmin/security', element: <PlatformSecurityTeamPage /> },
           { path: 'superadmin/audit', element: <PlatformAuditPage /> },
-          { path: 'superadmin/operations', element: <PlatformOperationsPage /> }
+          { path: 'superadmin/operations', element: <PlatformOperationsPage /> },
+          { path: 'superadmin/scheduler', element: <PlatformSchedulerPage /> }
         ]
       }
     ]

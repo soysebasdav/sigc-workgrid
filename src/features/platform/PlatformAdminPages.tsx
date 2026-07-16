@@ -10,6 +10,7 @@ import {
   Clock3,
   DatabaseBackup,
   ExternalLink,
+  Eye,
   FileWarning,
   Gauge,
   HardDrive,
@@ -28,6 +29,7 @@ import {
   ShieldCheck,
   TicketCheck,
   UserRoundCog,
+  UserCog,
   Users,
   X,
   Zap,
@@ -138,19 +140,25 @@ function MetricCard({ icon, label, value, helper, danger = false }: { icon: Reac
   return <article className={`platform-metric card ${danger ? 'danger' : ''}`}><div className="platform-metric-icon">{icon}</div><div><span>{label}</span><strong>{value}</strong>{helper ? <small>{helper}</small> : null}</div></article>;
 }
 
-const platformNav: Array<{ to: string; label: string; icon: LucideIcon; end?: boolean }> = [
-  { to: '/superadmin', label: 'Resumen global', icon: LayoutDashboard, end: true },
-  { to: '/superadmin/organizations', label: 'Organizaciones', icon: Building2 },
-  { to: '/superadmin/users', label: 'Catálogo de usuarios', icon: Users },
-  { to: '/superadmin/tickets', label: 'Tickets y soporte', icon: LifeBuoy },
-  { to: '/superadmin/backups', label: 'Backups', icon: DatabaseBackup },
-  { to: '/superadmin/audit', label: 'Auditoría global', icon: History },
-  { to: '/superadmin/operations', label: 'Operación técnica', icon: Activity }
+const platformNav: Array<{ to: string; label: string; icon: LucideIcon; permission: string; end?: boolean }> = [
+  { to: '/superadmin', label: 'Resumen global', icon: LayoutDashboard, permission: 'platform.dashboard.view', end: true },
+  { to: '/superadmin/organizations', label: 'Organizaciones', icon: Building2, permission: 'platform.organizations.view' },
+  { to: '/superadmin/users', label: 'Catálogo de usuarios', icon: Users, permission: 'platform.users.view' },
+  { to: '/superadmin/tickets', label: 'Tickets y soporte', icon: LifeBuoy, permission: 'platform.support.view' },
+  { to: '/superadmin/backups', label: 'Backups', icon: DatabaseBackup, permission: 'platform.backups.view' },
+  { to: '/superadmin/recovery', label: 'Continuidad', icon: ArchiveRestore, permission: 'platform.backups.view' },
+  { to: '/superadmin/access', label: 'Acceso de soporte', icon: LockKeyhole, permission: 'platform.support.view' },
+  { to: '/superadmin/usage', label: 'Uso y límites', icon: Gauge, permission: 'platform.usage.view' },
+  { to: '/superadmin/explorer', label: 'Explorador', icon: Eye, permission: 'platform.explorer.view' },
+  { to: '/superadmin/security', label: 'Equipo y seguridad', icon: UserCog, permission: 'platform.security.view' },
+  { to: '/superadmin/audit', label: 'Auditoría global', icon: History, permission: 'platform.audit.view' },
+  { to: '/superadmin/operations', label: 'Operación técnica', icon: Activity, permission: 'platform.operations.view' },
+  { to: '/superadmin/scheduler', label: 'Scheduler', icon: Clock3, permission: 'platform.operations.manage' }
 ];
 
 export function PlatformAdminShell() {
   const { currentUser, logout } = useApp();
-  const { context } = usePlatformAccess();
+  const { context, canPlatform } = usePlatformAccess();
   const [mobileOpen, setMobileOpen] = useState(false);
   return (
     <div className="platform-admin-app">
@@ -158,7 +166,7 @@ export function PlatformAdminShell() {
       <aside className={`platform-sidebar ${mobileOpen ? 'open' : ''}`}>
         <div className="platform-brand"><img src={orkestaLogoLight} alt="Orkesta" /><span>SUPER ADMIN</span></div>
         <nav>
-          {platformNav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Icon size={18} /><span>{label}</span></NavLink>)}
+          {platformNav.filter(({ permission }) => canPlatform(permission)).map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setMobileOpen(false)} className={({ isActive }) => isActive ? 'active' : ''}><Icon size={18} /><span>{label}</span></NavLink>)}
         </nav>
         <div className="platform-sidebar-bottom">
           <Link to="/app"><ExternalLink size={17} />Abrir espacio organizacional</Link>
@@ -286,29 +294,43 @@ function OrganizationActionModal({ kind, detail, onClose, onSaved }: { kind: 'su
   const [scope, setScope] = useState<OrganizationBackupJob['scope']>('full');
   const [supportMode, setSupportMode] = useState<'read_only' | 'support' | 'admin'>('read_only');
   const [duration, setDuration] = useState(30);
+  const [supportTicketId, setSupportTicketId] = useState('');
   const [isSaving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (reason.trim().length < 5) { setError('Registra una justificación de mínimo 5 caracteres.'); return; }
+    const minimumReason = kind === 'support' ? 10 : 5;
+    if (reason.trim().length < minimumReason) { setError(`Registra una justificación de mínimo ${minimumReason} caracteres.`); return; }
     setSaving(true); setError('');
     try {
       if (kind === 'subscription') await platformService.updateSubscription({ organizationId: org.id, planId, status, currentPeriodEnd: periodEnd ? new Date(`${periodEnd}T23:59:59-05:00`).toISOString() : null, reason: reason.trim() });
       if (kind === 'backup') await platformService.requestBackup(org.id, scope, reason.trim());
       if (kind === 'status') await platformService.setOrganizationActive(org.id, !org.isActive, reason.trim());
       if (kind === 'support') {
-        const session = await platformService.startSupportSession({ organizationId: org.id, mode: supportMode, reason: reason.trim(), durationMinutes: duration });
-        window.sessionStorage.setItem('orkesta.platform.support-session', JSON.stringify(session));
-        navigate(`/superadmin/organizations/${org.id}?supportSession=${encodeURIComponent(session.id)}`);
+        const request = await platformService.requestSupportAccess({
+          organizationId: org.id,
+          mode: supportMode,
+          scopes: supportMode === 'read_only' ? ['overview', 'cases', 'configuration'] : ['overview', 'cases', 'users', 'configuration', 'documents'],
+          reason: reason.trim(),
+          ticketId: supportTicketId || undefined,
+          durationMinutes: duration
+        });
+        if (request.status === 'approved') {
+          const session = await platformService.startApprovedSupportSession(request.id);
+          window.sessionStorage.setItem('orkesta.platform.support-session', JSON.stringify(session));
+          navigate(`/superadmin/explorer?organizationId=${org.id}`);
+        } else {
+          navigate(`/superadmin/access?organizationId=${org.id}`);
+        }
       }
       onSaved();
     } catch (reasonError) { setError(reasonError instanceof Error ? reasonError.message : 'No fue posible completar la acción.'); }
     finally { setSaving(false); }
   }
   const titles = { subscription: 'Modificar suscripción', backup: 'Crear backup manual', support: 'Iniciar modo soporte', status: org.isActive ? 'Suspender organización' : 'Reactivar organización' };
-  return <div className="platform-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><form className="platform-modal card" onSubmit={submit}><header><div><span className="eyebrow">{org.name}</span><h2>{titles[kind]}</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X /></button></header>{kind === 'subscription' ? <div className="platform-form-grid"><label>Plan<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{detail.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="trialing">En prueba</option><option value="active">Activa</option><option value="past_due">Pago pendiente</option><option value="suspended">Suspendida</option><option value="cancelled">Cancelada</option></select></label><label>Vencimiento<input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label></div> : null}{kind === 'backup' ? <label>Alcance<select value={scope} onChange={(event) => setScope(event.target.value as OrganizationBackupJob['scope'])}><option value="full">Completo</option><option value="database">Datos</option><option value="documents">Documentos</option><option value="configuration">Configuración</option></select></label> : null}{kind === 'support' ? <div className="platform-form-grid"><label>Nivel de acceso<select value={supportMode} onChange={(event) => setSupportMode(event.target.value as typeof supportMode)}><option value="read_only">Solo lectura</option><option value="support">Soporte operativo</option><option value="admin">Administración temporal</option></select></label><label>Duración<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={60}>60 minutos</option></select></label></div> : null}<label>Justificación<textarea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo, solicitud asociada y resultado esperado" /></label>{error ? <div className="alert danger">{error}</div> : null}<footer><button type="button" className="btn btn-white" onClick={onClose}>Cancelar</button><button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? 'Procesando...' : 'Confirmar y auditar'}</button></footer></form></div>;
+  return <div className="platform-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><form className="platform-modal card" onSubmit={submit}><header><div><span className="eyebrow">{org.name}</span><h2>{titles[kind]}</h2></div><button type="button" onClick={onClose} aria-label="Cerrar"><X /></button></header>{kind === 'subscription' ? <div className="platform-form-grid"><label>Plan<select value={planId} onChange={(event) => setPlanId(event.target.value)}>{detail.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></label><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="trialing">En prueba</option><option value="active">Activa</option><option value="past_due">Pago pendiente</option><option value="suspended">Suspendida</option><option value="cancelled">Cancelada</option></select></label><label>Vencimiento<input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label></div> : null}{kind === 'backup' ? <label>Alcance<select value={scope} onChange={(event) => setScope(event.target.value as OrganizationBackupJob['scope'])}><option value="full">Completo</option><option value="database">Datos</option><option value="documents">Documentos</option><option value="configuration">Configuración</option></select></label> : null}{kind === 'support' ? <div className="platform-form-grid"><label>Nivel de acceso<select value={supportMode} onChange={(event) => setSupportMode(event.target.value as typeof supportMode)}><option value="read_only">Solo lectura</option><option value="support">Soporte operativo</option><option value="admin">Administración temporal</option></select></label><label>Duración<select value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={60}>60 minutos</option></select></label><label>Ticket relacionado<select value={supportTicketId} onChange={(event) => setSupportTicketId(event.target.value)}><option value="">Sin ticket</option>{detail.tickets.map((ticket) => <option key={ticket.id} value={ticket.id}>{ticket.ticketNumber} · {ticket.subject}</option>)}</select></label></div> : null}<label>Justificación<textarea rows={4} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo, solicitud asociada y resultado esperado" /></label>{error ? <div className="alert danger">{error}</div> : null}<footer><button type="button" className="btn btn-white" onClick={onClose}>Cancelar</button><button type="submit" className="btn btn-primary" disabled={isSaving}>{isSaving ? 'Procesando...' : 'Confirmar y auditar'}</button></footer></form></div>;
 }
 
 export function PlatformUsersPage() {
@@ -380,10 +402,73 @@ export function PlatformTicketsPage() {
 }
 
 function TicketDetail({ ticket, onSaved }: { ticket: SupportTicket; onSaved: () => void }) {
-  const [body, setBody] = useState(''); const [internal, setInternal] = useState(false); const [status, setStatus] = useState(ticket.status); const [priority, setPriority] = useState(ticket.priority); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  async function reply(event: FormEvent) { event.preventDefault(); if (!body.trim()) return; setSaving(true); setError(''); try { await platformService.replyTicket(ticket.id, body.trim(), internal); setBody(''); onSaved(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible responder.'); } finally { setSaving(false); } }
-  async function updateTicket() { setSaving(true); setError(''); try { await platformService.updateTicket({ ticketId: ticket.id, status, priority }); onSaved(); } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible actualizar el ticket.'); } finally { setSaving(false); } }
-  return <section className="card platform-ticket-detail"><header><div><span className="eyebrow">{ticket.ticketNumber} · {ticket.organizationName}</span><h2>{ticket.subject}</h2><p>{ticket.description}</p></div><span className={toneForStatus(ticket.status)}>{statusLabel(ticket.status)}</span></header><div className="platform-ticket-controls"><label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as SupportTicket['status'])}><option value="new">Nuevo</option><option value="in_analysis">En análisis</option><option value="assigned">Asignado</option><option value="waiting_customer">Esperando cliente</option><option value="in_solution">En solución</option><option value="resolved">Resuelto</option><option value="closed">Cerrado</option><option value="reopened">Reabierto</option><option value="cancelled">Cancelado</option></select></label><label>Prioridad<select value={priority} onChange={(event) => setPriority(event.target.value as SupportTicket['priority'])}><option value="low">Baja</option><option value="medium">Media</option><option value="high">Alta</option><option value="critical">Crítica</option></select></label><button className="btn btn-white" onClick={() => void updateTicket()} disabled={saving}>Guardar clasificación</button></div><div className="platform-conversation">{ticket.messages?.map((message) => <article key={message.id} className={`${message.authorKind} ${message.isInternal ? 'internal' : ''}`}><header><strong>{message.authorName || message.authorEmail || message.authorKind}</strong><small>{formatDate(message.createdAt)}</small></header><p>{message.body}</p>{message.isInternal ? <span>Nota interna</span> : null}</article>)}</div><form className="platform-ticket-reply" onSubmit={reply}><textarea rows={4} value={body} onChange={(event) => setBody(event.target.value)} placeholder="Escribe una respuesta para la organización..." /><label><input type="checkbox" checked={internal} onChange={(event) => setInternal(event.target.checked)} /> Guardar como nota interna del equipo de soporte</label>{error ? <div className="alert danger">{error}</div> : null}<button className="btn btn-primary" disabled={saving || !body.trim()}>{saving ? 'Guardando...' : internal ? 'Agregar nota interna' : 'Enviar respuesta'}</button></form></section>;
+  const security = useAsyncData(() => platformService.getSecurity(), []);
+  const agents = security.data?.team.filter((member) => member.isActive && ['owner', 'admin', 'support_manager', 'support_agent'].includes(member.roleCode)) || [];
+  const [body, setBody] = useState('');
+  const [internal, setInternal] = useState(false);
+  const [status, setStatus] = useState(ticket.status);
+  const [priority, setPriority] = useState(ticket.priority);
+  const [assignedTo, setAssignedTo] = useState(ticket.assignedTo || '');
+  const [tags, setTags] = useState((ticket.tags || []).join(', '));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setStatus(ticket.status);
+    setPriority(ticket.priority);
+    setAssignedTo(ticket.assignedTo || '');
+    setTags((ticket.tags || []).join(', '));
+  }, [ticket.id, ticket.status, ticket.priority, ticket.assignedTo, ticket.tags]);
+
+  async function reply(event: FormEvent) {
+    event.preventDefault();
+    if (!body.trim()) return;
+    setSaving(true); setError('');
+    try { await platformService.replyTicket(ticket.id, body.trim(), internal); setBody(''); onSaved(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible responder.'); }
+    finally { setSaving(false); }
+  }
+
+  async function updateTicket(escalate = false) {
+    let escalationReason: string | undefined;
+    if (escalate) {
+      escalationReason = window.prompt('Motivo del escalamiento (mínimo 10 caracteres):') || undefined;
+      if (!escalationReason) return;
+    }
+    setSaving(true); setError('');
+    try {
+      await platformService.updateTicketV2({
+        ticketId: ticket.id,
+        status,
+        priority,
+        assignedTo: assignedTo || null,
+        tags: tags.split(',').map((value) => value.trim()).filter(Boolean),
+        escalate,
+        escalationReason
+      });
+      onSaved();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'No fue posible actualizar el ticket.'); }
+    finally { setSaving(false); }
+  }
+
+  return <section className="card platform-ticket-detail">
+    <header><div><span className="eyebrow">{ticket.ticketNumber} · {ticket.organizationName}</span><h2>{ticket.subject}</h2><p>{ticket.description}</p></div><span className={toneForStatus(ticket.status)}>{statusLabel(ticket.status)}</span></header>
+    <section className="platform-ticket-sla-grid">
+      <div className={ticket.firstResponseBreached ? 'danger' : ''}><span>Primera respuesta</span><strong>{ticket.firstResponseAt ? formatDate(ticket.firstResponseAt) : 'Pendiente'}</strong><small>Límite: {formatDate(ticket.firstResponseDueAt)}</small></div>
+      <div className={ticket.resolutionBreached ? 'danger' : ''}><span>Resolución</span><strong>{ticket.resolvedAt ? formatDate(ticket.resolvedAt) : 'Pendiente'}</strong><small>Límite: {formatDate(ticket.resolutionDueAt || ticket.slaDueAt)}</small></div>
+      <div><span>Escalamiento</span><strong>{ticket.escalatedAt ? 'Escalado' : 'Sin escalar'}</strong><small>{ticket.escalationReason || 'Sin observaciones'}</small></div>
+    </section>
+    <div className="platform-ticket-controls phase2-ticket-controls">
+      <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value as SupportTicket['status'])}><option value="new">Nuevo</option><option value="in_analysis">En análisis</option><option value="assigned">Asignado</option><option value="waiting_customer">Esperando cliente</option><option value="in_solution">En solución</option><option value="resolved">Resuelto</option><option value="closed">Cerrado</option><option value="reopened">Reabierto</option><option value="cancelled">Cancelado</option></select></label>
+      <label>Prioridad<select value={priority} onChange={(event) => setPriority(event.target.value as SupportTicket['priority'])}><option value="low">Baja</option><option value="medium">Media</option><option value="high">Alta</option><option value="critical">Crítica</option></select></label>
+      <label>Agente<select value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)}><option value="">Sin asignar</option>{agents.map((agent) => <option key={agent.userId} value={agent.userId}>{agent.name} · {agent.roleName}</option>)}</select></label>
+      <label>Etiquetas<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="acceso, facturación, crítico" /></label>
+      <button className="btn btn-white" onClick={() => void updateTicket()} disabled={saving}>Guardar clasificación</button>
+      <button className="btn btn-white danger-text" onClick={() => void updateTicket(true)} disabled={saving}>Escalar</button>
+    </div>
+    <div className="platform-conversation">{ticket.messages?.map((message) => <article key={message.id} className={`${message.authorKind} ${message.isInternal ? 'internal' : ''}`}><header><strong>{message.authorName || message.authorEmail || message.authorKind}</strong><small>{formatDate(message.createdAt)}</small></header><p>{message.body}</p>{message.isInternal ? <span>Nota interna</span> : null}</article>)}</div>
+    <form className="platform-ticket-reply" onSubmit={reply}><textarea rows={4} value={body} onChange={(event) => setBody(event.target.value)} placeholder="Escribe una respuesta para la organización..." /><label><input type="checkbox" checked={internal} onChange={(event) => setInternal(event.target.checked)} /> Guardar como nota interna del equipo de soporte</label>{error ? <div className="alert danger">{error}</div> : null}<button className="btn btn-primary" disabled={saving || !body.trim()}>{saving ? 'Guardando...' : internal ? 'Agregar nota interna' : 'Enviar respuesta'}</button></form>
+  </section>;
 }
 
 export function PlatformBackupsPage() {

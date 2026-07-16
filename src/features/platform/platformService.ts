@@ -10,7 +10,15 @@ import type {
   PlatformOrganizationSummary,
   PlatformSupportSession,
   PlatformUser,
-  SupportTicket
+  SupportTicket,
+  PlatformSecuritySnapshot,
+  PlatformSupportAccessSnapshot,
+  PlatformSupportAccessRequest,
+  PlatformRecoverySnapshot,
+  BackupRestoreRequest,
+  OrganizationUsageControl,
+  PlatformExplorerResult,
+  PlatformAdminRole
 } from './types';
 
 type JsonRecord = Record<string, unknown>;
@@ -46,14 +54,18 @@ async function rpc<T>(name: string, args: JsonRecord = {}): Promise<T> {
 
 export const platformService = {
   async getAccessContext(): Promise<PlatformAccessContext> {
-    const result = await rpc<unknown>('platform_get_context_v1');
+    const result = await rpc<unknown>('platform_get_context_v2');
     const row = asRecord(result);
     return {
       isPlatformAdmin: Boolean(row.isPlatformAdmin ?? row.is_platform_admin),
       userId: row.userId ? String(row.userId) : row.user_id ? String(row.user_id) : null,
       roleCode: String(row.roleCode ?? row.role_code ?? '') as PlatformAccessContext['roleCode'],
       roleName: String(row.roleName ?? row.role_name ?? 'Sin acceso de plataforma'),
-      permissions: asArray<string>(row.permissions).map(String)
+      permissions: asArray<string>(row.permissions).map(String),
+      aal: String(row.aal ?? 'aal1'),
+      mfaEnrolled: Boolean(row.mfaEnrolled ?? row.mfa_enrolled),
+      mfaVerified: Boolean(row.mfaVerified ?? row.mfa_verified),
+      verifiedFactors: Number(row.verifiedFactors ?? row.verified_factors ?? 0)
     };
   },
 
@@ -222,5 +234,146 @@ export const platformService = {
 
   setMembershipActive(membershipId: string, isActive: boolean, reason: string): Promise<void> {
     return rpc<void>('platform_set_membership_active_v1', { p_membership_id: membershipId, p_is_active: isActive, p_reason: reason });
+  },
+
+  getSecurity(): Promise<PlatformSecuritySnapshot> {
+    return rpc<PlatformSecuritySnapshot>('platform_get_security_v2');
+  },
+
+  updateSecurity(settings: Record<string, unknown>, reason: string): Promise<void> {
+    return rpc<void>('platform_update_security_v2', { p_settings: settings, p_reason: reason });
+  },
+
+  upsertPlatformAdmin(input: { userId: string; roleCode: PlatformAdminRole; isActive: boolean; reason: string }): Promise<void> {
+    return rpc<void>('platform_upsert_admin_v2', {
+      p_user_id: input.userId,
+      p_role_code: input.roleCode,
+      p_is_active: input.isActive,
+      p_reason: input.reason
+    });
+  },
+
+  listSupportAccess(status?: string, organizationId?: string): Promise<PlatformSupportAccessSnapshot> {
+    return rpc<PlatformSupportAccessSnapshot>('platform_list_support_access_v2', {
+      p_status: status || null,
+      p_organization_id: organizationId || null
+    });
+  },
+
+  requestSupportAccess(input: { organizationId: string; mode: 'read_only' | 'support' | 'admin'; scopes: string[]; reason: string; ticketId?: string; durationMinutes?: number }): Promise<PlatformSupportAccessRequest> {
+    return rpc<PlatformSupportAccessRequest>('platform_request_support_access_v2', {
+      p_organization_id: input.organizationId,
+      p_mode: input.mode,
+      p_scopes: input.scopes,
+      p_reason: input.reason,
+      p_ticket_id: input.ticketId || null,
+      p_duration_minutes: input.durationMinutes ?? null
+    });
+  },
+
+  decideSupportAccess(requestId: string, approved: boolean, reason: string): Promise<void> {
+    return rpc<void>('platform_decide_support_access_v2', {
+      p_request_id: requestId,
+      p_approved: approved,
+      p_reason: reason
+    });
+  },
+
+  startApprovedSupportSession(requestId: string): Promise<PlatformSupportSession> {
+    return rpc<PlatformSupportSession>('platform_start_support_session_v2', { p_request_id: requestId });
+  },
+
+  endSupportSessionV2(sessionId: string, reason: string): Promise<void> {
+    return rpc<void>('platform_end_support_session_v2', { p_session_id: sessionId, p_reason: reason });
+  },
+
+  updateTicketV2(input: { ticketId: string; status?: string; priority?: string; assignedTo?: string | null; tags?: string[]; escalate?: boolean; escalationReason?: string }): Promise<void> {
+    return rpc<void>('platform_update_support_ticket_v2', {
+      p_ticket_id: input.ticketId,
+      p_status: input.status || null,
+      p_priority: input.priority || null,
+      p_assigned_to: input.assignedTo ?? null,
+      p_tags: input.tags ?? null,
+      p_escalate: Boolean(input.escalate),
+      p_escalation_reason: input.escalationReason || null
+    });
+  },
+
+  listRecovery(organizationId?: string): Promise<PlatformRecoverySnapshot> {
+    return rpc<PlatformRecoverySnapshot>('platform_list_recovery_v2', { p_organization_id: organizationId || null });
+  },
+
+  upsertBackupSchedule(input: { organizationId: string; enabled: boolean; frequency: 'daily' | 'weekly' | 'monthly'; localTime: string; timezone: string; dayOfWeek?: number | null; dayOfMonth?: number | null; scope: OrganizationBackupJob['scope']; retentionDays: number; reason: string }): Promise<void> {
+    return rpc<void>('platform_upsert_backup_schedule_v2', {
+      p_organization_id: input.organizationId,
+      p_enabled: input.enabled,
+      p_frequency: input.frequency,
+      p_local_time: input.localTime,
+      p_timezone: input.timezone,
+      p_day_of_week: input.dayOfWeek ?? null,
+      p_day_of_month: input.dayOfMonth ?? null,
+      p_scope: input.scope,
+      p_retention_days: input.retentionDays,
+      p_reason: input.reason
+    });
+  },
+
+  requestRestore(input: { backupJobId: string; reason: string; restoreMode: 'merge' | 'replace'; targetEnvironment: 'validation' | 'production' }): Promise<BackupRestoreRequest> {
+    return rpc<BackupRestoreRequest>('platform_request_restore_v2', {
+      p_backup_job_id: input.backupJobId,
+      p_reason: input.reason,
+      p_restore_mode: input.restoreMode,
+      p_target_environment: input.targetEnvironment
+    });
+  },
+
+  decideRestore(restoreRequestId: string, approved: boolean, reason: string): Promise<void> {
+    return rpc<void>('platform_decide_restore_v2', {
+      p_restore_request_id: restoreRequestId,
+      p_approved: approved,
+      p_reason: reason
+    });
+  },
+
+  async processRestore(restoreRequestId: string, operation: 'validate' | 'apply', confirmationCode?: string): Promise<Record<string, unknown>> {
+    const { data, error } = await client().functions.invoke('process-organization-restore', {
+      body: { restoreRequestId, operation, confirmationCode }
+    });
+    if (error) throw new Error(error.message || 'No fue posible procesar la restauración.');
+    return asRecord(data);
+  },
+
+  refreshUsage(organizationId?: string): Promise<number> {
+    return rpc<number>('platform_refresh_usage_snapshot_v2', { p_organization_id: organizationId || null });
+  },
+
+  getUsageControl(organizationId: string): Promise<OrganizationUsageControl> {
+    return rpc<OrganizationUsageControl>('platform_get_usage_control_v2', { p_organization_id: organizationId });
+  },
+
+  updateUsageControl(input: { organizationId: string; limitsOverride: Record<string, unknown>; featureFlags: Record<string, unknown>; reason: string }): Promise<void> {
+    return rpc<void>('platform_update_usage_control_v2', {
+      p_organization_id: input.organizationId,
+      p_limits_override: input.limitsOverride,
+      p_feature_flags: input.featureFlags,
+      p_reason: input.reason
+    });
+  },
+
+  exploreOrganization(input: { organizationId: string; domain: string; search?: string; page?: number; pageSize?: number }): Promise<PlatformExplorerResult> {
+    return rpc<PlatformExplorerResult>('platform_explore_organization_v2', {
+      p_organization_id: input.organizationId,
+      p_domain: input.domain,
+      p_search: input.search || null,
+      p_page: input.page ?? 1,
+      p_page_size: input.pageSize ?? 50
+    });
+  },
+
+  async runScheduler(): Promise<Record<string, unknown>> {
+    const { data, error } = await client().functions.invoke('platform-scheduler', { body: {} });
+    if (error) throw new Error(error.message || 'No fue posible ejecutar el scheduler central.');
+    return asRecord(data);
   }
+
 };

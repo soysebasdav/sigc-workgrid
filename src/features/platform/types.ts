@@ -1,4 +1,4 @@
-export type PlatformAdminRole = 'owner' | 'admin' | 'support' | 'auditor' | 'backup_operator';
+export type PlatformAdminRole = 'owner' | 'admin' | 'support' | 'support_manager' | 'support_agent' | 'subscription_manager' | 'backup_operator' | 'auditor' | 'operations_operator';
 
 export interface PlatformAccessContext {
   isPlatformAdmin: boolean;
@@ -6,6 +6,10 @@ export interface PlatformAccessContext {
   roleCode: PlatformAdminRole | '';
   roleName: string;
   permissions: string[];
+  aal?: 'aal1' | 'aal2' | string;
+  mfaEnrolled?: boolean;
+  mfaVerified?: boolean;
+  verifiedFactors?: number;
 }
 
 export interface PlatformDashboard {
@@ -215,6 +219,15 @@ export interface SupportTicket {
   relatedCaseId: string | null;
   relatedCaseRadicado: string | null;
   slaDueAt: string | null;
+  firstResponseAt?: string | null;
+  firstResponseDueAt?: string | null;
+  resolutionDueAt?: string | null;
+  firstResponseBreached?: boolean;
+  resolutionBreached?: boolean;
+  escalatedAt?: string | null;
+  escalationReason?: string | null;
+  tags?: string[];
+  events?: Array<Record<string, unknown>>;
   resolvedAt: string | null;
   closedAt: string | null;
   createdAt: string;
@@ -274,6 +287,162 @@ export interface PlatformSupportSession {
 
 export interface PaginatedResult<T> {
   rows: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+
+export interface PlatformRoleDefinition {
+  id: string;
+  code: PlatformAdminRole;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  permissions: string[];
+}
+
+export interface PlatformTeamMember {
+  userId: string;
+  name: string;
+  email: string;
+  roleCode: PlatformAdminRole;
+  roleName: string;
+  isActive: boolean;
+  lastAccessAt: string | null;
+  createdAt: string;
+  mfaEnrolled: boolean;
+  mfaVerifiedFactors: number;
+}
+
+export interface PlatformSecuritySettings {
+  enforce_mfa: boolean;
+  require_mfa_for_sensitive_actions: boolean;
+  support_session_default_minutes: number;
+  support_session_max_minutes: number;
+  require_ticket_for_write_access: boolean;
+  require_two_person_approval_for_admin_access: boolean;
+  notify_organization_on_support_access: boolean;
+  session_idle_minutes: number;
+  updated_at?: string;
+}
+
+export interface PlatformSecuritySnapshot {
+  settings: PlatformSecuritySettings;
+  team: PlatformTeamMember[];
+  roles: PlatformRoleDefinition[];
+  currentAal: string;
+}
+
+export interface PlatformSupportAccessRequest {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  ticketId: string | null;
+  ticketNumber: string | null;
+  requestedBy: string;
+  requestedByName: string | null;
+  mode: 'read_only' | 'support' | 'admin';
+  scopes: string[];
+  reason: string;
+  durationMinutes: number;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired' | 'started' | 'completed';
+  requestedAt: string;
+  expiresAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  startedSessionId: string | null;
+}
+
+export interface PlatformSupportSessionV2 extends PlatformSupportSession {
+  adminName?: string | null;
+  ticketId: string | null;
+  scopes: string[];
+  mfaVerified: boolean;
+}
+
+export interface PlatformSupportAccessSnapshot {
+  requests: PlatformSupportAccessRequest[];
+  sessions: PlatformSupportSessionV2[];
+}
+
+export interface OrganizationBackupSchedule {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  enabled: boolean;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  localTime: string;
+  timezone: string;
+  dayOfWeek: number | null;
+  dayOfMonth: number | null;
+  scope: OrganizationBackupJob['scope'];
+  retentionDays: number;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+}
+
+export interface BackupRestoreRequest {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  backupJobId: string;
+  requestedBy: string;
+  requestedByName: string;
+  reason: string;
+  restoreMode: 'merge' | 'replace';
+  targetEnvironment: 'validation' | 'production';
+  status: 'pending_approval' | 'approved' | 'rejected' | 'validating' | 'ready' | 'applying' | 'completed' | 'failed' | 'cancelled';
+  confirmationCode: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  decisionReason: string | null;
+  validationReport: Record<string, unknown>;
+  restoreReport: Record<string, unknown>;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformRecoverySnapshot {
+  schedules: OrganizationBackupSchedule[];
+  restores: BackupRestoreRequest[];
+}
+
+export interface OrganizationUsageControl {
+  organizationId: string;
+  planLimits: Record<string, unknown>;
+  limitsOverride: Record<string, unknown>;
+  effectiveLimits: Record<string, unknown>;
+  planFeatures: Record<string, unknown>;
+  currentUsage: Record<string, unknown>;
+  history: Array<Record<string, unknown>>;
+  featureFlags: Array<{
+    id: string;
+    featureCode: string;
+    enabled: boolean;
+    configuration: Record<string, unknown>;
+    source: string;
+    updatedAt: string;
+  }>;
+  alerts: Array<{
+    id: string;
+    metricCode: string;
+    currentValue: number;
+    limitValue: number;
+    percentage: number;
+    severity: string;
+    status: string;
+    lastDetectedAt: string;
+    resolutionNote: string | null;
+  }>;
+}
+
+export interface PlatformExplorerResult {
+  domain: string;
+  rows: Array<Record<string, unknown>>;
   total: number;
   page: number;
   pageSize: number;
