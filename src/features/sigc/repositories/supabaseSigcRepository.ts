@@ -30,6 +30,7 @@ import type {
   SigcComment,
   SigcDocument,
   SigcDocumentVersion,
+  DocumentAccessOptions,
   UpdateDocumentRetentionInput,
   SigcAuditFilters,
   SigcAuditPage,
@@ -108,6 +109,7 @@ import type {
   QualityRunRecord
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
+import { MAX_INTERNAL_FILE_SIZE_BYTES, buildCanonicalFilename, inferFileMimeType, normalizeStorageSegment, storedFilenameFromPath, validateFileForUpload } from '../utils/filePolicy';
 
 function requireClient() {
   if (!supabase) throw new Error('Supabase no está configurado.');
@@ -413,27 +415,6 @@ function formatDateTime(iso: string | null | undefined): string {
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'short', timeStyle: 'short' }).format(value);
 }
 
-function sanitizeFilename(filename: string): string {
-  const normalized = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const cleaned = normalized.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return (cleaned || 'archivo').slice(-180);
-}
-
-const MAX_INTERNAL_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-const ALLOWED_INTERNAL_EXTENSIONS = new Set([
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yaml', 'yml',
-  'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'log', 'js', 'ts', 'css', 'html'
-]);
-
-function validateInternalFile(file: File): void {
-  if (file.size <= 0) throw new Error(`${file.name}: el archivo está vacío.`);
-  if (file.size > MAX_INTERNAL_FILE_SIZE_BYTES) throw new Error(`${file.name}: supera el máximo de 100 MB.`);
-  const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? '' : '';
-  if (!extension || !ALLOWED_INTERNAL_EXTENSIONS.has(extension)) {
-    throw new Error(`${file.name}: formato de archivo no permitido.`);
-  }
-}
-
 async function sha256File(file: File): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, '0')).join('');
@@ -443,6 +424,108 @@ async function removeStoragePathQuietly(path: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.storage.from('case-documents').remove([path]);
   if (error) console.warn(`SIGC: no fue posible limpiar el archivo huérfano ${path}.`, error);
+}
+
+type DocumentUploadContext = {
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+  caseId: string;
+  radicado: string;
+  areaId?: string;
+  areaName?: string;
+  areaCode?: string;
+  assignmentId?: string;
+  documentId?: string;
+  documentName?: string;
+  category?: string;
+  currentVersion?: number;
+};
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function repositoryErrorMessage(reason: unknown): string {
+  if (reason instanceof Error && reason.message) return reason.message;
+  const row = recordValue(reason);
+  return stringValue(row, 'message', 'error_description', 'details') || 'No fue posible completar la operación documental.';
+}
+
+function stringValue(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (value != null && String(value).trim()) return String(value);
+  }
+  return '';
+}
+
+function optionalStringValue(row: Record<string, unknown>, ...keys: string[]): string | undefined {
+  const value = stringValue(row, ...keys);
+  return value || undefined;
+}
+
+function mapDocumentPayload(value: unknown): SigcDocument {
+  const row = recordValue(value);
+  const storagePath = stringValue(row, 'currentStoragePath', 'current_storage_path');
+  const originalFilename = stringValue(row, 'currentFilename', 'current_filename', 'originalFilename', 'original_filename') || storedFilenameFromPath(storagePath);
+  return {
+    id: stringValue(row, 'id'),
+    caseId: stringValue(row, 'caseId', 'case_id'),
+    caseRadicado: stringValue(row, 'caseRadicado', 'case_radicado', 'radicado'),
+    caseSubject: stringValue(row, 'caseSubject', 'case_subject', 'subject'),
+    subtaskId: optionalStringValue(row, 'subtaskId', 'subtask_id'),
+    commentId: optionalStringValue(row, 'commentId', 'comment_id'),
+    assignmentId: optionalStringValue(row, 'assignmentId', 'assignment_id'),
+    areaId: optionalStringValue(row, 'areaId', 'area_id'),
+    areaName: optionalStringValue(row, 'areaName', 'area_name'),
+    name: stringValue(row, 'name') || originalFilename,
+    category: stringValue(row, 'category') || 'General',
+    state: stringValue(row, 'state') || 'Cargado',
+    currentVersion: Number(row.currentVersion ?? row.current_version ?? 1),
+    ownerId: optionalStringValue(row, 'ownerId', 'owner_id', 'createdBy', 'created_by'),
+    ownerName: stringValue(row, 'ownerName', 'owner_name') || 'Usuario',
+    createdAt: stringValue(row, 'createdAt', 'created_at'),
+    updatedAt: stringValue(row, 'updatedAt', 'updated_at'),
+    date: stringValue(row, 'date') || formatDateTime(stringValue(row, 'updatedAt', 'updated_at')),
+    currentFilename: originalFilename,
+    currentStoredFilename: stringValue(row, 'currentStoredFilename', 'current_stored_filename', 'storedFilename', 'stored_filename') || storedFilenameFromPath(storagePath),
+    currentStoragePath: storagePath,
+    currentMimeType: optionalStringValue(row, 'currentMimeType', 'current_mime_type', 'mimeType', 'mime_type'),
+    currentSizeBytes: Number(row.currentSizeBytes ?? row.current_size_bytes ?? row.sizeBytes ?? row.size_bytes ?? 0),
+    retentionUntil: optionalStringValue(row, 'retentionUntil', 'retention_until') ?? null,
+    legalHold: Boolean(row.legalHold ?? row.legal_hold),
+    clientVisible: Boolean(row.clientVisible ?? row.client_visible)
+  };
+}
+
+function mapUploadContext(value: unknown): DocumentUploadContext {
+  const row = recordValue(value);
+  const context: DocumentUploadContext = {
+    organizationId: stringValue(row, 'organizationId', 'organization_id'),
+    organizationName: stringValue(row, 'organizationName', 'organization_name'),
+    organizationSlug: stringValue(row, 'organizationSlug', 'organization_slug'),
+    caseId: stringValue(row, 'caseId', 'case_id'),
+    radicado: stringValue(row, 'radicado'),
+    areaId: optionalStringValue(row, 'areaId', 'area_id'),
+    areaName: optionalStringValue(row, 'areaName', 'area_name'),
+    areaCode: optionalStringValue(row, 'areaCode', 'area_code'),
+    assignmentId: optionalStringValue(row, 'assignmentId', 'assignment_id'),
+    documentId: optionalStringValue(row, 'documentId', 'document_id'),
+    documentName: optionalStringValue(row, 'documentName', 'document_name'),
+    category: optionalStringValue(row, 'category'),
+    currentVersion: Number(row.currentVersion ?? row.current_version ?? 0)
+  };
+  if (!context.organizationId || !context.caseId || !context.radicado) throw new Error('No fue posible preparar el contexto seguro de almacenamiento del documento.');
+  return context;
+}
+
+function buildDocumentStoragePath(context: DocumentUploadContext, documentId: string, version: number, storedFilename: string): string {
+  const organization = normalizeStorageSegment(context.organizationSlug || context.organizationId, 'organizacion');
+  const area = normalizeStorageSegment(context.areaCode || context.areaId, 'general');
+  const radicado = normalizeStorageSegment(context.radicado, 'caso');
+  const versionFolder = `v${Math.max(1, version).toString().padStart(3, '0')}`;
+  return `${context.organizationId}/${organization}/${area}/${radicado}/${documentId}/${versionFolder}/${storedFilename}`;
 }
 
 function extractTemplateVariables(...values: Array<string | null | undefined>): string[] {
@@ -1059,15 +1142,20 @@ export const supabaseSigcRepository: SigcRepository = {
       }
     });
     if (error) throw error;
-    const raw = (data ?? {}) as Record<string, unknown>;
-    return { items: Array.isArray(raw.items) ? raw.items as SigcDocument[] : [], total: Number(raw.total ?? 0), page: Number(raw.page ?? 1), pageSize: Number(raw.pageSize ?? 25) };
+    const raw = recordValue(data);
+    return {
+      items: Array.isArray(raw.items) ? raw.items.map(mapDocumentPayload) : [],
+      total: Number(raw.total ?? 0),
+      page: Number(raw.page ?? 1),
+      pageSize: Number(raw.pageSize ?? 25)
+    };
   },
 
   async listDocumentVersions(documentId: string): Promise<SigcDocumentVersion[]> {
     const client = requireClient();
     const { data, error } = await client
       .from('document_versions')
-      .select('id,document_id,version_number,original_filename,storage_path,mime_type,size_bytes,checksum,change_notes,uploaded_by,created_at')
+      .select('id,document_id,version_number,original_filename,stored_filename,storage_path,mime_type,size_bytes,checksum,change_notes,uploaded_by,created_at')
       .eq('document_id', documentId)
       .order('version_number', { ascending: false });
     if (error) throw error;
@@ -1081,6 +1169,7 @@ export const supabaseSigcRepository: SigcRepository = {
       documentId: row.document_id,
       versionNumber: row.version_number,
       originalFilename: row.original_filename,
+      storedFilename: row.stored_filename || storedFilenameFromPath(row.storage_path),
       storagePath: row.storage_path,
       mimeType: row.mime_type,
       sizeBytes: row.size_bytes,
@@ -1110,66 +1199,156 @@ export const supabaseSigcRepository: SigcRepository = {
   },
 
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
-    validateInternalFile(input.file);
+    await validateFileForUpload(input.file, { scope: 'internal' });
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
-    const organizationId = await ensureOrganization();
-    const documentId = crypto.randomUUID();
-    const checksum = await sha256File(input.file);
-    const path = `${organizationId}/${resolvedCaseId}/${documentId}/v1/${sanitizeFilename(input.file.name)}`;
-    const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: input.file.type || undefined });
-    if (uploadError) throw uploadError;
-
-    const { error: registerError } = await client.rpc('register_case_document_v2', {
-      p_document_id: documentId,
+    const { data: contextData, error: contextError } = await client.rpc('get_case_document_upload_context_v1', {
       p_case_id: resolvedCaseId,
-      p_name: input.name,
-      p_category: input.category,
-      p_state: input.state ?? 'Cargado',
-      p_original_filename: input.file.name,
-      p_storage_path: path,
-      p_mime_type: input.file.type || '',
-      p_size_bytes: input.file.size,
-      p_change_notes: input.changeNotes ?? null,
-      p_checksum: checksum,
+      p_area_id: input.areaId || null,
+      p_assignment_id: input.assignmentId || null,
       p_subtask_id: input.subtaskId || null,
       p_comment_id: input.commentId || null
     });
+    if (contextError) throw contextError;
+    const context = mapUploadContext(contextData);
+    const documentId = crypto.randomUUID();
+    const checksum = await sha256File(input.file);
+    const storedFilename = buildCanonicalFilename({
+      organization: context.organizationSlug || context.organizationName,
+      area: context.areaCode || context.areaName,
+      radicado: context.radicado,
+      category: input.category || input.name,
+      version: 1,
+      originalFilename: input.file.name,
+      documentId
+    });
+    const path = buildDocumentStoragePath(context, documentId, 1, storedFilename);
+    const mimeType = inferFileMimeType(input.file);
+    const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: mimeType, cacheControl: '3600' });
+    if (uploadError) throw uploadError;
+
+    const { error: registerError } = await client.rpc('register_case_document_v3', {
+      p_document_id: documentId,
+      p_case_id: resolvedCaseId,
+      p_name: input.name.trim() || input.file.name,
+      p_category: input.category.trim() || 'General',
+      p_state: input.state ?? 'Cargado',
+      p_original_filename: input.file.name,
+      p_stored_filename: storedFilename,
+      p_storage_path: path,
+      p_mime_type: mimeType,
+      p_size_bytes: input.file.size,
+      p_change_notes: input.changeNotes?.trim() || null,
+      p_checksum: checksum,
+      p_subtask_id: input.subtaskId || null,
+      p_comment_id: input.commentId || null,
+      p_assignment_id: context.assignmentId || input.assignmentId || null,
+      p_area_id: context.areaId || input.areaId || null
+    });
     if (registerError) {
-      await removeStoragePathQuietly(path);
-      throw registerError;
+      // A network timeout can occur after PostgreSQL committed. Verify before deleting or inviting a duplicate retry.
+      const { data: committedDocument } = await client
+        .from('case_documents')
+        .select('id,current_version')
+        .eq('id', documentId)
+        .eq('case_id', resolvedCaseId)
+        .maybeSingle();
+      if (!committedDocument) {
+        await removeStoragePathQuietly(path);
+        throw registerError;
+      }
     }
 
-    const documents = await this.listDocuments(resolvedCaseId);
-    const created = documents.find((document) => document.id === documentId);
-    if (!created) throw new Error('El documento se registró correctamente, pero no fue posible refrescar su ficha. Recarga la vista.');
-    return created;
+    try {
+      const documents = await this.listDocuments(resolvedCaseId);
+      const created = documents.find((document) => document.id === documentId);
+      if (created) return created;
+    } catch (refreshError) {
+      console.warn('SIGC: el documento quedó registrado, pero la consulta de refresco falló.', refreshError);
+    }
+
+    const now = new Date().toISOString();
+    const { data: authData } = await client.auth.getUser();
+    return {
+      id: documentId,
+      caseId: resolvedCaseId,
+      caseRadicado: context.radicado,
+      caseSubject: '',
+      subtaskId: input.subtaskId || undefined,
+      commentId: input.commentId || undefined,
+      assignmentId: context.assignmentId || input.assignmentId || undefined,
+      areaId: context.areaId || input.areaId || undefined,
+      areaName: context.areaName,
+      name: input.name.trim() || input.file.name,
+      category: input.category.trim() || 'General',
+      state: input.state ?? 'Cargado',
+      currentVersion: 1,
+      ownerId: authData.user?.id,
+      ownerName: String(authData.user?.user_metadata?.name ?? authData.user?.email ?? 'Usuario actual'),
+      createdAt: now,
+      updatedAt: now,
+      date: formatDateTime(now),
+      currentFilename: input.file.name,
+      currentStoredFilename: storedFilename,
+      currentStoragePath: path,
+      currentMimeType: mimeType,
+      currentSizeBytes: input.file.size,
+      retentionUntil: null,
+      legalHold: false,
+      clientVisible: false
+    };
   },
 
   async addDocumentVersion(input: AddDocumentVersionInput): Promise<void> {
-    validateInternalFile(input.file);
+    await validateFileForUpload(input.file, { scope: 'internal' });
     const client = requireClient();
     const resolvedCaseId = await resolveCaseDatabaseId(input.caseId);
-    const organizationId = await ensureOrganization();
+    const { data: contextData, error: contextError } = await client.rpc('get_document_version_upload_context_v1', {
+      p_document_id: input.documentId,
+      p_expected_current_version: input.currentVersion
+    });
+    if (contextError) throw contextError;
+    const context = mapUploadContext(contextData);
+    if (context.caseId !== resolvedCaseId) throw new Error('El documento no pertenece al caso indicado.');
     const checksum = await sha256File(input.file);
     const nextVersion = input.currentVersion + 1;
-    const path = `${organizationId}/${resolvedCaseId}/${input.documentId}/v${nextVersion}/${sanitizeFilename(input.file.name)}`;
-    const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: input.file.type || undefined });
+    const storedFilename = buildCanonicalFilename({
+      organization: context.organizationSlug || context.organizationName,
+      area: context.areaCode || context.areaName,
+      radicado: context.radicado,
+      category: context.category || context.documentName || 'DOCUMENTO',
+      version: nextVersion,
+      originalFilename: input.file.name,
+      documentId: input.documentId
+    });
+    const path = buildDocumentStoragePath(context, input.documentId, nextVersion, storedFilename);
+    const mimeType = inferFileMimeType(input.file);
+    const { error: uploadError } = await client.storage.from('case-documents').upload(path, input.file, { upsert: false, contentType: mimeType, cacheControl: '3600' });
     if (uploadError) throw uploadError;
 
-    const { error } = await client.rpc('add_case_document_version_v2', {
+    const { error } = await client.rpc('add_case_document_version_v3', {
       p_document_id: input.documentId,
       p_expected_current_version: input.currentVersion,
       p_original_filename: input.file.name,
+      p_stored_filename: storedFilename,
       p_storage_path: path,
-      p_mime_type: input.file.type || '',
+      p_mime_type: mimeType,
       p_size_bytes: input.file.size,
-      p_change_notes: input.changeNotes ?? null,
+      p_change_notes: input.changeNotes?.trim() || null,
       p_checksum: checksum
     });
     if (error) {
-      await removeStoragePathQuietly(path);
-      throw error;
+      // Do not delete a version that may already have committed after a transient network failure.
+      const { data: committedDocument } = await client
+        .from('case_documents')
+        .select('id,current_version')
+        .eq('id', input.documentId)
+        .maybeSingle();
+      const committed = Number(committedDocument?.current_version ?? 0) >= nextVersion;
+      if (!committed) {
+        await removeStoragePathQuietly(path);
+        throw error;
+      }
     }
   },
 
@@ -1179,10 +1358,14 @@ export const supabaseSigcRepository: SigcRepository = {
     if (error) throw error;
   },
 
-  async getDocumentSignedUrl(storagePath: string): Promise<string> {
+  async getDocumentSignedUrl(storagePath: string, options: DocumentAccessOptions = {}): Promise<string> {
     const client = requireClient();
-    if (!storagePath) throw new Error('El documento no tiene una ruta de almacenamiento válida.');
-    const { data, error } = await client.storage.from('case-documents').createSignedUrl(storagePath, 120);
+    if (!storagePath || storagePath.startsWith('/') || storagePath.includes('..') || storagePath.includes('\\')) {
+      throw new Error('El documento no tiene una ruta de almacenamiento válida.');
+    }
+    const expiresIn = Math.min(900, Math.max(60, options.expiresInSeconds ?? 180));
+    const signedOptions = options.downloadFilename ? { download: options.downloadFilename } : undefined;
+    const { data, error } = await client.storage.from('case-documents').createSignedUrl(storagePath, expiresIn, signedOptions);
     if (error) throw error;
     if (!data?.signedUrl) throw new Error('No fue posible generar el acceso temporal al documento.');
     return data.signedUrl;
@@ -2315,6 +2498,12 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
 
   async createPublicCase(input: PublicCaseCreateInput): Promise<PublicCaseSubmissionResult> {
     const client = requireClient();
+    const attachments = input.attachments ?? [];
+    const expectedMaxFiles = Math.max(0, Math.min(10, input.maxAttachmentFiles ?? 5));
+    const expectedMaxSize = Math.max(1024 * 1024, Math.min(MAX_INTERNAL_FILE_SIZE_BYTES, input.maxAttachmentSizeBytes ?? 25 * 1024 * 1024));
+    if (attachments.length > expectedMaxFiles) throw new Error(`Puedes adjuntar máximo ${expectedMaxFiles} archivo(s).`);
+    await Promise.all(attachments.map((file) => validateFileForUpload(file, { scope: 'public', maxFileSizeBytes: expectedMaxSize })));
+
     const { data, error } = await client.rpc('submit_public_case_v6', {
       p_tenant: input.tenant?.trim() || null,
       p_hostname: input.hostname?.trim() || null,
@@ -2340,34 +2529,87 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
     if (!created) throw new Error('No fue posible confirmar la radicación.');
 
     const failedAttachments: string[] = [];
+    const processingErrors: string[] = [];
     let attachmentCount = 0;
-    const attachments = input.attachments ?? [];
     const uploadToken = created.upload_token ? String(created.upload_token) : '';
     const uploadPrefix = created.upload_path_prefix ? String(created.upload_path_prefix) : '';
+    const configuredMaxFiles = Math.max(0, Number(created.max_files ?? expectedMaxFiles));
+    const configuredMaxSize = Math.max(1024 * 1024, Number(created.max_file_size_bytes ?? expectedMaxSize));
+    const eligibleAttachments = attachments.slice(0, configuredMaxFiles);
+    if (attachments.length > configuredMaxFiles) failedAttachments.push(...attachments.slice(configuredMaxFiles).map((file) => file.name));
 
-    if (attachments.length && uploadToken && uploadPrefix) {
-      for (const file of attachments) {
-        const path = `${uploadPrefix}/${crypto.randomUUID()}-${sanitizeFilename(file.name)}`;
-        const { error: uploadError } = await client.storage.from('case-documents').upload(path, file, {
-          upsert: false,
-          contentType: file.type || undefined
-        });
-        if (uploadError) { failedAttachments.push(file.name); continue; }
-
-        const { error: registerError } = await client.rpc('register_public_case_attachment', {
-          p_upload_token: uploadToken,
-          p_storage_path: path,
-          p_original_filename: file.name,
-          p_mime_type: file.type || null,
-          p_size_bytes: file.size
-        });
-        if (registerError) {
-          await removeStoragePathQuietly(path);
-          failedAttachments.push(file.name);
-          continue;
+    let uploadContext: DocumentUploadContext | null = null;
+    if (eligibleAttachments.length && uploadToken && uploadPrefix) {
+      const { data: publicContextData, error: publicContextError } = await client.rpc('get_public_case_upload_context_v1', { p_upload_token: uploadToken });
+      if (publicContextError) {
+        failedAttachments.push(...eligibleAttachments.map((file) => file.name));
+        processingErrors.push(`No fue posible preparar la carga de adjuntos: ${publicContextError.message}`);
+      } else {
+        try {
+          uploadContext = mapUploadContext(publicContextData);
+        } catch (contextError) {
+          failedAttachments.push(...eligibleAttachments.map((file) => file.name));
+          processingErrors.push(repositoryErrorMessage(contextError));
         }
-        attachmentCount += 1;
       }
+
+      if (uploadContext) {
+        for (const file of eligibleAttachments) {
+          let uploadedPath = '';
+          try {
+            await validateFileForUpload(file, { scope: 'public', maxFileSizeBytes: configuredMaxSize });
+            const documentId = crypto.randomUUID();
+            const storedFilename = buildCanonicalFilename({
+              organization: uploadContext.organizationSlug || uploadContext.organizationName,
+              area: uploadContext.areaCode || uploadContext.areaName || 'RADICACION',
+              radicado: uploadContext.radicado,
+              category: 'ADJUNTO_RADICACION',
+              version: 1,
+              originalFilename: file.name,
+              documentId
+            });
+            const path = `${uploadPrefix}/${documentId}/v001/${storedFilename}`;
+            uploadedPath = path;
+            const mimeType = inferFileMimeType(file);
+            const checksum = await sha256File(file);
+            const { error: uploadError } = await client.storage.from('case-documents').upload(path, file, {
+              upsert: false,
+              contentType: mimeType,
+              cacheControl: '3600'
+            });
+            if (uploadError) throw uploadError;
+
+            const { error: registerError } = await client.rpc('register_public_case_attachment_v2', {
+              p_upload_token: uploadToken,
+              p_document_id: documentId,
+              p_storage_path: path,
+              p_original_filename: file.name,
+              p_stored_filename: storedFilename,
+              p_mime_type: mimeType,
+              p_size_bytes: file.size,
+              p_checksum: checksum
+            });
+            if (registerError) {
+              // The response can be lost after commit. Verify before deleting or reporting a false failure.
+              const { data: committedVersion } = await client
+                .from('document_versions')
+                .select('id')
+                .eq('document_id', documentId)
+                .eq('version_number', 1)
+                .maybeSingle();
+              if (!committedVersion) throw registerError;
+            }
+            attachmentCount += 1;
+          } catch (attachmentError) {
+            if (uploadedPath) await removeStoragePathQuietly(uploadedPath);
+            failedAttachments.push(file.name);
+            processingErrors.push(`${file.name}: ${repositoryErrorMessage(attachmentError)}`);
+          }
+        }
+      }
+    } else if (eligibleAttachments.length) {
+      failedAttachments.push(...eligibleAttachments.map((file) => file.name));
+      processingErrors.push('El servidor no generó una sesión de carga documental utilizable.');
     }
 
     let attachmentSessionFinalized = !attachments.length;
@@ -2375,15 +2617,20 @@ export const supabasePublicSigcRepository: PublicSigcRepository = {
     if (attachments.length && uploadToken) {
       const { error: finalizeError } = await client.rpc('finalize_public_case_upload', { p_upload_token: uploadToken });
       attachmentSessionFinalized = !finalizeError;
-      attachmentFinalizeError = finalizeError?.message;
+      if (finalizeError) processingErrors.push(`No fue posible cerrar la sesión de adjuntos: ${finalizeError.message}`);
+    } else if (attachments.length) {
+      attachmentSessionFinalized = false;
+      processingErrors.push('El servidor no generó una sesión de carga documental.');
     }
+    attachmentFinalizeError = processingErrors.length ? processingErrors.join(' | ') : undefined;
+    const uniqueFailedAttachments = [...new Set(failedAttachments)];
 
     return {
       caseId: String(created.case_id),
       radicado: String(created.radicado),
       dueAt: created.due_at ?? null,
       attachmentCount,
-      failedAttachments,
+      failedAttachments: uniqueFailedAttachments,
       attachmentSessionFinalized,
       attachmentFinalizeError
     };

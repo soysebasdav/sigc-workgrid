@@ -190,6 +190,8 @@ export interface PublicCaseCreateInput extends PublicIntakeLocator {
   challengeId?: string;
   challengeAnswer?: string;
   attachments?: File[];
+  maxAttachmentFiles?: number;
+  maxAttachmentSizeBytes?: number;
   customFields?: Record<string, unknown>;
 }
 
@@ -528,6 +530,9 @@ export interface SigcDocument {
   caseSubject: string;
   subtaskId?: string;
   commentId?: string;
+  assignmentId?: string;
+  areaId?: string;
+  areaName?: string;
   name: string;
   category: string;
   state: string;
@@ -538,6 +543,7 @@ export interface SigcDocument {
   updatedAt: string;
   date: string;
   currentFilename: string;
+  currentStoredFilename: string;
   currentStoragePath: string;
   currentMimeType?: string;
   currentSizeBytes: number;
@@ -551,6 +557,7 @@ export interface SigcDocumentVersion {
   documentId: string;
   versionNumber: number;
   originalFilename: string;
+  storedFilename: string;
   storagePath: string;
   mimeType?: string | null;
   sizeBytes: number;
@@ -627,6 +634,8 @@ export interface UploadCaseDocumentInput {
   changeNotes?: string;
   subtaskId?: string;
   commentId?: string;
+  assignmentId?: string;
+  areaId?: string;
 }
 
 export interface AddDocumentVersionInput {
@@ -635,6 +644,12 @@ export interface AddDocumentVersionInput {
   currentVersion: number;
   file: File;
   changeNotes?: string;
+}
+
+
+export interface DocumentAccessOptions {
+  downloadFilename?: string;
+  expiresInSeconds?: number;
 }
 
 export interface SigcTimelineEvent {

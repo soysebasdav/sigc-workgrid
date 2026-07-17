@@ -24,6 +24,7 @@ import type {
   SigcComment,
   SigcDocument,
   SigcDocumentVersion,
+  DocumentAccessOptions,
   UpdateDocumentRetentionInput,
   SigcAuditFilters,
   SigcAuditPage,
@@ -126,7 +127,7 @@ export interface SigcRepository {
   uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument>;
   addDocumentVersion(input: AddDocumentVersionInput): Promise<void>;
   deleteDocument(documentId: string): Promise<void>;
-  getDocumentSignedUrl(storagePath: string): Promise<string>;
+  getDocumentSignedUrl(storagePath: string, options?: DocumentAccessOptions): Promise<string>;
 
   listCaseTimeline(caseId: string, page?: number, pageSize?: number): Promise<SigcTimelinePage>;
   getAuditEvents(filters: SigcAuditFilters): Promise<SigcAuditPage>;

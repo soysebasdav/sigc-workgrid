@@ -96,6 +96,7 @@ import type {
   QualityRunRecord
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
+import { buildCanonicalFilename, inferFileMimeType, validateFileForUpload } from '../utils/filePolicy';
 
 const CASES_KEY = 'sigc_phase2_demo_cases';
 const ASSIGNMENTS_KEY = 'sigc_phase2_demo_assignments';
@@ -326,7 +327,7 @@ function readDocuments(): SigcDocument[] {
     return {
       id: `demo-document-${index + 1}`, caseId: caseItem?.databaseId ?? caseItem?.id ?? '', caseRadicado: caseItem?.radicado ?? doc.caseId, caseSubject: caseItem?.subject ?? '',
       name: doc.name, category: doc.type, state: doc.state, currentVersion: Number(doc.version.replace(/\D/g, '')) || 1, ownerName: doc.owner, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      date: doc.date, currentFilename: doc.name, currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0, retentionUntil: null, legalHold: false, clientVisible: index % 2 === 0
+      date: doc.date, currentFilename: doc.name, currentStoredFilename: buildCanonicalFilename({ organization: 'DEMO', area: caseItem?.area ?? 'GENERAL', radicado: caseItem?.radicado ?? doc.caseId, category: doc.type, version: Number(doc.version.replace(/\D/g, '')) || 1, originalFilename: doc.name }), currentStoragePath: '', currentMimeType: doc.type, currentSizeBytes: 0, retentionUntil: null, legalHold: false, clientVisible: index % 2 === 0
     } satisfies SigcDocument;
   });
   writeJson(DOCUMENTS_KEY, seeded);
@@ -886,18 +887,22 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async uploadDocument(input: UploadCaseDocumentInput): Promise<SigcDocument> {
+    await validateFileForUpload(input.file, { scope: 'internal' });
     const item = await this.getCaseByIdentifier(input.caseId);
     if (!item) throw new Error('Caso no encontrado.');
-    const document: SigcDocument = { id: `demo-document-${crypto.randomUUID()}`, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, name: input.name, category: input.category, state: input.state ?? 'Cargado', clientVisible: false,
-      currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoragePath: '', currentMimeType: input.file.type, currentSizeBytes: input.file.size, retentionUntil: null, legalHold: false };
+    const documentId = `demo-document-${crypto.randomUUID()}`;
+    const storedFilename = buildCanonicalFilename({ organization: 'DEMO', area: input.areaId || item.area || 'GENERAL', radicado: item.radicado, category: input.category, version: 1, originalFilename: input.file.name, documentId });
+    const document: SigcDocument = { id: documentId, caseId: item.databaseId ?? item.id, caseRadicado: item.radicado, caseSubject: item.subject, subtaskId: input.subtaskId, commentId: input.commentId, assignmentId: input.assignmentId, areaId: input.areaId, areaName: item.area, name: input.name, category: input.category, state: input.state ?? 'Cargado', clientVisible: false,
+      currentVersion: 1, ownerName: 'Usuario Demo', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), date: 'Ahora', currentFilename: input.file.name, currentStoredFilename: storedFilename, currentStoragePath: '', currentMimeType: inferFileMimeType(input.file), currentSizeBytes: input.file.size, retentionUntil: null, legalHold: false };
     writeJson(DOCUMENTS_KEY, [document, ...readDocuments()]);
     const version: SigcDocumentVersion = {
       id: `demo-version-${crypto.randomUUID()}`,
       documentId: document.id,
       versionNumber: 1,
       originalFilename: input.file.name,
+      storedFilename,
       storagePath: '',
-      mimeType: input.file.type,
+      mimeType: inferFileMimeType(input.file),
       sizeBytes: input.file.size,
       checksum: null,
       changeNotes: input.changeNotes,
@@ -912,16 +917,19 @@ export const demoSigcRepository: SigcRepository = {
   },
 
   async addDocumentVersion(input: AddDocumentVersionInput): Promise<void> {
+    await validateFileForUpload(input.file, { scope: 'internal' });
     const rows = readDocuments();
     const document = rows.find((entry) => entry.id === input.documentId);
-    writeJson(DOCUMENTS_KEY, rows.map((entry) => entry.id === input.documentId ? { ...entry, currentVersion: entry.currentVersion + 1, currentFilename: input.file.name, currentMimeType: input.file.type, currentSizeBytes: input.file.size, updatedAt: new Date().toISOString(), date: 'Ahora' } : entry));
+    writeJson(DOCUMENTS_KEY, rows.map((entry) => entry.id === input.documentId ? { ...entry, currentVersion: entry.currentVersion + 1, currentFilename: input.file.name, currentStoredFilename: buildCanonicalFilename({ organization: 'DEMO', area: document?.areaName || document?.areaId || 'GENERAL', radicado: document?.caseRadicado || 'CASO', category: document?.category || 'DOCUMENTO', version: input.currentVersion + 1, originalFilename: input.file.name, documentId: input.documentId }), currentMimeType: inferFileMimeType(input.file), currentSizeBytes: input.file.size, updatedAt: new Date().toISOString(), date: 'Ahora' } : entry));
+    const storedFilename = buildCanonicalFilename({ organization: 'DEMO', area: document?.areaName || document?.areaId || 'GENERAL', radicado: document?.caseRadicado || 'CASO', category: document?.category || 'DOCUMENTO', version: input.currentVersion + 1, originalFilename: input.file.name, documentId: input.documentId });
     const version: SigcDocumentVersion = {
       id: `demo-version-${crypto.randomUUID()}`,
       documentId: input.documentId,
       versionNumber: input.currentVersion + 1,
       originalFilename: input.file.name,
+      storedFilename,
       storagePath: '',
-      mimeType: input.file.type,
+      mimeType: inferFileMimeType(input.file),
       sizeBytes: input.file.size,
       checksum: null,
       changeNotes: input.changeNotes,

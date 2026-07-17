@@ -368,6 +368,8 @@ export interface Database {
         case_id: string;
         subtask_id: string | null;
         comment_id: string | null;
+        assignment_id: string | null;
+        area_id: string | null;
         name: string;
         category: string;
         state: string;
@@ -389,6 +391,7 @@ export interface Database {
         document_id: string;
         version_number: number;
         original_filename: string;
+        stored_filename: string | null;
         storage_path: string;
         mime_type: string | null;
         size_bytes: number;
@@ -767,6 +770,30 @@ export interface Database {
       register_public_case_attachment: {
         Args: { p_upload_token: string; p_storage_path: string; p_original_filename: string; p_mime_type: string | null; p_size_bytes: number };
         Returns: string;
+      };
+      get_public_case_upload_context_v1: {
+        Args: { p_upload_token: string };
+        Returns: Json;
+      };
+      register_public_case_attachment_v2: {
+        Args: { p_upload_token: string; p_document_id: string; p_storage_path: string; p_original_filename: string; p_stored_filename: string; p_mime_type: string; p_size_bytes: number; p_checksum: string };
+        Returns: string;
+      };
+      get_case_document_upload_context_v1: {
+        Args: { p_case_id: string; p_area_id?: string | null; p_assignment_id?: string | null; p_subtask_id?: string | null; p_comment_id?: string | null };
+        Returns: Json;
+      };
+      register_case_document_v3: {
+        Args: { p_document_id: string; p_case_id: string; p_name: string; p_category: string; p_state: string; p_original_filename: string; p_stored_filename: string; p_storage_path: string; p_mime_type: string; p_size_bytes: number; p_change_notes?: string | null; p_checksum?: string | null; p_subtask_id?: string | null; p_comment_id?: string | null; p_assignment_id?: string | null; p_area_id?: string | null };
+        Returns: string;
+      };
+      get_document_version_upload_context_v1: {
+        Args: { p_document_id: string; p_expected_current_version: number };
+        Returns: Json;
+      };
+      add_case_document_version_v3: {
+        Args: { p_document_id: string; p_expected_current_version: number; p_original_filename: string; p_stored_filename: string; p_storage_path: string; p_mime_type: string; p_size_bytes: number; p_change_notes?: string | null; p_checksum?: string | null };
+        Returns: number;
       };
       finalize_public_case_upload: {
         Args: { p_upload_token: string };

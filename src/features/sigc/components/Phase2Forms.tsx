@@ -4,6 +4,7 @@ import type { AllowedCaseState, ManualCaseAssignmentInput, PublicIntakeContext, 
 import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
 import { DynamicCaseFields, filterDynamicValues } from './DynamicCaseFields';
+import { INTERNAL_FILE_ACCEPT, MAX_INTERNAL_FILES_PER_ACTION, PUBLIC_FILE_ACCEPT, formatFileSize, validateFileForUpload, validateFileMetadata } from '../utils/filePolicy';
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -13,12 +14,6 @@ function errorMessage(error: unknown): string {
 function formatDateTime(iso: string | null): string {
   if (!iso) return 'Sin fecha límite';
   return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function PublicCaseForm({
@@ -80,9 +75,9 @@ export function PublicCaseForm({
     if (!files || !context.intake.allowAttachments) return;
     setSubmitError('');
     const incoming = Array.from(files);
-    const tooLarge = incoming.find((file) => file.size > context.intake.maxFileSizeBytes);
-    if (tooLarge) {
-      setSubmitError(`${tooLarge.name} supera el máximo de ${formatFileSize(context.intake.maxFileSizeBytes)} por archivo.`);
+    const invalid = incoming.map((file) => validateFileMetadata(file, { scope: 'public', maxFileSizeBytes: context.intake.maxFileSizeBytes })).find(Boolean);
+    if (invalid) {
+      setSubmitError(invalid);
       return;
     }
     setAttachments((current) => {
@@ -108,6 +103,7 @@ export function PublicCaseForm({
     setSubmitError('');
     setSubmitting(true);
     try {
+      await Promise.all(attachments.map((file) => validateFileForUpload(file, { scope: 'public', maxFileSizeBytes: context.intake.maxFileSizeBytes })));
       const result = await sigcService.createPublicCase({
         ...values,
         tenant,
@@ -118,7 +114,9 @@ export function PublicCaseForm({
         customFields,
         challengeId: context.security.challenge?.id,
         challengeAnswer: challengeAnswer.trim() || undefined,
-        attachments
+        attachments,
+        maxAttachmentFiles: context.intake.maxFiles,
+        maxAttachmentSizeBytes: context.intake.maxFileSizeBytes
       });
       setCreated({
         radicado: result.radicado,
@@ -193,7 +191,7 @@ export function PublicCaseForm({
                 type="file"
                 multiple
                 onChange={(event) => { addAttachments(event.target.files); event.currentTarget.value = ''; }}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.mp4,.webm,.mov,.mp3,.wav,.ogg,.m4a,.aac"
+                accept={PUBLIC_FILE_ACCEPT}
               />
             </label>
             {attachments.length ? (
@@ -314,6 +312,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
     setSubmitError('');
     setSubmitting(true);
     try {
+      await Promise.all(initialFiles.map((file) => validateFileForUpload(file, { scope: 'internal' })));
       const result = await sigcService.createManualCase({
         idempotencyKey,
         ...values,
@@ -324,7 +323,8 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
       });
       setCreatedDueAt(result.dueAt);
       const uploads = await Promise.allSettled(initialFiles.map((file) => sigcService.uploadDocument({
-        caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual'
+        caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual',
+        areaId: validAssignments.find((assignment) => assignment.isPrimary)?.areaId || validAssignments[0]?.areaId
       })));
       const failedAttachments = initialFiles.filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
       onCreated(result.radicado, failedAttachments);
@@ -412,7 +412,7 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
         </section>
         <section className="card card-block">
           <div className="card-block-head"><div><h3>Adjuntos iniciales</h3><p>Se guardarán como documentos versionados del nuevo caso.</p></div></div>
-          <label className="upload-zone small clickable-upload"><Upload size={18} /><strong>Seleccionar archivos</strong><span>Máximo 100 MB por archivo.</span><input type="file" multiple onChange={(event) => setInitialFiles(Array.from(event.target.files ?? []))} /></label>
+          <label className="upload-zone small clickable-upload"><Upload size={18} /><strong>Seleccionar archivos</strong><span>Máximo 10 archivos y 100 MB por archivo. PDF, Office, imágenes, audio, video y formatos de texto seguros.</span><input type="file" multiple accept={INTERNAL_FILE_ACCEPT} onChange={(event) => { const incoming = Array.from(event.target.files ?? []); if (incoming.length > MAX_INTERNAL_FILES_PER_ACTION) { setSubmitError(`Puedes adjuntar máximo ${MAX_INTERNAL_FILES_PER_ACTION} archivos por operación.`); event.currentTarget.value = ''; return; } const invalid = incoming.map((file) => validateFileMetadata(file, { scope: 'internal' })).find(Boolean); if (invalid) { setSubmitError(invalid); event.currentTarget.value = ''; return; } setSubmitError(''); setInitialFiles(incoming); }} /></label>
           {initialFiles.length ? <div className="selected-files">{initialFiles.map((file) => <span key={`${file.name}-${file.size}`}><Paperclip size={14} /> {file.name}</span>)}</div> : null}
         </section>
       </aside>

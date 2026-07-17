@@ -402,6 +402,24 @@ export function CaseDetailPage() {
     }
   }
 
+  async function downloadCaseDocument(document: SigcDocument) {
+    try {
+      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath, {
+        downloadFilename: document.currentStoredFilename || document.currentFilename,
+        expiresInSeconds: 180
+      });
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = document.currentStoredFilename || document.currentFilename;
+      link.rel = 'noopener noreferrer';
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible descargar el documento.');
+    }
+  }
+
   if (isLoading) {
     return <Page><section className="card placeholder-card"><h2>Cargando expediente...</h2><p>Consultando {source === 'supabase' ? 'Supabase' : 'el repositorio SIGC'}.</p></section></Page>;
   }
@@ -521,7 +539,7 @@ export function CaseDetailPage() {
             </CardBlock>
             <CardBlock title="Documentos adjuntos" description={`${caseDocumentPage.total} documento${caseDocumentPage.total === 1 ? '' : 's'} con versiones preservadas.`} icon={<Paperclip />}>
               {can(PERMISSIONS.documentUpload) ? <div className="card-inline-actions"><button className="btn btn-soft small" onClick={() => setDetailModal('document')}><Upload size={15} /> Cargar</button></div> : null}
-              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-white icon-only small" onClick={() => setHistoryDocument(doc)} title="Historial de versiones"><Archive size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
+              {caseDocuments.length ? caseDocuments.slice(0, 6).map((doc) => <div className="doc-mini" key={doc.id}><div><strong>{doc.name}</strong><small>{doc.category} · v{doc.currentVersion} · {doc.ownerName}</small></div><div className="doc-mini-actions"><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge><button className="btn btn-white icon-only small" onClick={() => void openDocument(doc)} title="Ver"><Eye size={14} /></button><button className="btn btn-white icon-only small" onClick={() => void downloadCaseDocument(doc)} title="Descargar"><Download size={14} /></button><button className="btn btn-white icon-only small" onClick={() => setHistoryDocument(doc)} title="Historial de versiones"><Archive size={14} /></button>{can(PERMISSIONS.documentUpload) ? <button className="btn btn-soft icon-only small" onClick={() => setVersionDocument(doc)} title="Nueva versión"><Upload size={14} /></button> : null}</div></div>) : <div className="empty-inline">No hay documentos cargados.</div>}
               {caseDocumentPage.total > 6 ? <div className="card-inline-actions"><Link className="btn btn-white small" to={`/documents?caseId=${encodeURIComponent(resolvedCaseId!)}`}>Ver todos ({caseDocumentPage.total})</Link></div> : null}
             </CardBlock>
           </section>
@@ -916,10 +934,26 @@ export function DocumentsPage() {
 
   async function openDocument(document: SigcDocument) {
     try {
-      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
+      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath, { expiresInSeconds: 180 });
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (openError) {
       showToast(openError instanceof Error ? openError.message : 'No fue posible abrir el documento.');
+    }
+  }
+
+  async function downloadDocument(document: SigcDocument) {
+    try {
+      const filename = document.currentStoredFilename || document.currentFilename || document.name;
+      const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath, { downloadFilename: filename, expiresInSeconds: 180 });
+      const link = window.document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.rel = 'noopener noreferrer';
+      window.document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (downloadError) {
+      showToast(downloadError instanceof Error ? downloadError.message : 'No fue posible descargar el documento.');
     }
   }
 
@@ -951,7 +985,7 @@ export function DocumentsPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       <div className="case-list-meta"><span>{isLoading ? 'Consultando documentos...' : 'Consulta paginada desde servidor'}</span><strong>{documentPage.total} documento{documentPage.total === 1 ? '' : 's'}</strong></div>
-      <section className="card table-card"><DocumentsTable rows={documents} onOpen={(document) => void openDocument(document)} onHistory={setHistoryDocument} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onToggleClientVisibility={canUploadDocuments ? (document) => void togglePortalVisibility(document) : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
+      <section className="card table-card"><DocumentsTable rows={documents} onOpen={(document) => void openDocument(document)} onDownload={(document) => void downloadDocument(document)} onHistory={setHistoryDocument} onEdit={canUploadDocuments ? setEditingDocument : undefined} onVersion={canUploadDocuments ? setVersioning : undefined} onToggleClientVisibility={canUploadDocuments ? (document) => void togglePortalVisibility(document) : undefined} onDelete={canDeleteDocuments ? (document) => void removeDocument(document) : undefined} /></section>
       <Pagination page={pageNumber} totalPages={totalPages} onChange={setPageNumber} />
       {uploading && canUploadDocuments ? <DocumentUploadModal onClose={() => setUploading(false)} onSaved={(message) => { setUploading(false); showToast(message); }} /> : null}
       {versioning && canUploadDocuments ? <DocumentVersionModal document={versioning} onClose={() => setVersioning(null)} onSaved={(message) => { setVersioning(null); showToast(message); }} /> : null}
@@ -1113,12 +1147,12 @@ function SubtasksTable({ rows, onEdit, onDelete }: { rows: SigcSubtask[]; onEdit
   );
 }
 
-function DocumentsTable({ rows, onOpen, onHistory, onEdit, onVersion, onToggleClientVisibility, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onHistory: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onToggleClientVisibility?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
+function DocumentsTable({ rows, onOpen, onDownload, onHistory, onEdit, onVersion, onToggleClientVisibility, onDelete }: { rows: SigcDocument[]; onOpen: (document: SigcDocument) => void; onDownload: (document: SigcDocument) => void; onHistory: (document: SigcDocument) => void; onEdit?: (document: SigcDocument) => void; onVersion?: (document: SigcDocument) => void; onToggleClientVisibility?: (document: SigcDocument) => void; onDelete?: (document: SigcDocument) => void }) {
   return (
     <div className="table-scroll">
       <table className="case-table docs-table">
         <thead><tr>{['Archivo', 'Caso', 'Categoría', 'Versión', 'Cargado por', 'Fecha', 'Estado', 'Portal', 'Acciones'].map((header) => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>{doc.currentFilename}</small></td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><Badge tone={doc.clientVisible ? 'tone-green' : 'tone-slate'}>{doc.clientVisible ? 'Compartido' : 'Interno'}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-white small" onClick={() => onHistory(doc)}><Archive size={14} /> Historial</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onToggleClientVisibility ? <button className="btn btn-white small" onClick={() => onToggleClientVisibility(doc)}>{doc.clientVisible ? 'Ocultar portal' : 'Compartir'}</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={9}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
+        <tbody>{rows.length ? rows.map((doc) => <tr key={doc.id}><td><strong className="file-name"><File size={16} />{doc.name}</strong><small>Original: {doc.currentFilename}</small><small title={doc.currentStoredFilename}>Almacenado: {doc.currentStoredFilename}</small>{doc.areaName ? <small>Área: {doc.areaName}</small> : null}</td><td><Link className="radicado" to={`/cases/${encodeURIComponent(doc.caseRadicado)}`}>{doc.caseRadicado}</Link><small>{doc.caseSubject}</small></td><td>{doc.category}</td><td><Badge tone="tone-slate">v{doc.currentVersion}</Badge></td><td>{doc.ownerName}</td><td>{doc.date}</td><td><Badge tone={stateTones[doc.state] ?? 'tone-blue'}>{doc.state}</Badge></td><td><Badge tone={doc.clientVisible ? 'tone-green' : 'tone-slate'}>{doc.clientVisible ? 'Compartido' : 'Interno'}</Badge></td><td><div className="table-actions"><button className="btn btn-white small" onClick={() => onOpen(doc)}><Eye size={14} /> Ver</button><button className="btn btn-white small" onClick={() => onDownload(doc)}><Download size={14} /> Descargar</button><button className="btn btn-white small" onClick={() => onHistory(doc)}><Archive size={14} /> Historial</button>{onEdit && canEditDocumentInline(doc) ? <button className="btn btn-white small" onClick={() => onEdit(doc)}><Edit3 size={14} /> Editar</button> : null}{onVersion ? <button className="btn btn-soft small" onClick={() => onVersion(doc)}><Upload size={14} /> Nueva versión</button> : null}{onToggleClientVisibility ? <button className="btn btn-white small" onClick={() => onToggleClientVisibility(doc)}>{doc.clientVisible ? 'Ocultar portal' : 'Compartir'}</button> : null}{onDelete ? <button className="btn btn-white icon-only small danger-icon" title="Eliminar lógicamente" onClick={() => onDelete(doc)}><Trash2 size={14} /></button> : null}</div></td></tr>) : <tr><td colSpan={9}><div className="empty-inline">No hay documentos para mostrar.</div></td></tr>}</tbody>
       </table>
     </div>
   );

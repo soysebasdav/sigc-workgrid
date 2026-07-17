@@ -25,6 +25,7 @@ import type {
   SigcComment,
   SigcDocument,
   SigcDocumentVersion,
+  DocumentAccessOptions,
   UpdateDocumentRetentionInput,
   SigcAuditFilters,
   SigcAuditPage,
@@ -97,6 +98,7 @@ import type {
 } from '../domain/types';
 import { demoPublicSigcRepository, demoSigcRepository } from '../repositories/demoSigcRepository';
 import { supabasePublicSigcRepository, supabaseSigcRepository } from '../repositories/supabaseSigcRepository';
+import { MAX_INTERNAL_FILES_PER_ACTION } from '../utils/filePolicy';
 
 export const SIGC_DATA_CHANGED_EVENT = 'sigc:data-changed';
 
@@ -210,6 +212,7 @@ export const sigcService = {
   },
 
   async createSubtask(input: CreateSubtaskInput): Promise<CreatedSubtaskResult> {
+    if ((input.files ?? []).length > MAX_INTERNAL_FILES_PER_ACTION) throw new Error(`Puedes adjuntar máximo ${MAX_INTERNAL_FILES_PER_ACTION} archivos por operación.`);
     const repository = mutationRepository();
     const result = await repository.createSubtask(input);
     const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
@@ -217,7 +220,9 @@ export const sigcService = {
       name: file.name,
       category: 'Adjunto de subtarea',
       file,
-      subtaskId: result.subtaskId
+      subtaskId: result.subtaskId,
+      assignmentId: input.assignmentId,
+      areaId: input.areaId
     })));
     const failedAttachments = (input.files ?? []).filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
     emitSigcDataChanged();
@@ -225,6 +230,7 @@ export const sigcService = {
   },
 
   async updateSubtask(input: UpdateSubtaskInput): Promise<string[]> {
+    if ((input.files ?? []).length > MAX_INTERNAL_FILES_PER_ACTION) throw new Error(`Puedes adjuntar máximo ${MAX_INTERNAL_FILES_PER_ACTION} archivos por operación.`);
     const repository = mutationRepository();
     await repository.updateSubtask(input);
     const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
@@ -232,7 +238,9 @@ export const sigcService = {
       name: file.name,
       category: 'Adjunto de subtarea',
       file,
-      subtaskId: input.subtaskId
+      subtaskId: input.subtaskId,
+      assignmentId: input.assignmentId,
+      areaId: input.areaId
     })));
     const failedAttachments = (input.files ?? []).filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
     emitSigcDataChanged();
@@ -249,6 +257,7 @@ export const sigcService = {
   },
 
   async addComment(input: AddCommentInput): Promise<CreatedCommentResult> {
+    if ((input.files ?? []).length > MAX_INTERNAL_FILES_PER_ACTION) throw new Error(`Puedes adjuntar máximo ${MAX_INTERNAL_FILES_PER_ACTION} archivos por operación.`);
     const repository = mutationRepository();
     const result = await repository.addComment(input);
     const uploads = await Promise.allSettled((input.files ?? []).map((file) => repository.uploadDocument({
@@ -302,8 +311,8 @@ export const sigcService = {
     emitSigcDataChanged();
   },
 
-  getDocumentSignedUrl(storagePath: string): Promise<string> {
-    return mutationRepository().getDocumentSignedUrl(storagePath);
+  getDocumentSignedUrl(storagePath: string, options?: DocumentAccessOptions): Promise<string> {
+    return mutationRepository().getDocumentSignedUrl(storagePath, options);
   },
 
   getCaseTimeline(caseId: string, page = 1, pageSize = 100): Promise<SigcRepositoryResult<SigcTimelinePage>> {

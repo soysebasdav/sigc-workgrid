@@ -3,25 +3,17 @@ import { FilePlus2, LoaderCircle, Paperclip, Upload, X } from 'lucide-react';
 import type { SigcDocument, SigcSubtask, SubtaskState } from '../domain/types';
 import { useCaseAssignments, useDebouncedValue, useSigcCaseSearch, useSigcCatalogs, useSigcMembers } from '../hooks/useSigcData';
 import { sigcService } from '../services/sigcService';
+import { INTERNAL_FILE_ACCEPT, MAX_INTERNAL_FILES_PER_ACTION, validateFileForUpload, validateFileMetadata } from '../utils/filePolicy';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
 }
 
-const MAX_INTERNAL_FILE_SIZE_BYTES = 100 * 1024 * 1024;
-const ALLOWED_INTERNAL_EXTENSIONS = new Set([
-  'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'txt', 'md', 'markdown', 'csv', 'json', 'xml', 'yaml', 'yml', 'log',
-  'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif',
-  'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac',
-  'js', 'ts', 'css', 'html'
-]);
-
 function validateSelectedFiles(files: File[]): string | null {
+  if (files.length > MAX_INTERNAL_FILES_PER_ACTION) return `Puedes adjuntar máximo ${MAX_INTERNAL_FILES_PER_ACTION} archivos por operación.`;
   for (const file of files) {
-    if (file.size > MAX_INTERNAL_FILE_SIZE_BYTES) return `${file.name} supera el máximo de 100 MB.`;
-    const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() ?? '' : '';
-    if (!extension || !ALLOWED_INTERNAL_EXTENSIONS.has(extension)) return `${file.name} usa un formato no permitido.`;
+    const error = validateFileMetadata(file, { scope: 'internal' });
+    if (error) return error;
   }
   return null;
 }
@@ -130,6 +122,7 @@ export function SubtaskFormModal({
     setSaving(true);
     setError('');
     try {
+      await Promise.all(files.map((file) => validateFileForUpload(file, { scope: 'internal' })));
       if (initial) {
         const failedAttachments = await sigcService.updateSubtask({
           subtaskId: initial.id, caseId, assignmentId: assignmentId || undefined, areaId: areaId || undefined, title, description,
@@ -189,7 +182,7 @@ export function SubtaskFormModal({
               <label className="range-field"><span>Avance: <strong>{state === 'completed' ? 100 : progress}%</strong></span><input type="range" min="0" max="100" step="5" value={state === 'completed' ? 100 : progress} disabled={state === 'completed'} onChange={(event) => setProgress(Number(event.target.value))} /></label>
             </div>
           ) : null}
-          <label className="upload-zone small clickable-upload"><Upload size={18} /><strong>Adjuntar archivos</strong><span>Formatos permitidos · máximo 100 MB por archivo.</span><input type="file" multiple onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></label>
+          <label className="upload-zone small clickable-upload"><Upload size={18} /><strong>Adjuntar archivos</strong><span>Máximo 10 archivos y 100 MB por archivo.</span><input type="file" multiple accept={INTERNAL_FILE_ACCEPT} onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></label>
           <FilesSummary files={files} />
           {error ? <div className="alert danger">{error}</div> : null}
           <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? <><LoaderCircle size={17} className="spin" /> Guardando...</> : initial ? 'Guardar cambios' : 'Crear subtarea'}</button></div>
@@ -225,6 +218,7 @@ export function CommentModal({
     setSaving(true);
     setError('');
     try {
+      await Promise.all(files.map((file) => validateFileForUpload(file, { scope: 'internal' })));
       const result = await sigcService.addComment({ caseId, content, subtaskId: subtaskId || undefined, files });
       onSaved(failedAttachmentMessage('Comentario agregado al expediente.', result.failedAttachments ?? []));
     } catch (error) {
@@ -247,7 +241,7 @@ export function CommentModal({
           <textarea className="field textarea comment-textarea" placeholder="Escribe un comentario interno..." value={content} onChange={(event) => setContent(event.target.value)} required maxLength={10000} />
           <label className="upload-zone small clickable-upload">
             <Paperclip size={18} /><strong>Adjuntar archivos</strong><span>Los adjuntos se guardan como documentos versionados del expediente.</span>
-            <input type="file" multiple onChange={(event) => { const incoming = Array.from(event.target.files ?? []) as File[]; const validationError = validateSelectedFiles(incoming); if (validationError) { setError(validationError); return; } setError(''); setFiles(incoming); }} />
+            <input type="file" multiple accept={INTERNAL_FILE_ACCEPT} onChange={(event) => { const incoming = Array.from(event.target.files ?? []) as File[]; const validationError = validateSelectedFiles(incoming); if (validationError) { setError(validationError); return; } setError(''); setFiles(incoming); }} />
           </label>
           <FilesSummary files={files} />
           {error ? <div className="alert danger">{error}</div> : null}
@@ -274,6 +268,16 @@ export function DocumentUploadModal({
   onSaved: (message: string) => void;
 }) {
   const [caseId, setCaseId] = useState(fixedCaseId ?? '');
+  const { data: catalogs } = useSigcCatalogs();
+  const { data: caseAssignments } = useCaseAssignments(caseId || undefined);
+  const activeAssignments = useMemo(() => caseAssignments.filter((item) => item.isActive), [caseAssignments]);
+  const selectableAreas = useMemo(() => {
+    if (!activeAssignments.length) return catalogs?.areas ?? [];
+    const assignedIds = new Set(activeAssignments.map((assignment) => assignment.areaId));
+    return (catalogs?.areas ?? []).filter((area) => assignedIds.has(area.id));
+  }, [activeAssignments, catalogs?.areas]);
+  const [assignmentId, setAssignmentId] = useState('');
+  const [areaId, setAreaId] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('General');
   const [state, setState] = useState('Cargado');
@@ -281,6 +285,12 @@ export function DocumentUploadModal({
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  function selectAssignment(nextAssignmentId: string) {
+    setAssignmentId(nextAssignmentId);
+    const selected = activeAssignments.find((item) => item.id === nextAssignmentId);
+    if (selected) setAreaId(selected.areaId);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -291,7 +301,7 @@ export function DocumentUploadModal({
     setSaving(true);
     setError('');
     try {
-      await sigcService.uploadDocument({ caseId, name: name.trim() || file.name, category, state, file, changeNotes, subtaskId, commentId });
+      await sigcService.uploadDocument({ caseId, name: name.trim() || file.name, category, state, file, changeNotes, subtaskId, commentId, assignmentId: assignmentId || undefined, areaId: areaId || undefined });
       onSaved('Documento cargado como versión 1.');
     } catch (error) {
       setError(errorMessage(error));
@@ -307,8 +317,18 @@ export function DocumentUploadModal({
         <header><h3>Cargar documento</h3><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <form className="modal-body form-stack" onSubmit={submit}>
           {!fixedCaseId ? (
-            <RemoteCasePicker value={caseId} onChange={setCaseId} />
+            <RemoteCasePicker value={caseId} onChange={(value) => { setCaseId(value); setAssignmentId(''); setAreaId(''); }} />
           ) : <div className="phase3-context"><span>Caso</span><strong>{fixedCaseLabel ?? 'Expediente actual'}</strong></div>}
+          <div className="phase3-form-grid two">
+            <select className="field" value={assignmentId} onChange={(event) => selectAssignment(event.target.value)} disabled={!caseId || !activeAssignments.length}>
+              <option value="">Asignación principal del caso</option>
+              {activeAssignments.map((assignment) => <option value={assignment.id} key={assignment.id}>{assignment.areaName} · {assignment.responsibleName}</option>)}
+            </select>
+            <select className="field" value={areaId} onChange={(event) => { setAreaId(event.target.value); setAssignmentId(''); }} disabled={!caseId}>
+              <option value="">Área principal del caso</option>
+              {selectableAreas.map((area) => <option value={area.id} key={area.id}>{area.name}</option>)}
+            </select>
+          </div>
           <input className="field" placeholder="Nombre lógico del documento" value={name} onChange={(event) => setName(event.target.value)} />
           <div className="phase3-form-grid">
             <input className="field" placeholder="Categoría" value={category} onChange={(event) => setCategory(event.target.value)} />
@@ -317,7 +337,7 @@ export function DocumentUploadModal({
           <textarea className="field textarea compact" placeholder="Notas de la versión" value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} />
           <label className="upload-zone clickable-upload">
             <FilePlus2 size={22} /><strong>{file ? file.name : 'Seleccionar archivo'}</strong><span>Máximo 100 MB. Nunca se sobrescribe una versión existente.</span>
-            <input type="file" required onChange={(event) => { const selected = event.target.files?.[0] ?? null; if (selected) { const validationError = validateSelectedFiles([selected]); if (validationError) { setError(validationError); setFile(null); return; } } setError(''); setFile(selected); }} />
+            <input type="file" required accept={INTERNAL_FILE_ACCEPT} onChange={(event) => { const selected = event.target.files?.[0] ?? null; if (selected) { const validationError = validateSelectedFiles([selected]); if (validationError) { setError(validationError); setFile(null); return; } } setError(''); setFile(selected); }} />
           </label>
           {error ? <div className="alert danger">{error}</div> : null}
           <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Cargando...' : 'Cargar versión 1'}</button></div>
@@ -358,7 +378,7 @@ export function DocumentVersionModal({ document, onClose, onSaved }: { document:
         <header><h3>Nueva versión · {document.name}</h3><button className="btn btn-white icon-only" type="button" onClick={onClose}><X size={17} /></button></header>
         <form className="modal-body form-stack" onSubmit={submit}>
           <div className="phase3-context"><span>Versión actual</span><strong>v{document.currentVersion}</strong></div>
-          <label className="upload-zone clickable-upload"><Upload size={22} /><strong>{file ? file.name : `Seleccionar archivo para v${document.currentVersion + 1}`}</strong><span>La versión anterior permanecerá intacta.</span><input type="file" required onChange={(event) => { const selected = event.target.files?.[0] ?? null; if (selected) { const validationError = validateSelectedFiles([selected]); if (validationError) { setError(validationError); setFile(null); return; } } setError(''); setFile(selected); }} /></label>
+          <label className="upload-zone clickable-upload"><Upload size={22} /><strong>{file ? file.name : `Seleccionar archivo para v${document.currentVersion + 1}`}</strong><span>La versión anterior permanecerá intacta.</span><input type="file" required accept={INTERNAL_FILE_ACCEPT} onChange={(event) => { const selected = event.target.files?.[0] ?? null; if (selected) { const validationError = validateSelectedFiles([selected]); if (validationError) { setError(validationError); setFile(null); return; } } setError(''); setFile(selected); }} /></label>
           <textarea className="field textarea compact" placeholder="Describe qué cambió en esta versión" value={changeNotes} onChange={(event) => setChangeNotes(event.target.value)} />
           {error ? <div className="alert danger">{error}</div> : null}
           <div className="modal-actions"><button className="btn btn-white" type="button" onClick={onClose}>Cancelar</button><button className="btn btn-primary" type="submit" disabled={saving}>{saving ? 'Versionando...' : `Crear v${document.currentVersion + 1}`}</button></div>
@@ -372,9 +392,10 @@ export function DocumentVersionModal({ document, onClose, onSaved }: { document:
 function inlineEditableDocument(document: SigcDocument): boolean {
   const mime = (document.currentMimeType ?? '').toLowerCase();
   const filename = document.currentFilename.toLowerCase();
+  if (document.currentSizeBytes > 5 * 1024 * 1024) return false;
   return mime.startsWith('text/') ||
-    ['application/json', 'application/xml', 'application/javascript'].includes(mime) ||
-    ['.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.log', '.js', '.ts', '.css', '.html'].some((extension) => filename.endsWith(extension));
+    ['application/json', 'application/xml'].includes(mime) ||
+    ['.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.yaml', '.yml', '.log'].some((extension) => filename.endsWith(extension));
 }
 
 export function canEditDocumentInline(document: SigcDocument): boolean {
@@ -392,7 +413,7 @@ export function TextDocumentEditorModal({ document, onClose, onSaved }: { docume
     let active = true;
     void (async () => {
       try {
-        const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath);
+        const url = await sigcService.getDocumentSignedUrl(document.currentStoragePath, { expiresInSeconds: 180 });
         const response = await fetch(url);
         if (!response.ok) throw new Error(`No fue posible cargar el archivo (${response.status}).`);
         const text = await response.text();
