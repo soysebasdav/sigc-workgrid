@@ -193,7 +193,13 @@ export function SigcShell() {
         {dataMode === 'local' ? <button className="btn btn-white topbar-secondary" onClick={resetDemoData} title="Restaurar datos demo">
           <RefreshCw size={17} /> Demo
         </button> : null}
-        <button className="btn btn-white topbar-secondary" onClick={logout} title="Cerrar sesión">
+        <button
+          className="btn btn-white topbar-secondary"
+          onClick={() => {
+            void logout().then(() => window.location.replace('/login'));
+          }}
+          title="Cerrar sesión"
+        >
           <LogOut size={17} /> Salir
         </button>
         <div className="topbar-user">

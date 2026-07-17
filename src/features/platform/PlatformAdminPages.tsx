@@ -197,7 +197,7 @@ export function PlatformAdminShell() {
       <header className="platform-topbar">
         <button className="platform-menu-button" onClick={() => setMobileOpen(true)} aria-label="Abrir menú"><Menu size={20} /></button>
         <div><img src={orkestaSymbol} alt="" /><span><strong>Centro de control</strong><small>Vista global, soporte, seguridad y operación</small></span></div>
-        <div className="platform-top-actions"><Link className="btn btn-white" to="/app"><Building2 size={16} />Organización</Link><button className="btn btn-white" onClick={() => void logout()}><LogOut size={16} />Salir</button></div>
+        <div className="platform-top-actions"><Link className="btn btn-white" to="/app"><Building2 size={16} />Organización</Link><button className="btn btn-white" onClick={() => { void logout().then(() => window.location.replace('/login')); }}><LogOut size={16} />Salir</button></div>
       </header>
       <main className="platform-main"><Outlet /></main>
     </div>
