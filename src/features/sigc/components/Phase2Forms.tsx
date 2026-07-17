@@ -5,6 +5,7 @@ import { useAllowedCaseStates, useSigcCatalogs, useSigcMembers } from '../hooks/
 import { sigcService } from '../services/sigcService';
 import { DynamicCaseFields, filterDynamicValues } from './DynamicCaseFields';
 import { INTERNAL_FILE_ACCEPT, MAX_INTERNAL_FILES_PER_ACTION, PUBLIC_FILE_ACCEPT, formatFileSize, validateFileForUpload, validateFileMetadata } from '../utils/filePolicy';
+import { assignmentSetError, buildDefaultAssignments, ensureSinglePrimaryAssignment } from '../utils/caseFormDefaults';
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -262,7 +263,6 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
   const [initialFiles, setInitialFiles] = useState<File[]>([]);
 
   const selectedType = catalogs?.caseTypes.find((item) => item.id === values.caseTypeId);
-  const validAssignments = useMemo(() => assignments.filter((item) => item.areaId), [assignments]);
   const configurationIssues = catalogs?.configuration.issues ?? [];
   const hasMemberAreaConfiguration = members.some((member) => member.areaIds.length > 0);
 
@@ -280,15 +280,8 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
       riskLevel: type?.defaultRiskLevel || current.riskLevel
     }));
     setCustomFields((current) => filterDynamicValues(type?.fields ?? [], current));
-    if (type?.defaultAreas?.length) {
-      setAssignments(type.defaultAreas.map((area, index) => ({
-        areaId: area.areaId,
-        responsibleUserId: area.responsibleUserId ?? '',
-        dueAt: '',
-        observations: '',
-        isPrimary: area.isPrimary || index === 0
-      })));
-    }
+    const defaultAssignments = buildDefaultAssignments(type?.defaultAreas, '');
+    if (defaultAssignments) setAssignments(defaultAssignments);
   }
 
   function setField(field: keyof typeof values, value: string) {
@@ -304,12 +297,20 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
   }
 
   function removeAssignment(index: number) {
-    setAssignments((current) => current.length === 1 ? [{ areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: true }] : current.filter((_, itemIndex) => itemIndex !== index));
+    setAssignments((current) => current.length === 1
+      ? [{ areaId: '', responsibleUserId: '', dueAt: '', observations: '', isPrimary: true }]
+      : ensureSinglePrimaryAssignment(current.filter((_, itemIndex) => itemIndex !== index)));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError('');
+    const assignmentError = assignmentSetError(assignments);
+    if (assignmentError) {
+      setSubmitError(assignmentError);
+      return;
+    }
+    const normalizedAssignments = ensureSinglePrimaryAssignment(assignments.filter((assignment) => assignment.areaId));
     setSubmitting(true);
     try {
       await Promise.all(initialFiles.map((file) => validateFileForUpload(file, { scope: 'internal' })));
@@ -319,12 +320,12 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
         responseEmail: usesAlternateResponseEmail ? responseEmail : values.requesterEmail,
         usesAlternateResponseEmail,
         customFields,
-        assignments: validAssignments
+        assignments: normalizedAssignments
       });
       setCreatedDueAt(result.dueAt);
       const uploads = await Promise.allSettled(initialFiles.map((file) => sigcService.uploadDocument({
         caseId: result.caseId, name: file.name, category: 'Documento inicial', file, changeNotes: 'Adjunto de creación manual',
-        areaId: validAssignments.find((assignment) => assignment.isPrimary)?.areaId || validAssignments[0]?.areaId
+        areaId: normalizedAssignments.find((assignment) => assignment.isPrimary)?.areaId || normalizedAssignments[0]?.areaId
       })));
       const failedAttachments = initialFiles.filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
       onCreated(result.radicado, failedAttachments);
@@ -479,15 +480,8 @@ export function ClassificationModal({
       riskLevel: type?.defaultRiskLevel || current.riskLevel
     }));
     setCustomFields((current) => filterDynamicValues(type?.fields ?? [], current));
-    if (type?.defaultAreas?.length) {
-      setAssignments(type.defaultAreas.map((area, index) => ({
-        areaId: area.areaId,
-        responsibleUserId: area.responsibleUserId ?? '',
-        dueAt: values.dueAt,
-        observations: '',
-        isPrimary: area.isPrimary || index === 0
-      })));
-    }
+    const defaultAssignments = buildDefaultAssignments(type?.defaultAreas, values.dueAt);
+    if (defaultAssignments) setAssignments(defaultAssignments);
   }
 
   function updateAssignment(index: number, patch: Partial<ManualCaseAssignmentInput>) {
@@ -499,25 +493,22 @@ export function ClassificationModal({
   }
 
   function removeAssignment(index: number) {
-    setAssignments((current) => {
-      if (current.length === 1) return current;
-      const next = current.filter((_, itemIndex) => itemIndex !== index);
-      if (!next.some((item) => item.isPrimary)) next[0] = { ...next[0], isPrimary: true };
-      return next;
-    });
+    setAssignments((current) => current.length === 1
+      ? current
+      : ensureSinglePrimaryAssignment(current.filter((_, itemIndex) => itemIndex !== index)));
   }
 
   async function save() {
-    const validAssignments = assignments.filter((assignment) => assignment.areaId);
+    const validAssignments = ensureSinglePrimaryAssignment(assignments.filter((assignment) => assignment.areaId));
     if (!values.caseTypeId || !values.priorityId) {
       setError('Selecciona tipo de caso y prioridad.');
       return;
     }
-    if (!validAssignments.length) {
-      setError('La clasificación requiere al menos un área responsable.');
+    const assignmentError = assignmentSetError(assignments);
+    if (assignmentError) {
+      setError(assignmentError);
       return;
     }
-    if (!validAssignments.some((assignment) => assignment.isPrimary)) validAssignments[0] = { ...validAssignments[0], isPrimary: true };
     setSaving(true);
     setError('');
     try {

@@ -115,7 +115,7 @@ export function QualityCenterPage() {
   return (
     <div className="page">
       <header className="page-head">
-        <div><span className="eyebrow">Fase 12 · Validación final</span><h1>Calidad y producción</h1><p>Suite repetible de regresión, seguridad, integridad, runtime y preparación operativa.</p></div>
+        <div><span className="eyebrow">Control continuo</span><h1>Calidad y producción</h1><p>Suite repetible de regresión, seguridad, integridad, runtime y preparación operativa.</p></div>
         <div className="page-actions"><button className="btn btn-white" disabled={loading || running} onClick={() => void load()}><RefreshCw size={17} /> Actualizar</button>{canRun ? <button className="btn btn-primary" disabled={running} onClick={() => void executeSuite()}>{running ? <RefreshCw className="spin" size={17} /> : <Play size={17} />} {running ? 'Ejecutando controles...' : 'Ejecutar suite completa'}</button> : null}</div>
       </header>
 

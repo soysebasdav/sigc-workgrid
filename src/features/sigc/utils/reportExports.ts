@@ -144,13 +144,41 @@ export function createXlsxBlob(report: SigcReportResult, rows: SigcReportRow[]):
   return new Blob([payload], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
+const WIN_ANSI_SPECIAL = new Map<number, number>([
+  [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84], [0x2026, 0x85],
+  [0x2020, 0x86], [0x2021, 0x87], [0x02c6, 0x88], [0x2030, 0x89], [0x0160, 0x8a],
+  [0x2039, 0x8b], [0x0152, 0x8c], [0x017d, 0x8e], [0x2018, 0x91], [0x2019, 0x92],
+  [0x201c, 0x93], [0x201d, 0x94], [0x2022, 0x95], [0x2013, 0x96], [0x2014, 0x97],
+  [0x02dc, 0x98], [0x2122, 0x99], [0x0161, 0x9a], [0x203a, 0x9b], [0x0153, 0x9c],
+  [0x017e, 0x9e], [0x0178, 0x9f]
+]);
+
+function encodeWinAnsi(value: string): Uint8Array {
+  const bytes: number[] = [];
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0x3f;
+    if (codePoint <= 0x7f || (codePoint >= 0xa0 && codePoint <= 0xff)) bytes.push(codePoint);
+    else bytes.push(WIN_ANSI_SPECIAL.get(codePoint) ?? 0x3f);
+  }
+  return new Uint8Array(bytes);
+}
+
 function pdfEscape(value: unknown): string {
-  return String(value ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '?').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/\r?\n/g, ' ')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ');
 }
 
 function truncate(value: unknown, length: number): string {
   const text = String(value ?? '');
   return text.length <= length ? text : `${text.slice(0, Math.max(0, length - 1))}…`;
+}
+
+function asciiBytes(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
 }
 
 export function createPdfBlob(report: SigcReportResult, rows: SigcReportRow[]): Blob {
@@ -159,44 +187,63 @@ export function createPdfBlob(report: SigcReportResult, rows: SigcReportRow[]): 
   for (let index = 0; index < rows.length; index += pageRows) chunks.push(rows.slice(index, index + pageRows));
   if (!chunks.length) chunks.push([]);
 
-  const objects: string[] = [];
-  const addObject = (value: string): number => { objects.push(value); return objects.length; };
+  const objects: Uint8Array[] = [];
+  const addObject = (value: string | Uint8Array): number => {
+    objects.push(typeof value === 'string' ? encodeWinAnsi(value) : value);
+    return objects.length;
+  };
   const fontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
   const boldFontId = addObject('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
   const pagesId = addObject('PAGES_PLACEHOLDER');
   const pageIds: number[] = [];
 
-  chunks.forEach((pageRowsData, pageIndex) => {
-    const commands: string[] = ['BT', '/F2 16 Tf', '36 560 Td', `(Reporte SIGC) Tj`, '/F1 8 Tf', `0 -16 Td`, `(${pdfEscape(`${report.from.slice(0, 10)} a ${report.to.slice(0, 10)} | ${rows.length} filas`)}) Tj`];
-    commands.push('0 -24 Td', '/F2 7 Tf', `(Radicado        Tipo             Asunto                         Area            Responsable       Estado       Prioridad) Tj`, '/F1 7 Tf');
-    let yStep = -16;
+  chunks.forEach((pageRowsData) => {
+    const commands: string[] = [
+      'BT', '/F2 16 Tf', '36 560 Td', '(Reporte SIGC) Tj', '/F1 8 Tf', '0 -16 Td',
+      `(${pdfEscape(`${report.from.slice(0, 10)} a ${report.to.slice(0, 10)} | ${rows.length} filas`)}) Tj`,
+      '0 -24 Td', '/F2 7 Tf',
+      `(${pdfEscape('Radicado        Tipo             Asunto                         Área            Responsable       Estado       Prioridad')}) Tj`,
+      '/F1 7 Tf'
+    ];
     for (const row of pageRowsData) {
-      const line = [truncate(row.radicado, 14).padEnd(15), truncate(row.caseType, 16).padEnd(17), truncate(row.subject, 28).padEnd(29), truncate(row.area, 14).padEnd(15), truncate(row.owner, 16).padEnd(17), truncate(row.state, 11).padEnd(12), truncate(row.priority, 9)].join(' ');
-      commands.push(`0 ${yStep} Td`, `(${pdfEscape(line)}) Tj`);
-      yStep = -16;
+      const line = [
+        truncate(row.radicado, 14).padEnd(15), truncate(row.caseType, 16).padEnd(17),
+        truncate(row.subject, 28).padEnd(29), truncate(row.area, 14).padEnd(15),
+        truncate(row.owner, 16).padEnd(17), truncate(row.state, 11).padEnd(12), truncate(row.priority, 9)
+      ].join(' ');
+      commands.push('0 -16 Td', `(${pdfEscape(line)}) Tj`);
     }
     commands.push('ET');
-    const stream = commands.join('\n');
-    const contentId = addObject(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    const streamBytes = encodeWinAnsi(commands.join('\n'));
+    const contentId = addObject(concatBytes([
+      asciiBytes(`<< /Length ${streamBytes.length} >>\nstream\n`), streamBytes, asciiBytes('\nendstream')
+    ]));
     const pageId = addObject(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 842 595] /Resources << /Font << /F1 ${fontId} 0 R /F2 ${boldFontId} 0 R >> >> /Contents ${contentId} 0 R >>`);
     pageIds.push(pageId);
-    void pageIndex;
   });
 
-  objects[pagesId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  objects[pagesId - 1] = asciiBytes(`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`);
   const catalogId = addObject(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
 
-  let pdf = '%PDF-1.4\n';
+  const chunksOut: Uint8Array[] = [asciiBytes('%PDF-1.4\n')];
   const offsets: number[] = [0];
+  let byteOffset = chunksOut[0].length;
   objects.forEach((object, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    offsets.push(byteOffset);
+    const objectBytes = concatBytes([asciiBytes(`${index + 1} 0 obj\n`), object, asciiBytes('\nendobj\n')]);
+    chunksOut.push(objectBytes);
+    byteOffset += objectBytes.length;
   });
-  const xref = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let index = 1; index <= objects.length; index += 1) pdf += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return new Blob([pdf], { type: 'application/pdf' });
+
+  const xrefOffset = byteOffset;
+  let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let index = 1; index <= objects.length; index += 1) trailer += `${String(offsets[index]).padStart(10, '0')} 00000 n \n`;
+  trailer += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  chunksOut.push(asciiBytes(trailer));
+
+  const bytes = concatBytes(chunksOut);
+  const payload = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new Blob([payload], { type: 'application/pdf' });
 }
 
 export function downloadBlob(filename: string, blob: Blob): void {

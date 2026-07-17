@@ -495,11 +495,27 @@ function TicketDetail({ ticket, onSaved }: { ticket: SupportTicket; onSaved: () 
 export function PlatformBackupsPage() {
   const [status, setStatus] = useState('');
   const { data, isLoading, error, reload } = useAsyncData(() => platformService.listBackups({ status, pageSize: 100 }), [status]);
-  return <div className="platform-page"><PageHeader title="Backups por organización" description="Solicitudes manuales, trazabilidad, integridad, almacenamiento y vencimiento de respaldos." actions={<button className="btn btn-white" onClick={reload}><RefreshCw size={16} />Actualizar</button>} /><section className="card platform-filters"><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos los estados</option><option value="queued">En cola</option><option value="processing">Procesando</option><option value="completed">Completado</option><option value="failed">Fallido</option></select></section>{error ? <ErrorBlock message={error} onRetry={reload} /> : null}{isLoading && !data ? <LoadingBlock /> : <BackupTable rows={data?.rows || []} />}</div>;
+  return <div className="platform-page"><PageHeader title="Backups por organización" description="Solicitudes manuales, trazabilidad, integridad, almacenamiento y vencimiento de respaldos." actions={<button className="btn btn-white" onClick={reload}><RefreshCw size={16} />Actualizar</button>} /><section className="card platform-filters"><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">Todos los estados</option><option value="queued">En cola</option><option value="processing">Procesando</option><option value="completed">Completado (incluye advertencias)</option><option value="failed">Fallido</option></select></section>{error ? <ErrorBlock message={error} onRetry={reload} /> : null}{isLoading && !data ? <LoadingBlock /> : <BackupTable rows={data?.rows || []} />}</div>;
+}
+
+function backupDocumentCopy(backup: OrganizationBackupJob): { copied: number; failed: number; warnings: string[] } {
+  const raw = backup.manifest?.documentCopy;
+  if (!raw || typeof raw !== 'object') return { copied: 0, failed: 0, warnings: [] };
+  const record = raw as Record<string, unknown>;
+  return {
+    copied: Math.max(0, Number(record.copied) || 0),
+    failed: Math.max(0, Number(record.failed) || 0),
+    warnings: Array.isArray(record.warnings) ? record.warnings.map(String).slice(0, 100) : []
+  };
 }
 
 function BackupTable({ rows, compact = false }: { rows: OrganizationBackupJob[]; compact?: boolean }) {
-  return <section className="card platform-table-card"><div className="platform-table-meta"><span>{rows.length} backups</span></div><div className="platform-table-scroll"><table><thead><tr><th>Organización</th><th>Alcance</th><th>Estado</th><th>Solicitado</th><th>Tamaño</th><th>Integridad</th><th>Vencimiento</th>{compact ? null : <th>Detalle</th>}</tr></thead><tbody>{rows.map((backup) => <tr key={backup.id}><td><strong>{backup.organizationName || backup.organizationId}</strong><small>{backup.reason}</small></td><td>{backup.scope}</td><td><span className={toneForStatus(backup.status)}>{statusLabel(backup.status)}</span>{backup.errorMessage ? <small className="danger-text">{backup.errorMessage}</small> : null}</td><td>{formatDate(backup.createdAt)}<small>{backup.requestedByName}</small></td><td>{formatBytes(backup.sizeBytes)}</td><td><code>{backup.checksum?.slice(0, 16) || 'Pendiente'}</code></td><td>{formatDate(backup.expiresAt, false)}</td>{compact ? null : <td>{backup.storagePath ? <code>{backup.storagePath}</code> : '—'}</td>}</tr>)}</tbody></table></div>{!rows.length ? <div className="platform-empty"><ArchiveRestore /><strong>No hay backups para mostrar</strong></div> : null}</section>;
+  return <section className="card platform-table-card"><div className="platform-table-meta"><span>{rows.length} backups</span></div><div className="platform-table-scroll"><table><thead><tr><th>Organización</th><th>Alcance</th><th>Estado</th><th>Solicitado</th><th>Tamaño</th><th>Integridad</th><th>Vencimiento</th>{compact ? null : <th>Detalle</th>}</tr></thead><tbody>{rows.map((backup) => {
+    const documentCopy = backupDocumentCopy(backup);
+    const hasWarnings = backup.status === 'completed' && (documentCopy.failed > 0 || Boolean(backup.errorMessage));
+    const displayStatus = hasWarnings ? 'completed_with_warnings' : backup.status;
+    return <tr key={backup.id}><td><strong>{backup.organizationName || backup.organizationId}</strong><small>{backup.reason}</small></td><td>{backup.scope}</td><td><span className={hasWarnings ? 'tone-orange' : toneForStatus(backup.status)}>{hasWarnings ? 'Completado con advertencias' : statusLabel(backup.status)}</span>{hasWarnings ? <small className="warning-text">{documentCopy.copied} documento(s) copiados · {documentCopy.failed} con fallo</small> : null}{backup.errorMessage ? <small className={backup.status === 'failed' ? 'danger-text' : 'warning-text'}>{backup.errorMessage}</small> : null}{documentCopy.warnings.length ? <details className="backup-warning-detail"><summary>Ver advertencias</summary><ul>{documentCopy.warnings.map((warning, index) => <li key={`${backup.id}-${index}`}>{warning}</li>)}</ul></details> : null}<span className="sr-only">{displayStatus}</span></td><td>{formatDate(backup.createdAt)}<small>{backup.requestedByName}</small></td><td>{formatBytes(backup.sizeBytes)}</td><td><code>{backup.checksum?.slice(0, 16) || 'Pendiente'}</code></td><td>{formatDate(backup.expiresAt, false)}</td>{compact ? null : <td>{backup.storagePath ? <code>{backup.storagePath}</code> : '—'}</td>}</tr>;
+  })}</tbody></table></div>{!rows.length ? <div className="platform-empty"><ArchiveRestore /><strong>No hay backups para mostrar</strong></div> : null}</section>;
 }
 
 export function PlatformAuditPage() {

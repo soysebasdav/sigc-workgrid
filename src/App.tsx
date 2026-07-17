@@ -5,48 +5,7 @@ import { PermissionRoute } from './app/PermissionRoute';
 import { AuthorizationProvider, useAuthorization } from './features/authz/AuthorizationProvider';
 import { PlatformAccessProvider, usePlatformAccess } from './features/platform/PlatformAccessProvider';
 import { PlatformAdminRoute } from './features/platform/PlatformAdminRoute';
-import { PlatformAdminShell, PlatformAuditPage, PlatformBackupsPage, PlatformDashboardPage, PlatformOrganizationDetailPage, PlatformOrganizationsPage, PlatformOperationsPage, PlatformTicketsPage, PlatformUsersPage } from './features/platform/PlatformAdminPages';
-import { SupportPage } from './features/support/SupportPage';
-import {
-  OrganizationBillingPortalPage,
-  PlatformBillingPage,
-  PlatformCommercialDashboardPage,
-  PlatformOnboardingPage,
-  PlatformPlansPage
-} from './features/platform/Phase31CommercialPages';
-import {
-  KnowledgeArticlePage,
-  KnowledgeCenterPage,
-  OrganizationIntegrationsPage,
-  PlatformIntegrationsPage,
-  PlatformKnowledgePage,
-  PlatformOrganizationIntegrationsPage
-} from './features/platform/Phase32IntegrationPages';
-import {
-  OrganizationPrivacyPage,
-  OrganizationRegionalPage,
-  PlatformCapacityPage,
-  PlatformGovernancePage,
-  PlatformIncidentsPage,
-  PlatformPrivacyPage,
-  PlatformReliabilityPage,
-  PublicStatusPage
-} from './features/platform/Phase33ReliabilityPages';
-import {
-  PlatformExplorerPage,
-  PlatformRecoveryPage,
-  PlatformSchedulerPage,
-  PlatformSecurityTeamPage,
-  PlatformSupportAccessPage,
-  PlatformUsageControlPage
-} from './features/platform/Phase2PlatformPages';
 import { CASE_READ_PERMISSIONS, PERMISSIONS } from './features/authz/permissions';
-import { AgendaPage } from './features/agenda/AgendaPage';
-import { AuditPage } from './features/audit/AuditPage';
-import { NotificationsPage } from './features/notifications/NotificationsPage';
-import { ProfilePage } from './features/profile/ProfilePage';
-import { SettingsPage } from './features/settings/SettingsPage';
-import { UsersPage } from './features/users/UsersPage';
 import { ClientObservability, SigcErrorBoundary } from './features/sigc/components/SaasRuntime';
 import { ClientPortalPage, ForgotPasswordPage, ResetPasswordPage } from './features/sigc/components/Phase1011Product';
 import {
@@ -68,6 +27,53 @@ const SaasManagementPage = lazy(() => import('./features/sigc/components/Phase8S
 const InvitationPage = lazy(() => import('./features/sigc/components/Phase8Saas').then((module) => ({ default: module.InvitationPage })));
 const QualityCenterPage = lazy(() => import('./features/quality/QualityCenterPage').then((module) => ({ default: module.QualityCenterPage })));
 const OrkestaHomePage = lazy(() => import('./features/home/OrkestaHomePage').then((module) => ({ default: module.OrkestaHomePage })));
+
+const PlatformAdminShell = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformAdminShell })));
+const PlatformDashboardPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformDashboardPage })));
+const PlatformOrganizationsPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformOrganizationsPage })));
+const PlatformOrganizationDetailPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformOrganizationDetailPage })));
+const PlatformUsersPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformUsersPage })));
+const PlatformTicketsPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformTicketsPage })));
+const PlatformBackupsPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformBackupsPage })));
+const PlatformAuditPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformAuditPage })));
+const PlatformOperationsPage = lazy(() => import('./features/platform/PlatformAdminPages').then((module) => ({ default: module.PlatformOperationsPage })));
+
+const PlatformCommercialDashboardPage = lazy(() => import('./features/platform/Phase31CommercialPages').then((module) => ({ default: module.PlatformCommercialDashboardPage })));
+const PlatformPlansPage = lazy(() => import('./features/platform/Phase31CommercialPages').then((module) => ({ default: module.PlatformPlansPage })));
+const PlatformBillingPage = lazy(() => import('./features/platform/Phase31CommercialPages').then((module) => ({ default: module.PlatformBillingPage })));
+const PlatformOnboardingPage = lazy(() => import('./features/platform/Phase31CommercialPages').then((module) => ({ default: module.PlatformOnboardingPage })));
+const OrganizationBillingPortalPage = lazy(() => import('./features/platform/Phase31CommercialPages').then((module) => ({ default: module.OrganizationBillingPortalPage })));
+
+const PlatformIntegrationsPage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.PlatformIntegrationsPage })));
+const PlatformOrganizationIntegrationsPage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.PlatformOrganizationIntegrationsPage })));
+const PlatformKnowledgePage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.PlatformKnowledgePage })));
+const OrganizationIntegrationsPage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.OrganizationIntegrationsPage })));
+const KnowledgeCenterPage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.KnowledgeCenterPage })));
+const KnowledgeArticlePage = lazy(() => import('./features/platform/Phase32IntegrationPages').then((module) => ({ default: module.KnowledgeArticlePage })));
+
+const PublicStatusPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PublicStatusPage })));
+const PlatformReliabilityPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PlatformReliabilityPage })));
+const PlatformIncidentsPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PlatformIncidentsPage })));
+const PlatformPrivacyPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PlatformPrivacyPage })));
+const PlatformGovernancePage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PlatformGovernancePage })));
+const PlatformCapacityPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.PlatformCapacityPage })));
+const OrganizationPrivacyPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.OrganizationPrivacyPage })));
+const OrganizationRegionalPage = lazy(() => import('./features/platform/Phase33ReliabilityPages').then((module) => ({ default: module.OrganizationRegionalPage })));
+
+const PlatformRecoveryPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformRecoveryPage })));
+const PlatformSupportAccessPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformSupportAccessPage })));
+const PlatformUsageControlPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformUsageControlPage })));
+const PlatformExplorerPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformExplorerPage })));
+const PlatformSecurityTeamPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformSecurityTeamPage })));
+const PlatformSchedulerPage = lazy(() => import('./features/platform/Phase2PlatformPages').then((module) => ({ default: module.PlatformSchedulerPage })));
+
+const AgendaPage = lazy(() => import('./features/agenda/AgendaPage').then((module) => ({ default: module.AgendaPage })));
+const AuditPage = lazy(() => import('./features/audit/AuditPage').then((module) => ({ default: module.AuditPage })));
+const NotificationsPage = lazy(() => import('./features/notifications/NotificationsPage').then((module) => ({ default: module.NotificationsPage })));
+const ProfilePage = lazy(() => import('./features/profile/ProfilePage').then((module) => ({ default: module.ProfilePage })));
+const SettingsPage = lazy(() => import('./features/settings/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const UsersPage = lazy(() => import('./features/users/UsersPage').then((module) => ({ default: module.UsersPage })));
+const SupportPage = lazy(() => import('./features/support/SupportPage').then((module) => ({ default: module.SupportPage })));
 
 function LazyRoute({ children }: { children: ReactNode }) {
   return (
@@ -128,40 +134,40 @@ const router = createBrowserRouter([
   { path: '/casos', element: <PublicFormPage /> },
   { path: '/casos/:tenant', element: <PublicFormPage /> },
   { path: '/invite/:token', element: <LazyRoute><InvitationPage /></LazyRoute> },
-  { path: '/status', element: <PublicStatusPage /> },
+  { path: '/status', element: <LazyRoute><PublicStatusPage /></LazyRoute> },
   { path: '/public-form', element: <Navigate to="/radicar" replace /> },
   {
     element: <PlatformAdminRoute />,
     children: [
       {
-        element: <PlatformAdminShell />,
+        element: <LazyRoute><PlatformAdminShell /></LazyRoute>,
         children: [
-          { path: 'superadmin', element: <PlatformDashboardPage /> },
-          { path: 'superadmin/organizations', element: <PlatformOrganizationsPage /> },
-          { path: 'superadmin/organizations/:organizationId', element: <PlatformOrganizationDetailPage /> },
-          { path: 'superadmin/commercial', element: <PlatformCommercialDashboardPage /> },
-          { path: 'superadmin/plans', element: <PlatformPlansPage /> },
-          { path: 'superadmin/billing', element: <PlatformBillingPage /> },
-          { path: 'superadmin/onboarding', element: <PlatformOnboardingPage /> },
-          { path: 'superadmin/integrations', element: <PlatformIntegrationsPage /> },
-          { path: 'superadmin/integrations/:organizationId', element: <PlatformOrganizationIntegrationsPage /> },
-          { path: 'superadmin/knowledge', element: <PlatformKnowledgePage /> },
-          { path: 'superadmin/reliability', element: <PlatformReliabilityPage /> },
-          { path: 'superadmin/incidents', element: <PlatformIncidentsPage /> },
-          { path: 'superadmin/privacy', element: <PlatformPrivacyPage /> },
-          { path: 'superadmin/governance', element: <PlatformGovernancePage /> },
-          { path: 'superadmin/capacity', element: <PlatformCapacityPage /> },
-          { path: 'superadmin/users', element: <PlatformUsersPage /> },
-          { path: 'superadmin/tickets', element: <PlatformTicketsPage /> },
-          { path: 'superadmin/backups', element: <PlatformBackupsPage /> },
-          { path: 'superadmin/recovery', element: <PlatformRecoveryPage /> },
-          { path: 'superadmin/access', element: <PlatformSupportAccessPage /> },
-          { path: 'superadmin/usage', element: <PlatformUsageControlPage /> },
-          { path: 'superadmin/explorer', element: <PlatformExplorerPage /> },
-          { path: 'superadmin/security', element: <PlatformSecurityTeamPage /> },
-          { path: 'superadmin/audit', element: <PlatformAuditPage /> },
-          { path: 'superadmin/operations', element: <PlatformOperationsPage /> },
-          { path: 'superadmin/scheduler', element: <PlatformSchedulerPage /> }
+          { path: 'superadmin', element: <LazyRoute><PlatformDashboardPage /></LazyRoute> },
+          { path: 'superadmin/organizations', element: <LazyRoute><PlatformOrganizationsPage /></LazyRoute> },
+          { path: 'superadmin/organizations/:organizationId', element: <LazyRoute><PlatformOrganizationDetailPage /></LazyRoute> },
+          { path: 'superadmin/commercial', element: <LazyRoute><PlatformCommercialDashboardPage /></LazyRoute> },
+          { path: 'superadmin/plans', element: <LazyRoute><PlatformPlansPage /></LazyRoute> },
+          { path: 'superadmin/billing', element: <LazyRoute><PlatformBillingPage /></LazyRoute> },
+          { path: 'superadmin/onboarding', element: <LazyRoute><PlatformOnboardingPage /></LazyRoute> },
+          { path: 'superadmin/integrations', element: <LazyRoute><PlatformIntegrationsPage /></LazyRoute> },
+          { path: 'superadmin/integrations/:organizationId', element: <LazyRoute><PlatformOrganizationIntegrationsPage /></LazyRoute> },
+          { path: 'superadmin/knowledge', element: <LazyRoute><PlatformKnowledgePage /></LazyRoute> },
+          { path: 'superadmin/reliability', element: <LazyRoute><PlatformReliabilityPage /></LazyRoute> },
+          { path: 'superadmin/incidents', element: <LazyRoute><PlatformIncidentsPage /></LazyRoute> },
+          { path: 'superadmin/privacy', element: <LazyRoute><PlatformPrivacyPage /></LazyRoute> },
+          { path: 'superadmin/governance', element: <LazyRoute><PlatformGovernancePage /></LazyRoute> },
+          { path: 'superadmin/capacity', element: <LazyRoute><PlatformCapacityPage /></LazyRoute> },
+          { path: 'superadmin/users', element: <LazyRoute><PlatformUsersPage /></LazyRoute> },
+          { path: 'superadmin/tickets', element: <LazyRoute><PlatformTicketsPage /></LazyRoute> },
+          { path: 'superadmin/backups', element: <LazyRoute><PlatformBackupsPage /></LazyRoute> },
+          { path: 'superadmin/recovery', element: <LazyRoute><PlatformRecoveryPage /></LazyRoute> },
+          { path: 'superadmin/access', element: <LazyRoute><PlatformSupportAccessPage /></LazyRoute> },
+          { path: 'superadmin/usage', element: <LazyRoute><PlatformUsageControlPage /></LazyRoute> },
+          { path: 'superadmin/explorer', element: <LazyRoute><PlatformExplorerPage /></LazyRoute> },
+          { path: 'superadmin/security', element: <LazyRoute><PlatformSecurityTeamPage /></LazyRoute> },
+          { path: 'superadmin/audit', element: <LazyRoute><PlatformAuditPage /></LazyRoute> },
+          { path: 'superadmin/operations', element: <LazyRoute><PlatformOperationsPage /></LazyRoute> },
+          { path: 'superadmin/scheduler', element: <LazyRoute><PlatformSchedulerPage /></LazyRoute> }
         ]
       }
     ]
@@ -187,7 +193,7 @@ const router = createBrowserRouter([
           { path: 'case-detail', element: <Navigate to="/cases/SIG-2026-000003" replace /> },
           { path: 'board', element: <BoardPage /> },
           { path: 'subtasks', element: <SubtasksPage /> },
-          { path: 'agenda', element: <AgendaPage /> },
+          { path: 'agenda', element: <LazyRoute><AgendaPage /></LazyRoute> },
           { path: 'documents', element: <DocumentsPage /> }
         ]
       },
@@ -201,7 +207,7 @@ const router = createBrowserRouter([
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.auditView]} />,
-        children: [{ path: 'audit', element: <AuditPage /> }]
+        children: [{ path: 'audit', element: <LazyRoute><AuditPage /></LazyRoute> }]
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.qualityView]} />,
@@ -212,33 +218,33 @@ const router = createBrowserRouter([
         element: <PermissionRoute allOf={[PERMISSIONS.saasManageWorkspace]} />,
         children: [
           { path: 'workspace', element: <LazyRoute><SaasManagementPage /></LazyRoute> },
-          { path: 'subscription', element: <OrganizationBillingPortalPage /> }
+          { path: 'subscription', element: <LazyRoute><OrganizationBillingPortalPage /></LazyRoute> }
         ]
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.integrationsView]} />,
-        children: [{ path: 'integrations', element: <OrganizationIntegrationsPage /> }]
+        children: [{ path: 'integrations', element: <LazyRoute><OrganizationIntegrationsPage /></LazyRoute> }]
       },
-      { path: 'help', element: <KnowledgeCenterPage /> },
+      { path: 'help', element: <LazyRoute><KnowledgeCenterPage /></LazyRoute> },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.privacyView]} />,
-        children: [{ path: 'privacy', element: <OrganizationPrivacyPage /> }]
+        children: [{ path: 'privacy', element: <LazyRoute><OrganizationPrivacyPage /></LazyRoute> }]
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.regionalView]} />,
-        children: [{ path: 'regional', element: <OrganizationRegionalPage /> }]
+        children: [{ path: 'regional', element: <LazyRoute><OrganizationRegionalPage /></LazyRoute> }]
       },
-      { path: 'help/:slug', element: <KnowledgeArticlePage /> },
-      { path: 'notifications', element: <NotificationsPage /> },
-      { path: 'support', element: <SupportPage /> },
-      { path: 'profile', element: <ProfilePage /> },
+      { path: 'help/:slug', element: <LazyRoute><KnowledgeArticlePage /></LazyRoute> },
+      { path: 'notifications', element: <LazyRoute><NotificationsPage /></LazyRoute> },
+      { path: 'support', element: <LazyRoute><SupportPage /></LazyRoute> },
+      { path: 'profile', element: <LazyRoute><ProfilePage /></LazyRoute> },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.adminManageUsers]} />,
-        children: [{ path: 'users', element: <UsersPage /> }]
+        children: [{ path: 'users', element: <LazyRoute><UsersPage /></LazyRoute> }]
       },
       {
         element: <PermissionRoute allOf={[PERMISSIONS.adminManageConfiguration]} />,
-        children: [{ path: 'settings', element: <SettingsPage /> }]
+        children: [{ path: 'settings', element: <LazyRoute><SettingsPage /></LazyRoute> }]
       },
       {
         element: <PermissionRoute anyOf={[PERMISSIONS.adminManageConfiguration, PERMISSIONS.automationView, PERMISSIONS.automationManage]} />,

@@ -94,7 +94,7 @@ function useLoad<T>(loader: () => Promise<T>, dependencies: readonly unknown[] =
 }
 
 function Head({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
-  return <header className="platform-page-head"><div><span className="eyebrow">Orkesta · Fase 3.1 comercial</span><h1>{title}</h1><p>{description}</p></div>{actions ? <div className="platform-page-actions">{actions}</div> : null}</header>;
+  return <header className="platform-page-head"><div><span className="eyebrow">Orkesta · Gestión comercial</span><h1>{title}</h1><p>{description}</p></div>{actions ? <div className="platform-page-actions">{actions}</div> : null}</header>;
 }
 
 function Loading() { return <section className="card platform-loading"><Loader2 className="spin" /><strong>Cargando módulo comercial...</strong></section>; }

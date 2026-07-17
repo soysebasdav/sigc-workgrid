@@ -58,6 +58,16 @@ import {
   toneFromCatalog,
   isStateCode
 } from './ui';
+import {
+  describeCaseViewFilters,
+  loadSavedCaseViews,
+  normalizeCaseFilters,
+  persistSavedCaseViews,
+  removeSavedCaseView,
+  savedCaseViewsStorageKey,
+  upsertSavedCaseView,
+  type SavedCaseView
+} from './utils/savedCaseViews';
 
 type ToastState = {
   visible: boolean;
@@ -292,7 +302,9 @@ export function SigcLoginPage() {
 
 export function CasesPage() {
   const { showToast } = useSigcActions();
+  const { currentUser } = useApp();
   const { can } = useAuthorization();
+  const { context: saasContext } = useSaasTheme();
   const [searchParams] = useSearchParams();
   const { data: catalogs } = useSigcCatalogs();
   const { data: members } = useSigcMembers();
@@ -304,6 +316,16 @@ export function CasesPage() {
     pageSize: 10
   });
   const debouncedQuery = useDebouncedValue(filters.query ?? '', 400);
+  const savedViewsKey = useMemo(
+    () => savedCaseViewsStorageKey(currentUser?.id, saasContext?.activeOrganization.id),
+    [currentUser?.id, saasContext?.activeOrganization.id]
+  );
+  const [savedViews, setSavedViews] = useState<SavedCaseView[]>([]);
+  const [savedViewsOpen, setSavedViewsOpen] = useState(false);
+
+  useEffect(() => {
+    setSavedViews(loadSavedCaseViews(savedViewsKey));
+  }, [savedViewsKey]);
 
   useEffect(() => {
     const query = searchParams.get('q') ?? '';
@@ -322,6 +344,27 @@ export function CasesPage() {
     setFilters({ query: '', fromDate: '', toDate: '', page: 1, pageSize: 10 });
   }
 
+  function saveCurrentView(name: string) {
+    const next = upsertSavedCaseView(savedViews, { name, filters });
+    setSavedViews(next);
+    persistSavedCaseViews(savedViewsKey, next);
+    showToast('Vista guardada correctamente para tu usuario y organización.');
+  }
+
+  function applySavedView(view: SavedCaseView) {
+    setFilters(normalizeCaseFilters(view.filters));
+    setSavedViewsOpen(false);
+    showToast(`Vista “${view.name}” aplicada.`);
+  }
+
+  function deleteSavedView(view: SavedCaseView) {
+    if (!window.confirm(`¿Eliminar la vista “${view.name}”?`)) return;
+    const next = removeSavedCaseView(savedViews, view.id);
+    setSavedViews(next);
+    persistSavedCaseViews(savedViewsKey, next);
+    showToast('Vista eliminada.');
+  }
+
   return (
     <Page>
       <PageHead
@@ -329,7 +372,7 @@ export function CasesPage() {
         description="Consulta real de casos con búsqueda, filtros, prioridad, SLA y paginación."
         actions={(
           <>
-            <button className="btn btn-white" onClick={() => showToast('Las vistas guardadas se habilitarán en una fase posterior.')}><Bookmark size={17} /> Guardar vista</button>
+            <button className="btn btn-white" onClick={() => setSavedViewsOpen(true)}><Bookmark size={17} /> Vistas guardadas{savedViews.length ? <span className="saved-view-count">{savedViews.length}</span> : null}</button>
             {can(PERMISSIONS.caseCreate) ? <Link className="btn btn-primary" to="/manual-case"><Plus size={17} /> Nuevo caso</Link> : null}
           </>
         )}
@@ -358,8 +401,76 @@ export function CasesPage() {
         <span>Página <strong>{result.page}</strong> de <strong>{totalPages}</strong></span>
         <button className="btn btn-white" disabled={result.page >= totalPages || isLoading} onClick={() => setFilter('page', result.page + 1)}>Siguiente</button>
       </div>
+      {savedViewsOpen ? <SavedCaseViewsModal
+        views={savedViews}
+        currentFilters={filters}
+        onSave={saveCurrentView}
+        onApply={applySavedView}
+        onDelete={deleteSavedView}
+        onClose={() => setSavedViewsOpen(false)}
+      /> : null}
     </Page>
   );
+}
+
+function SavedCaseViewsModal({
+  views,
+  currentFilters,
+  onSave,
+  onApply,
+  onDelete,
+  onClose
+}: {
+  views: SavedCaseView[];
+  currentFilters: SigcCaseFilters;
+  onSave: (name: string) => void;
+  onApply: (view: SavedCaseView) => void;
+  onDelete: (view: SavedCaseView) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    function closeWithEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', closeWithEscape);
+    return () => window.removeEventListener('keydown', closeWithEscape);
+  }, [onClose]);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    try {
+      onSave(name);
+      setName('');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'No fue posible guardar la vista.');
+    }
+  }
+
+  return <>
+    <div className="sigc-overlay open" onClick={onClose} />
+    <section className="modal open saved-views-modal" role="dialog" aria-modal="true" aria-labelledby="saved-views-title">
+      <header><div><h3 id="saved-views-title">Vistas guardadas</h3><small>Guarda y recupera filtros por usuario y organización.</small></div><button className="btn btn-white icon-only" type="button" onClick={onClose} aria-label="Cerrar"><X size={17} /></button></header>
+      <div className="modal-body form-stack">
+        <form className="saved-view-create" onSubmit={save}>
+          <label className="field-label">Nombre de la vista<input className="field" value={name} maxLength={80} onChange={(event) => setName(event.target.value)} placeholder="Ej. Jurídica vencidos" required minLength={2} /></label>
+          <div className="saved-view-current"><span>Filtros actuales</span><strong>{describeCaseViewFilters(normalizeCaseFilters(currentFilters))}</strong></div>
+          {error ? <div className="alert danger">{error}</div> : null}
+          <button className="btn btn-primary" type="submit"><Bookmark size={16} /> Guardar filtros actuales</button>
+        </form>
+        <div className="saved-view-list">
+          {views.map((view) => <article key={view.id}>
+            <div><strong>{view.name}</strong><span>{describeCaseViewFilters(view.filters)}</span><small>Actualizada {new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(view.updatedAt))}</small></div>
+            <div className="table-actions"><button className="btn btn-white small" type="button" onClick={() => onApply(view)}><Check size={15} /> Aplicar</button><button className="btn btn-white icon-only small danger-icon" type="button" onClick={() => onDelete(view)} aria-label={`Eliminar ${view.name}`}><Trash2 size={15} /></button></div>
+          </article>)}
+          {!views.length ? <div className="empty-inline">No tienes vistas guardadas para esta organización.</div> : null}
+        </div>
+      </div>
+    </section>
+  </>;
 }
 
 export function CaseDetailPage() {

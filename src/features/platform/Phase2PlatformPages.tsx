@@ -77,7 +77,7 @@ function bytes(value: unknown): string {
 }
 
 function PageHead({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
-  return <header className="platform-page-head"><div><span className="eyebrow">Orkesta · Super Admin Fase 2</span><h1>{title}</h1><p>{description}</p></div>{actions ? <div className="platform-page-actions">{actions}</div> : null}</header>;
+  return <header className="platform-page-head"><div><span className="eyebrow">Orkesta · Operación de plataforma</span><h1>{title}</h1><p>{description}</p></div>{actions ? <div className="platform-page-actions">{actions}</div> : null}</header>;
 }
 
 function Feedback({ error, success }: { error?: string; success?: string }) {

@@ -1,4 +1,4 @@
-import { Building2, RefreshCw, Save, ShieldCheck, Trash2, UserCheck, UserPlus, Users, X } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, RefreshCw, Save, ShieldCheck, Trash2, UserCheck, UserPlus, Users, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../../app/AppProvider';
@@ -19,6 +19,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'No fue posible actualizar el usuario.';
 }
 
+const REQUIRED_TEST_AREAS = [
+  'Gerencia', 'Nómina', 'Talento Humano', 'Operaciones', 'SDG', 'Comercial',
+  'Administrativa y Financiera', 'Tecnología', 'Marketing y Telecomunicaciones', 'Jurídica'
+] as const;
+
+function normalizedLabel(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 export function UsersPage() {
   const { currentUser } = useApp();
   const { can, roleName } = useAuthorization();
@@ -29,6 +38,18 @@ export function UsersPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const activeRoles = useMemo(() => data?.roles.filter((role) => role.isActive) ?? [], [data?.roles]);
+  const testAreaCoverage = useMemo(() => REQUIRED_TEST_AREAS.map((requiredName) => {
+    const target = normalizedLabel(requiredName);
+    const area = catalogs?.areas.find((candidate) => {
+      const normalized = normalizedLabel(candidate.name);
+      return normalized === target || normalized.includes(target) || target.includes(normalized);
+    });
+    const members = area && data
+      ? data.members.filter((member) => member.isActive && member.areaIds.includes(area.id))
+      : [];
+    return { requiredName, area, members, ready: Boolean(area && members.length) };
+  }), [catalogs?.areas, data]);
+  const readyTestAreas = testAreaCoverage.filter((item) => item.ready).length;
   const canInvite = can(PERMISSIONS.saasManageWorkspace);
   const canManageUsers = can(PERMISSIONS.adminManageUsers);
 
@@ -82,6 +103,24 @@ export function UsersPage() {
       {warning ? <div className="alert danger">{warning}</div> : null}
       {error ? <div className="alert danger">{error}</div> : null}
       {message ? <div className={message.toLowerCase().includes('no fue') || message.toLowerCase().includes('último') ? 'alert danger' : 'alert success'}>{message}</div> : null}
+
+      <Card className="users-test-coverage">
+        <CardHeader
+          title="Cobertura de pruebas multiárea"
+          description="Verifica que cada área operativa tenga por lo menos un usuario activo para probar asignaciones, permisos, notificaciones y trazabilidad."
+        />
+        <div className="users-test-coverage-grid">
+          {testAreaCoverage.map((item) => <article key={item.requiredName} className={item.ready ? 'ready' : 'missing'}>
+            {item.ready ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+            <div><strong>{item.requiredName}</strong><small>{!item.area ? 'Área no configurada' : item.members.length ? item.members.map((member) => member.name).join(' · ') : 'Sin usuario activo asociado'}</small></div>
+          </article>)}
+        </div>
+        <div className="users-test-coverage-summary">
+          <Badge tone={readyTestAreas === REQUIRED_TEST_AREAS.length ? 'success' : 'warning'}>{readyTestAreas}/{REQUIRED_TEST_AREAS.length} áreas listas</Badge>
+          <span className="muted">La cobertura se calcula con las áreas y membresías reales de la organización activa.</span>
+          {canInvite && readyTestAreas < REQUIRED_TEST_AREAS.length ? <Link className="btn btn-white small" to="/workspace"><UserPlus size={15} /> Completar usuarios</Link> : null}
+        </div>
+      </Card>
 
       <Card className="users-members-card">
         <CardHeader title="Miembros de la organización" description={data ? `${data.members.length} miembro(s) · tu rol actual: ${roleName}` : 'Cargando membresías y roles reales.'} />
