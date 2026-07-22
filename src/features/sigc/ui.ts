@@ -54,7 +54,7 @@ export const navItems: SigcNavItem[] = [
   { to: '/reports', label: 'Reportes', icon: BarChart3, allOf: [PERMISSIONS.reportsView] },
   { to: '/audit', label: 'Auditoría', icon: Shield, allOf: [PERMISSIONS.auditView] },
   { to: '/quality', label: 'Calidad y producción', icon: HeartPulse, allOf: [PERMISSIONS.qualityView] },
-  { to: '/workspace', label: 'Espacio SaaS', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
+  { to: '/workspace', label: 'Espacio de trabajo', icon: Cloud, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/subscription', label: 'Suscripción y facturación', icon: WalletCards, allOf: [PERMISSIONS.saasManageWorkspace] },
   { to: '/integrations', label: 'Integraciones', icon: Network, allOf: [PERMISSIONS.integrationsView] },
   { to: '/privacy', label: 'Privacidad', icon: FileKey2, allOf: [PERMISSIONS.privacyView] },

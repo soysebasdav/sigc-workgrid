@@ -1,14 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Save, Settings2, ShieldCheck } from 'lucide-react';
+import { Globe2, Palette, Save, Settings2, ShieldCheck, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../../app/AppProvider';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Field, Input } from '../../components/ui/Field';
 import { useAuthorization } from '../authz/AuthorizationProvider';
+import { PERMISSIONS } from '../authz/permissions';
+import { appErrorMessage } from '../../utils/errors';
 
 export function SettingsPage() {
   const { state, updateSettings, dataMode } = useApp();
-  const { roleName } = useAuthorization();
+  const { roleName, can } = useAuthorization();
+  const canManageWorkspace = can(PERMISSIONS.saasManageWorkspace);
   const [timeout, setTimeoutValue] = useState(String(state.settings.inactivityTimeoutMinutes));
   const [saved, setSaved] = useState(false);
 
@@ -24,7 +28,7 @@ export function SettingsPage() {
       window.setTimeout(() => setSaved(false), 2200);
     } catch (error) {
       console.error('No fue posible guardar configuración:', error);
-      window.alert('No fue posible guardar la configuración. Revisa tus permisos en la organización activa.');
+      window.alert(appErrorMessage(error, 'No fue posible guardar la configuración. Revisa tus permisos en la organización activa.'));
     }
   }
 
@@ -40,6 +44,19 @@ export function SettingsPage() {
           <Button type="submit"><Save size={17} /> Guardar configuración</Button>
         </form>
       </Card>
+
+
+
+      {canManageWorkspace ? (
+        <Card>
+          <CardHeader title="Configuración de la organización" description="La marca, el formulario público y las invitaciones se administran desde el Espacio de trabajo." />
+          <div className="stack">
+            <Link className="btn btn-white" to="/workspace?tab=branding"><Palette size={17} /> Identidad visual y marca</Link>
+            <Link className="btn btn-white" to="/workspace?tab=public-intake"><Globe2 size={17} /> Radicación pública y enlace externo</Link>
+            <Link className="btn btn-white" to="/workspace?tab=team"><Users size={17} /> Invitaciones y equipo</Link>
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="identity-card">
         {dataMode === 'supabase' ? <ShieldCheck size={28} /> : <Settings2 size={28} />}

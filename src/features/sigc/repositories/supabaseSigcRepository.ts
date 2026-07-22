@@ -110,12 +110,57 @@ import type {
 } from '../domain/types';
 import type { PublicSigcRepository, SigcRepository } from './types';
 import { MAX_INTERNAL_FILE_SIZE_BYTES, buildCanonicalFilename, inferFileMimeType, normalizeStorageSegment, storedFilenameFromPath, validateFileForUpload } from '../utils/filePolicy';
+import { isMissingRpcError } from '../../../utils/errors';
 
 function requireClient() {
   if (!supabase) throw new Error('Supabase no está configurado.');
   return supabase;
 }
 
+function nullableText(value: string | null | undefined): string | null {
+  const normalized = value?.trim() ?? '';
+  return normalized || null;
+}
+
+function requiredText(value: string | null | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function validIsoOrNull(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error(`La fecha "${value}" no es válida.`);
+  return date.toISOString();
+}
+
+function firstRecord<T extends Record<string, unknown>>(value: unknown): T | null {
+  if (Array.isArray(value)) return (value[0] && typeof value[0] === 'object' ? value[0] : null) as T | null;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.data)) return firstRecord<T>(record.data);
+    return record as T;
+  }
+  return null;
+}
+
+function serializeManualAssignment(assignment: ManualCaseCreateInput['assignments'][number]) {
+  const dueAt = validIsoOrNull(assignment.dueAt);
+  const responsibleUserId = nullableText(assignment.responsibleUserId);
+  const observations = nullableText(assignment.observations);
+  const isPrimary = Boolean(assignment.isPrimary);
+  return {
+    // Se envían ambas convenciones para compatibilidad con funciones instaladas en distintas fases.
+    areaId: assignment.areaId,
+    area_id: assignment.areaId,
+    responsibleUserId,
+    responsible_user_id: responsibleUserId,
+    dueAt,
+    due_at: dueAt,
+    observations,
+    isPrimary,
+    is_primary: isPrimary
+  };
+}
 
 
 type SlaOverrideRow = {
@@ -826,34 +871,65 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async createManualCase(input: ManualCaseCreateInput): Promise<CreatedCaseResult> {
     const client = requireClient();
-    const assignments = input.assignments.map((assignment) => ({
-      areaId: assignment.areaId,
-      responsibleUserId: assignment.responsibleUserId ?? '',
-      dueAt: assignment.dueAt ? new Date(assignment.dueAt).toISOString() : '',
-      observations: assignment.observations ?? '',
-      isPrimary: assignment.isPrimary ?? false
-    }));
-    const { data, error } = await client.rpc('create_internal_case_v3', {
+    const assignments = input.assignments.map(serializeManualAssignment);
+    const baseArgs = {
       p_idempotency_key: input.idempotencyKey,
       p_case_type_id: input.caseTypeId,
       p_priority_id: input.priorityId,
-      p_requester_name: input.requesterName,
-      p_requester_company: input.requesterCompany,
-      p_requester_document: input.requesterDocument,
-      p_requester_email: input.requesterEmail,
-      p_requester_phone: input.requesterPhone,
-      p_subject: input.subject,
-      p_description: input.description,
-      p_risk_level: input.riskLevel ?? null,
-      p_assignments: assignments,
-      p_response_email: input.responseEmail?.trim() || null,
+      p_requester_name: requiredText(input.requesterName),
+      p_requester_company: requiredText(input.requesterCompany),
+      p_requester_document: requiredText(input.requesterDocument),
+      p_requester_email: requiredText(input.requesterEmail).toLowerCase(),
+      p_requester_phone: requiredText(input.requesterPhone),
+      p_subject: requiredText(input.subject),
+      p_description: requiredText(input.description),
+      p_risk_level: nullableText(input.riskLevel),
+      p_assignments: assignments as unknown as Json
+    };
+
+    let data: unknown = null;
+    const v3 = await client.rpc('create_internal_case_v3', {
+      ...baseArgs,
+      p_response_email: nullableText(input.responseEmail)?.toLowerCase() ?? null,
       p_use_alternate_response_email: Boolean(input.usesAlternateResponseEmail),
       p_custom_fields: (input.customFields ?? {}) as unknown as Json
     });
-    if (error) throw error;
-    const created = data?.[0];
-    if (!created) throw new Error('La base de datos no devolvió el caso creado.');
-    return { caseId: created.case_id, radicado: created.radicado, dueAt: created.due_at };
+
+    if (!v3.error) {
+      data = v3.data;
+    } else if (isMissingRpcError(v3.error, 'create_internal_case_v3')) {
+      const v2 = await client.rpc('create_internal_case_v2', baseArgs);
+      if (!v2.error) {
+        data = v2.data;
+      } else if (isMissingRpcError(v2.error, 'create_internal_case_v2')) {
+        const legacy = await client.rpc('create_internal_case', {
+          p_case_type_id: baseArgs.p_case_type_id,
+          p_priority_id: baseArgs.p_priority_id,
+          p_requester_name: baseArgs.p_requester_name,
+          p_requester_company: baseArgs.p_requester_company,
+          p_requester_document: baseArgs.p_requester_document,
+          p_requester_email: baseArgs.p_requester_email,
+          p_requester_phone: baseArgs.p_requester_phone,
+          p_subject: baseArgs.p_subject,
+          p_description: baseArgs.p_description,
+          p_risk_level: baseArgs.p_risk_level,
+          p_assignments: baseArgs.p_assignments
+        });
+        if (legacy.error) throw legacy.error;
+        data = legacy.data;
+      } else {
+        throw v2.error;
+      }
+    } else {
+      throw v3.error;
+    }
+
+    const created = firstRecord<{ case_id?: unknown; caseId?: unknown; radicado?: unknown; due_at?: unknown; dueAt?: unknown }>(data);
+    const caseId = String(created?.case_id ?? created?.caseId ?? '').trim();
+    const radicado = String(created?.radicado ?? '').trim();
+    if (!caseId || !radicado) throw new Error('La base de datos ejecutó la creación, pero no devolvió case_id y radicado. Revisa la firma de create_internal_case_v3.');
+    const dueAtRaw = created?.due_at ?? created?.dueAt;
+    return { caseId, radicado, dueAt: dueAtRaw == null ? null : String(dueAtRaw) };
   },
 
   async assignCase(input: CaseAssignmentInput): Promise<void> {
@@ -1846,19 +1922,38 @@ export const supabaseSigcRepository: SigcRepository = {
   async saveAdminCatalog(input: SaveAdminCatalogInput): Promise<void> {
     const client = requireClient();
     if (input.kind === 'areas') {
-      const { error } = await client.rpc('save_area_configuration_v1', {
+      const organizationId = await ensureOrganization();
+      const { data, error } = await client.rpc('save_area_configuration_v1', {
         p_id: input.id || null,
-        p_code: input.code,
-        p_name: input.name,
-        p_description: input.description || null,
-        p_color: input.color || null,
+        p_code: input.code.trim().toUpperCase(),
+        p_name: input.name.trim(),
+        p_description: nullableText(input.description),
+        p_color: nullableText(input.color),
         p_sort_order: input.sortOrder ?? 0,
         p_is_active: input.isActive ?? true,
         p_parent_area_id: input.parentAreaId || null,
-        p_email: input.email?.trim() || null,
+        p_email: nullableText(input.email)?.toLowerCase() ?? null,
         p_manager_membership_id: input.managerMembershipId || null
       });
       if (error) throw error;
+
+      // Algunas versiones instaladas de la RPC guardaban nombre/código pero omitían description.
+      // Se sincroniza explícitamente el campo sobre la misma organización y se verifica persistencia.
+      const returned = firstRecord<{ id?: unknown; area_id?: unknown }>(data);
+      const areaId = input.id || (typeof data === 'string' ? data : String(returned?.id ?? returned?.area_id ?? '').trim());
+      if (areaId) {
+        const normalizedDescription = nullableText(input.description);
+        const { data: updated, error: updateError } = await client
+          .from('areas')
+          .update({ description: normalizedDescription, updated_at: new Date().toISOString() })
+          .eq('id', areaId)
+          .eq('organization_id', organizationId)
+          .select('id,description')
+          .maybeSingle();
+        if (updateError) throw updateError;
+        if (!updated) throw new Error('El área fue guardada, pero no pudo verificarse dentro de la organización activa.');
+        if ((updated.description ?? null) !== normalizedDescription) throw new Error('La descripción del área no persistió después de guardar.');
+      }
       return;
     }
     const { error } = await client.rpc('save_admin_catalog_v3', {
@@ -2392,11 +2487,64 @@ export const supabaseSigcRepository: SigcRepository = {
 
   async createOrganizationInvitation(input: CreateOrganizationInvitationInput): Promise<CreatedOrganizationInvitation> {
     const client = requireClient();
-    const { data, error } = await client.rpc('create_organization_invitation', { p_email: input.email, p_role_id: input.roleId, p_expires_days: input.expiresDays ?? 7 });
-    if (error) throw error;
-    const row = data?.[0];
-    if (!row) throw new Error('No fue posible crear la invitación.');
-    return { invitationId: row.invitation_id, token: row.token, expiresAt: row.expires_at };
+    const email = input.email.trim().toLowerCase();
+    const expiresDays = Math.max(1, Math.min(30, input.expiresDays ?? 7));
+    const rpc = await client.rpc('create_organization_invitation', { p_email: email, p_role_id: input.roleId, p_expires_days: expiresDays });
+
+    let data: unknown = rpc.data;
+    if (rpc.error) {
+      if (!isMissingRpcError(rpc.error, 'create_organization_invitation')) throw rpc.error;
+
+      // Compatibilidad controlada cuando la RPC aún no está desplegada.
+      // RLS continúa siendo la autoridad: el insert solo funciona para gestores autorizados.
+      const organizationId = await ensureOrganization();
+      const { data: role, error: roleError } = await client
+        .from('roles')
+        .select('id')
+        .eq('id', input.roleId)
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (roleError) throw roleError;
+      if (!role) throw new Error('El rol seleccionado no pertenece a la organización activa o está inactivo.');
+
+      const invitationTable = (client as any).from('organization_invitations');
+      const { data: existing, error: existingError } = await invitationTable
+        .select('id,token,expires_at')
+        .eq('organization_id', organizationId)
+        .eq('email', email)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) return { invitationId: existing.id, token: existing.token, expiresAt: existing.expires_at };
+
+      const { data: authData, error: authError } = await client.auth.getUser();
+      if (authError) throw authError;
+      const expiresAt = new Date(Date.now() + expiresDays * 86_400_000).toISOString();
+      const { data: inserted, error: insertError } = await (client as any)
+        .from('organization_invitations')
+        .insert({
+          organization_id: organizationId,
+          email,
+          role_id: input.roleId,
+          invited_by: authData.user?.id ?? null,
+          expires_at: expiresAt
+        })
+        .select('id,token,expires_at')
+        .single();
+      if (insertError) throw insertError;
+      data = inserted;
+    }
+
+    const row = firstRecord<{ invitation_id?: unknown; invitationId?: unknown; id?: unknown; token?: unknown; expires_at?: unknown; expiresAt?: unknown }>(data);
+    const invitationId = String(row?.invitation_id ?? row?.invitationId ?? row?.id ?? '').trim();
+    const token = String(row?.token ?? '').trim();
+    const expiresAt = String(row?.expires_at ?? row?.expiresAt ?? '').trim();
+    if (!invitationId || !token || !expiresAt) throw new Error('La invitación fue procesada, pero Supabase no devolvió invitation_id, token y expires_at.');
+    return { invitationId, token, expiresAt };
   },
 
   async revokeOrganizationInvitation(invitationId: string): Promise<void> {

@@ -6,10 +6,10 @@ import { sigcService } from '../services/sigcService';
 import { DynamicCaseFields, filterDynamicValues } from './DynamicCaseFields';
 import { INTERNAL_FILE_ACCEPT, MAX_INTERNAL_FILES_PER_ACTION, PUBLIC_FILE_ACCEPT, formatFileSize, validateFileForUpload, validateFileMetadata } from '../utils/filePolicy';
 import { assignmentSetError, buildDefaultAssignments, ensureSinglePrimaryAssignment } from '../utils/caseFormDefaults';
+import { appErrorMessage } from '../../../utils/errors';
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return 'Ocurrió un error inesperado.';
+  return appErrorMessage(error, 'Ocurrió un error inesperado.');
 }
 
 function formatDateTime(iso: string | null): string {
@@ -330,7 +330,21 @@ export function ManualCaseForm({ onCreated }: { onCreated: (radicado: string, fa
       const failedAttachments = initialFiles.filter((_, index) => uploads[index]?.status === 'rejected').map((file) => file.name);
       onCreated(result.radicado, failedAttachments);
     } catch (error) {
-      setSubmitError(errorMessage(error));
+      const message = errorMessage(error);
+      setSubmitError(message);
+      void sigcService.logClientError({
+        message,
+        route: window.location.pathname,
+        severity: 'error',
+        metadata: {
+          action: 'create_manual_case',
+          caseTypeId: values.caseTypeId,
+          priorityId: values.priorityId,
+          assignmentCount: normalizedAssignments.length,
+          hasAlternateResponseEmail: usesAlternateResponseEmail,
+          attachmentCount: initialFiles.length
+        }
+      });
     } finally {
       setSubmitting(false);
     }

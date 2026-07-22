@@ -60,6 +60,7 @@ import { useAutomationRuntimeHealth, useDebouncedValue, useSigcAdminSnapshot, us
 import { useAuthorization } from '../../authz/AuthorizationProvider';
 import { PERMISSIONS } from '../../authz/permissions';
 import { sigcService } from '../services/sigcService';
+import { appErrorMessage } from '../../../utils/errors';
 
 type AdminTab = 'catalogs' | 'sla' | 'roles' | 'workflows' | 'templates' | 'automations';
 type SigcActions = { showToast: (text: string) => void; openDrawer: (id: string) => void };
@@ -457,7 +458,7 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
         {kind === 'areas' ? (
           <>
             <div className="form-grid two">
-              <label className="field-label">Área superior<select className="input" value={form.parentAreaId ?? ''} onChange={(e) => setForm({ ...form, parentAreaId: e.target.value })}><option value="">Área raíz</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
+              <label className="field-label">Área superior (opcional)<select className="input" value={form.parentAreaId ?? ''} onChange={(e) => setForm({ ...form, parentAreaId: e.target.value })}><option value="">Sin área superior · área principal</option>{activeAreas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select><small>Úsala para crear subáreas. Ejemplo: Seguridad Física puede depender de Operaciones.</small></label>
               <label className="field-label">Correo del área<input className="input" type="email" value={form.email ?? ''} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="area@empresa.com" /></label>
             </div>
             <label className="field-label">Responsable o coordinador<select className="input" value={form.managerMembershipId ?? ''} onChange={(e) => setForm({ ...form, managerMembershipId: e.target.value })}><option value="">Sin responsable definido</option>{activeMembers.map((member) => <option key={member.membershipId} value={member.membershipId}>{member.name} · {member.roleName}</option>)}</select></label>
@@ -539,7 +540,7 @@ function CatalogModal({ data, kind, item, onClose, showToast }: { data: SigcAdmi
 
         <div className="form-grid two">
           <label className="field-label">Color<input className="input" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} placeholder="#123C69" /></label>
-          <label className="field-label">Orden<input className="input" type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /></label>
+          <label className="field-label">Orden de visualización<input className="input" type="number" min="0" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} /><small>Los números menores aparecen primero en listas y formularios.</small></label>
         </div>
         {kind === 'states' ? <div className="phase56-check-grid"><CheckField label="Estado inicial" checked={Boolean(form.isInitial)} onChange={(checked) => setForm({ ...form, isInitial: checked })} /><CheckField label="Estado terminal" checked={Boolean(form.isTerminal)} onChange={(checked) => setForm({ ...form, isTerminal: checked })} /></div> : null}
         <CheckField label="Activo" checked={form.isActive !== false} onChange={(checked) => setForm({ ...form, isActive: checked })} />
@@ -817,7 +818,7 @@ function CheckField({ label, checked, onChange }: { label: string; checked: bool
 function StatusPill({ active }: { active: boolean }) { return <span className={`phase56-status ${active ? 'active' : 'inactive'}`}>{active ? 'Activo' : 'Inactivo'}</span>; }
 function LifecyclePill({ status }: { status: AutomationRule['lifecycleStatus'] }) { return <span className={`phase56-status lifecycle-${status}`}>{status === 'published' ? 'Publicada' : status === 'archived' ? 'Archivada' : 'Borrador'}</span>; }
 function ExecutionPill({ status }: { status: string }) { return <span className={`phase56-execution execution-${status}`}>{status === 'success' ? 'Correcta' : status === 'partial' ? 'Parcial' : status === 'failed' ? 'Fallida' : status === 'skipped' ? 'Omitida' : 'Ejecutando'}</span>; }
-function errorMessage(error: unknown) { return error instanceof Error ? error.message : 'No fue posible completar la operación.'; }
+function errorMessage(error: unknown) { return appErrorMessage(error, 'No fue posible completar la operación.'); }
 function unitLabel(unit: AdminSlaPolicy['durationUnit']) { return unit === 'hours' ? 'horas' : unit === 'business_days' ? 'días hábiles' : 'días calendario'; }
 function stateName(data: SigcAdminSnapshot, id: string) { return data.states.find((item) => item.id === id)?.name ?? 'Estado'; }
 function initials(name: string) { return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U'; }
